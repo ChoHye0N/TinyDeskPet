@@ -1,0 +1,63 @@
+# =============================================================================
+# CodeQL — GitHub의 정적 보안 분석. 버퍼 오버플로, 정수 오버플로, 잘못된 포인터 사용 등을
+# 데이터 흐름 분석으로 찾아 Security 탭 > Code scanning 에 보고합니다.
+# 공개 저장소는 무료, 비공개 저장소는 GitHub Advanced Security가 필요합니다.
+# =============================================================================
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 18 * * 0"   # 매주 월요일 03:00 (KST) — 새로 추가된 분석 규칙 반영
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (C/C++)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write   # 분석 결과 업로드
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual                 # 아래 빌드를 CodeQL이 관찰해 분석
+          queries: security-and-quality
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Ninja
+        run: pip install ninja
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build
+        run: |
+          cmake --preset ci-windows
+          cmake --build --preset ci-windows-release
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"

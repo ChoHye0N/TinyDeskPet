@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# pre-commit 훅: 커밋하기 전에 스테이징된 C++ 파일의 포맷을 검사합니다.
+# 설치: git config core.hooksPath .githooks   (한 번만)
+# 건너뛰기(비상시): git commit --no-verify
+set -euo pipefail
+
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+elif command -v py >/dev/null 2>&1; then
+    PYTHON="py -3"
+else
+    echo "[pre-commit] Python을 찾을 수 없어 포맷 검사를 건너뜁니다." >&2
+    exit 0
+fi
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    echo "[pre-commit] clang-format이 없어 포맷 검사를 건너뜁니다." >&2
+    echo "             설치: pip install -r requirements-dev.txt" >&2
+    exit 0
+fi
+
+$PYTHON scripts/format.py --check --staged

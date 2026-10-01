@@ -1,0 +1,4 @@
+# 개발 도구 (로컬과 CI가 같은 버전을 쓰도록 고정)
+# 설치: pip install -r requirements-dev.txt
+clang-format==18.1.8
+clang-tidy==18.1.8

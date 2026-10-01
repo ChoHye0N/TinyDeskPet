@@ -1,0 +1,72 @@
+# =============================================================================
+# Release — vX.Y.Z 태그를 푸시하면 Windows zip을 빌드해 GitHub Release에 올립니다.
+# 사용법: docs/05-devops/ci-cd-usage.md §5
+#
+#   태그 검증 → 릴리스 노트 추출 → Release 빌드·테스트·패키지 → 체크섬 → GitHub Release 생성
+# =============================================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+# 릴리스를 만들어야 하므로 이 워크플로만 쓰기 권한을 가집니다.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # 릴리스는 중간에 취소하지 않음
+
+jobs:
+  release:
+    name: Build & Publish ${{ github.ref_name }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # 태그(v0.2.0)와 VERSION 파일(0.2.0)이 다르면 여기서 중단
+      - name: Verify tag matches VERSION
+        run: python scripts/check_version.py --tag "${{ github.ref_name }}"
+
+      # CHANGELOG.md의 해당 버전 섹션이 없으면 여기서 중단
+      - name: Extract release notes from CHANGELOG
+        run: python scripts/extract_release_notes.py --version "${{ github.ref_name }}" --output release-notes.md
+
+      - name: Install Ninja
+        run: pip install ninja
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure, build, test, package
+        run: cmake --workflow --preset ci-windows-release
+
+      - name: Generate SHA-256 checksum
+        id: package
+        run: |
+          $zip = Get-ChildItem build/ci-windows/package/*.zip | Select-Object -First 1
+          if (-not $zip) { throw "패키지 zip을 찾을 수 없습니다" }
+          $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($zip.Name)" | Out-File -Encoding ascii "$($zip.FullName).sha256"
+          "zip=$($zip.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          Write-Host "$($zip.Name): $hash"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "${{ steps.package.outputs.zip }}"
+          "${{ steps.package.outputs.zip }}.sha256"
+          --title "DeskPet ${{ github.ref_name }}"
+          --notes-file release-notes.md
+          --verify-tag

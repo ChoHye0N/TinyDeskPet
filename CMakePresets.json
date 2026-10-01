@@ -1,0 +1,153 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/build/${presetName}/install",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja Multi-Config",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows x64 (MSVC)",
+      "description": "로컬 개발용. Visual Studio '폴더 열기' 또는 개발자 명령 프롬프트에서 사용",
+      "inherits": "windows-base"
+    },
+    {
+      "name": "ci-windows",
+      "displayName": "CI: Windows x64 (MSVC, 경고=오류)",
+      "inherits": "windows-base",
+      "cacheVariables": { "DESKPET_WARNINGS_AS_ERRORS": "ON" }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux (GCC, Debug)",
+      "description": "플랫폼 독립 모듈 빌드·테스트 (Windows 전용 타깃은 제외됨)",
+      "inherits": "linux-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "linux-gcc-asan",
+      "displayName": "Linux (GCC, Debug, ASan+UBSan)",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "DESKPET_ENABLE_SANITIZERS": "ON" }
+    },
+    {
+      "name": "ci-linux",
+      "displayName": "CI: Linux (GCC, ASan+UBSan, 경고=오류)",
+      "inherits": "linux-gcc-asan",
+      "cacheVariables": { "DESKPET_WARNINGS_AS_ERRORS": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-debug", "configurePreset": "windows-msvc", "configuration": "Debug" },
+    { "name": "windows-release", "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "ci-windows-debug", "configurePreset": "ci-windows", "configuration": "Debug" },
+    { "name": "ci-windows-release", "configurePreset": "ci-windows", "configuration": "Release" },
+    { "name": "linux-gcc", "configurePreset": "linux-gcc" },
+    { "name": "linux-gcc-asan", "configurePreset": "linux-gcc-asan" },
+    { "name": "ci-linux", "configurePreset": "ci-linux" }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "windows-debug", "inherits": "test-base", "configurePreset": "windows-msvc", "configuration": "Debug" },
+    { "name": "windows-release", "inherits": "test-base", "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "ci-windows-debug", "inherits": "test-base", "configurePreset": "ci-windows", "configuration": "Debug" },
+    { "name": "ci-windows-release", "inherits": "test-base", "configurePreset": "ci-windows", "configuration": "Release" },
+    { "name": "linux-gcc", "inherits": "test-base", "configurePreset": "linux-gcc" },
+    { "name": "linux-gcc-asan", "inherits": "test-base", "configurePreset": "linux-gcc-asan" },
+    { "name": "ci-linux", "inherits": "test-base", "configurePreset": "ci-linux" }
+  ],
+  "packagePresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-msvc",
+      "configurations": [ "Release" ],
+      "generators": [ "ZIP" ]
+    },
+    {
+      "name": "ci-windows-release",
+      "configurePreset": "ci-windows",
+      "configurations": [ "Release" ],
+      "generators": [ "ZIP" ]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "windows-release",
+      "displayName": "로컬: 구성 → Release 빌드 → 테스트 → zip 패키지",
+      "steps": [
+        { "type": "configure", "name": "windows-msvc" },
+        { "type": "build", "name": "windows-release" },
+        { "type": "test", "name": "windows-release" },
+        { "type": "package", "name": "windows-release" }
+      ]
+    },
+    {
+      "name": "ci-windows-debug",
+      "displayName": "CI: Windows Debug 빌드 → 테스트",
+      "steps": [
+        { "type": "configure", "name": "ci-windows" },
+        { "type": "build", "name": "ci-windows-debug" },
+        { "type": "test", "name": "ci-windows-debug" }
+      ]
+    },
+    {
+      "name": "ci-windows-release",
+      "displayName": "CI: Windows Release 빌드 → 테스트 → zip 패키지",
+      "steps": [
+        { "type": "configure", "name": "ci-windows" },
+        { "type": "build", "name": "ci-windows-release" },
+        { "type": "test", "name": "ci-windows-release" },
+        { "type": "package", "name": "ci-windows-release" }
+      ]
+    },
+    {
+      "name": "linux-gcc",
+      "displayName": "로컬: Linux 빌드 → 테스트",
+      "steps": [
+        { "type": "configure", "name": "linux-gcc" },
+        { "type": "build", "name": "linux-gcc" },
+        { "type": "test", "name": "linux-gcc" }
+      ]
+    },
+    {
+      "name": "ci-linux",
+      "displayName": "CI: Linux (ASan+UBSan) 빌드 → 테스트",
+      "steps": [
+        { "type": "configure", "name": "ci-linux" },
+        { "type": "build", "name": "ci-linux" },
+        { "type": "test", "name": "ci-linux" }
+      ]
+    }
+  ]
+}

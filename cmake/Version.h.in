@@ -1,0 +1,9 @@
+// 이 파일은 CMake가 cmake/Version.h.in 으로부터 생성합니다. 직접 수정하지 마세요.
+// 버전을 바꾸려면 저장소 루트의 VERSION 파일을 수정합니다.
+#pragma once
+
+#define DESKPET_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define DESKPET_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define DESKPET_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define DESKPET_VERSION_STRING "@PROJECT_VERSION@"
+#define DESKPET_GIT_HASH "@DESKPET_GIT_HASH@"

@@ -1,0 +1,36 @@
+# clang-format 18 설정. 버전 고정: requirements-dev.txt (clang-format==18.1.8)
+# 실행: python scripts/format.py        (수정)
+#       python scripts/format.py --check (검사만, CI와 동일)
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++20
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLambdasOnASingleLine: All
+BreakBeforeBraces: Attach
+FixNamespaceComments: true
+NamespaceIndentation: None
+SpacesBeforeTrailingComments: 2
+
+# include 정렬: 대응 헤더 → 프로젝트 → 테스트 프레임워크 → Windows/DirectX → 표준
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<(gtest|gmock)/'
+    Priority: 2
+  - Regex: '^<(windows|windowsx|winres|d3d11|d3d11_[0-9]|d2d1|d2d1_[0-9]|dxgi|dxgi1_[0-9]|dcomp|wrl/.*)\.h>'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 4
+...

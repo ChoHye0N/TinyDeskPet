@@ -1,0 +1,29 @@
+# Dependabot — 의존성 버전을 매주 확인해 업데이트 PR을 자동으로 만듭니다.
+# PR이 열리면 CI가 자동으로 돌기 때문에, 통과하면 머지만 하면 됩니다.
+version: 2
+updates:
+  # .github/workflows/*.yml 의 uses: actions/checkout@v5 같은 Action 버전
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Seoul
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]   # 여러 Action 업데이트를 PR 하나로 묶음
+
+  # requirements-dev.txt (clang-format, clang-tidy)
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Seoul
+    commit-message:
+      prefix: "build"
+    ignore:
+      # 메이저 버전이 바뀌면 포맷 결과가 달라지므로 자동 업데이트하지 않음 (수동으로 판단)
+      - dependency-name: "clang-*"
+        update-types: ["version-update:semver-major"]

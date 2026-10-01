@@ -1,0 +1,162 @@
+# =============================================================================
+# CI — 모든 PR과 main 푸시에서 코드가 "합쳐도 되는 상태"인지 검증합니다.
+# 설명: docs/05-devops/ci-cd-implementation.md
+#
+#   format ─┬─> lint     (clang-tidy, Linux)
+#           ├─> linux    (GCC + ASan/UBSan, 플랫폼 독립 모듈 테스트)
+#           └─> windows  (MSVC Debug/Release 빌드·테스트, Release zip 아티팩트)
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:   # Actions 탭에서 수동 실행
+
+# 최소 권한 원칙: 코드 읽기만 허용 (NFR-SEC-02)
+permissions:
+  contents: read
+
+# 같은 브랜치에 새 커밋이 올라오면 이전 실행을 취소해 러너 시간을 아낍니다.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  format:
+    name: Format & Hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dev tools
+        run: pip install -r requirements-dev.txt
+
+      - name: Check VERSION format
+        run: python scripts/check_version.py
+
+      - name: Check clang-format
+        run: python scripts/format.py --check
+
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Static Analysis (clang-tidy)
+    needs: format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install tools
+        run: pip install -r requirements-dev.txt ninja
+
+      - name: Configure (compile_commands.json 생성)
+        run: cmake --preset linux-gcc
+
+      - name: Run clang-tidy
+        run: python scripts/run_clang_tidy.py --build-dir build/linux-gcc
+
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux (GCC, ASan+UBSan)
+    needs: format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ninja
+        run: pip install ninja
+
+      - name: Toolchain versions
+        run: |
+          cmake --version
+          ninja --version
+          g++ --version
+
+      # 로컬에서 똑같이 재현: cmake --workflow --preset ci-linux
+      - name: Configure, build, test
+        run: cmake --workflow --preset ci-linux
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-test-logs
+          path: build/ci-linux/Testing/Temporary/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows (MSVC, ${{ matrix.config }})
+    needs: format
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false        # Debug가 실패해도 Release 결과는 끝까지 확인
+      matrix:
+        config: [debug, release]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ninja
+        run: pip install ninja
+
+      # cl.exe, Windows SDK 경로를 환경 변수에 설정 (개발자 명령 프롬프트와 동일)
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Toolchain versions
+        run: |
+          cmake --version
+          ninja --version
+          where.exe cl
+
+      # 로컬에서 똑같이 재현: cmake --workflow --preset ci-windows-<debug|release>
+      - name: Configure, build, test${{ matrix.config == 'release' && ', package' || '' }}
+        run: cmake --workflow --preset ci-windows-${{ matrix.config }}
+
+      - name: Upload package
+        if: matrix.config == 'release'
+        uses: actions/upload-artifact@v6
+        with:
+          name: DeskPet-win64-${{ github.sha }}
+          path: build/ci-windows/package/*.zip
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-${{ matrix.config }}-test-logs
+          path: build/ci-windows/Testing/Temporary/
+          retention-days: 7

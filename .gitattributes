@@ -1,2 +1,14 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# 줄바꿈 정규화: 저장소에는 LF로 저장
+* text=auto eol=lf
+
+# Windows 전용 파일은 CRLF 유지
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리
+*.png binary
+*.jpg binary
+*.vrm binary
+*.glb binary
+*.ico binary

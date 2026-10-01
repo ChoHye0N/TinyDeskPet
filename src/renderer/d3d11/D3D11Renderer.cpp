@@ -1,0 +1,345 @@
+#include "renderer/d3d11/D3D11Renderer.h"
+
+#include "core/Log.h"
+#include "renderer/d3d11/DxCheck.h"
+#include "renderer/d3d11/MeshPass.h"
+#include "renderer/d3d11/PlaceholderPass.h"
+
+#include <iterator>
+
+namespace deskpet::renderer::d3d11 {
+
+D3D11Renderer::D3D11Renderer() = default;
+
+D3D11Renderer::~D3D11Renderer() {
+    shutdown();
+}
+
+bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
+                               const RendererOptions& options) {
+    hwnd_ = static_cast<HWND>(nativeWindow);
+    size_ = size;
+    options_ = options;
+
+    if (hwnd_ == nullptr || size.width <= 0 || size.height <= 0) {
+        core::logging::error("렌더러 초기화 인자가 잘못되었습니다 (hwnd={}, {}x{})",
+                             static_cast<void*>(hwnd_), size.width, size.height);
+        return false;
+    }
+
+    // 패스 실행 순서 = 등록 순서 (docs/02-architecture/SAD.md §7.2)
+    passes_.clear();
+    passes_.push_back(std::make_unique<MeshPass>());  // 3D를 먼저 그림 (ADR-0008)
+    passes_.push_back(std::make_unique<PlaceholderPass>());
+
+    initialized_ = createDeviceResources();
+    if (!initialized_) {
+        releaseDeviceResources();
+        return false;
+    }
+
+    core::logging::info("렌더러 초기화 완료: {}x{}, vsync={}, debugLayer={}", size_.width,
+                        size_.height, options_.vsync, options_.debugLayer);
+    return true;
+}
+
+FrameResult D3D11Renderer::render(const RenderScene& scene) {
+    if (!initialized_) {
+        return FrameResult::Fatal;
+    }
+
+    // 0) 직전 프레임과 입력이 같으면 아무것도 하지 않음. DirectComposition은 마지막으로 Present한
+    //    내용을 계속 합성하므로 화면은 그대로 유지되고, GPU·CPU는 쉴 수 있음
+    if (!needsPresent_ && scene == lastScene_) {
+        return FrameResult::Skipped;
+    }
+
+    // 1) 백버퍼를 완전 투명(premultiplied alpha이므로 RGB도 0)으로 지움
+    ID3D11RenderTargetView* renderTarget = renderTarget_.Get();
+    context_->OMSetRenderTargets(1, &renderTarget, nullptr);
+    constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    context_->ClearRenderTargetView(renderTarget, kTransparent);
+
+    const D3D11_VIEWPORT viewport{
+        0.0f, 0.0f, static_cast<float>(size_.width), static_cast<float>(size_.height), 0.0f, 1.0f};
+    context_->RSSetViewports(1, &viewport);
+
+    // 2) 렌더 패스 실행
+    const D3D11Context ctx = makeContext();
+    for (const auto& pass : passes_) {
+        if (!pass->execute(ctx, scene)) {
+            core::logging::warn("{} 실행 실패 → 디바이스 리소스를 다시 만듭니다", pass->name());
+            return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
+        }
+    }
+
+    // 3) 출력. VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
+    const HRESULT hr = swapChain_->Present(options_.vsync ? 1U : 0U, 0U);
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
+    }
+    if (!check(hr, "Present")) {
+        return FrameResult::Fatal;
+    }
+    lastScene_ = scene;
+    needsPresent_ = false;
+    return FrameResult::Ok;
+}
+
+void D3D11Renderer::resize(core::SizeI size) {
+    if (!initialized_ || size == size_ || size.width <= 0 || size.height <= 0) {
+        return;
+    }
+
+    // 백버퍼를 참조하는 RTV와 D2D 비트맵을 모두 놓아야 ResizeBuffers가 성공합니다.
+    releaseRenderTargets();
+    size_ = size;
+    needsPresent_ = true;
+
+    const HRESULT hr = swapChain_->ResizeBuffers(
+        0, static_cast<UINT>(size.width), static_cast<UINT>(size.height), DXGI_FORMAT_UNKNOWN, 0);
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        if (!handleDeviceLost()) {
+            initialized_ = false;
+        }
+        return;
+    }
+    if (!check(hr, "ResizeBuffers") || !createRenderTargets()) {
+        initialized_ = false;
+    }
+}
+
+void D3D11Renderer::shutdown() {
+    releaseDeviceResources();
+    passes_.clear();
+    d2dFactory_.Reset();
+    initialized_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// 디바이스 종속 리소스 (docs/03-detailed-design/renderer.md §4.1)
+// ---------------------------------------------------------------------------
+
+bool D3D11Renderer::createDeviceResources() {
+    if (!createDevice() || !createSwapChain() || !createDirect2D() || !createComposition() ||
+        !createRenderTargets()) {
+        return false;
+    }
+
+    const D3D11Context ctx = makeContext();
+    for (const auto& pass : passes_) {
+        if (!pass->create(ctx)) {
+            core::logging::error("{} 리소스 생성 실패", pass->name());
+            return false;
+        }
+    }
+    needsPresent_ = true;  // 새 스왑체인은 비어 있음
+    return true;
+}
+
+void D3D11Renderer::releaseDeviceResources() {
+    // 생성의 역순으로 해제
+    for (const auto& pass : passes_) {
+        pass->release();
+    }
+    releaseRenderTargets();
+
+    dcompVisual_.Reset();
+    dcompTarget_.Reset();
+    dcompDevice_.Reset();
+
+    d2dContext_.Reset();
+    d2dDevice_.Reset();
+
+    swapChain_.Reset();
+
+    if (context_) {
+        context_->ClearState();
+        context_->Flush();
+    }
+    context_.Reset();
+    dxgiDevice_.Reset();
+    device_.Reset();
+}
+
+bool D3D11Renderer::createDevice() {
+    // BGRA 지원은 Direct2D와 디바이스를 공유하기 위해 필수입니다.
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    if (options_.debugLayer) {
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
+    }
+
+    const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+    D3D_FEATURE_LEVEL featureLevel{};
+
+    const auto tryCreate = [&](D3D_DRIVER_TYPE driverType, UINT creationFlags) {
+        return D3D11CreateDevice(nullptr, driverType, nullptr, creationFlags, levels,
+                                 static_cast<UINT>(std::size(levels)), D3D11_SDK_VERSION,
+                                 device_.ReleaseAndGetAddressOf(), &featureLevel,
+                                 context_.ReleaseAndGetAddressOf());
+    };
+
+    HRESULT hr = tryCreate(D3D_DRIVER_TYPE_HARDWARE, flags);
+
+    if (FAILED(hr) && (flags & D3D11_CREATE_DEVICE_DEBUG) != 0) {
+        // 디버그 레이어는 Windows "그래픽 도구" 선택적 기능이 있어야 동작합니다 (RISK-04)
+        core::logging::warn(
+            "D3D11 디버그 레이어를 사용할 수 없어 끄고 다시 시도합니다. "
+            "설정 > 시스템 > 선택적 기능 > '그래픽 도구'를 설치하세요.");
+        flags &= ~static_cast<UINT>(D3D11_CREATE_DEVICE_DEBUG);
+        hr = tryCreate(D3D_DRIVER_TYPE_HARDWARE, flags);
+    }
+
+    if (FAILED(hr)) {
+        core::logging::warn("하드웨어 디바이스 생성 실패({}). WARP 소프트웨어 렌더러로 대체합니다.",
+                            hresultToString(hr));
+        hr = tryCreate(D3D_DRIVER_TYPE_WARP, flags);
+    }
+
+    if (!check(hr, "D3D11CreateDevice")) {
+        return false;
+    }
+    core::logging::info("D3D11 디바이스 생성: feature level {:#x}",
+                        static_cast<unsigned>(featureLevel));
+
+#ifndef NDEBUG
+    // 디버거가 붙어 있으면 D3D 오류 지점에서 바로 멈춥니다.
+    ComPtr<ID3D11InfoQueue> infoQueue;
+    if (IsDebuggerPresent() != FALSE && SUCCEEDED(device_.As(&infoQueue))) {
+        infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+        infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
+    }
+#endif
+
+    return check(device_.As(&dxgiDevice_), "IDXGIDevice 조회");
+}
+
+bool D3D11Renderer::createSwapChain() {
+    // 디바이스가 실제로 사용하는 어댑터의 팩토리를 씁니다 (다중 GPU에서 어댑터 불일치 방지).
+    ComPtr<IDXGIAdapter> adapter;
+    ComPtr<IDXGIFactory2> factory;
+    if (!check(dxgiDevice_->GetAdapter(&adapter), "GetAdapter") ||
+        !check(adapter->GetParent(IID_PPV_ARGS(&factory)), "IDXGIFactory2 조회")) {
+        return false;
+    }
+
+    DXGI_SWAP_CHAIN_DESC1 desc{};
+    desc.Width = static_cast<UINT>(size_.width);
+    desc.Height = static_cast<UINT>(size_.height);
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    desc.BufferCount = 2;
+    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;  // 컴포지션 스왑체인은 flip 모델 필수
+    desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;  // 투명 배경의 핵심 (ADR-0001)
+    desc.Scaling = DXGI_SCALING_STRETCH;
+
+    return check(factory->CreateSwapChainForComposition(device_.Get(), &desc, nullptr,
+                                                        swapChain_.ReleaseAndGetAddressOf()),
+                 "CreateSwapChainForComposition");
+}
+
+bool D3D11Renderer::createDirect2D() {
+    if (!d2dFactory_) {
+        const D2D1_FACTORY_OPTIONS factoryOptions{};
+        if (!check(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1),
+                                     &factoryOptions,
+                                     reinterpret_cast<void**>(d2dFactory_.GetAddressOf())),
+                   "D2D1CreateFactory")) {
+            return false;
+        }
+    }
+
+    return check(d2dFactory_->CreateDevice(dxgiDevice_.Get(), d2dDevice_.ReleaseAndGetAddressOf()),
+                 "ID2D1Factory1::CreateDevice") &&
+           check(d2dDevice_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                                 d2dContext_.ReleaseAndGetAddressOf()),
+                 "CreateDeviceContext");
+}
+
+bool D3D11Renderer::createComposition() {
+    // 창(HWND) → 타깃 → 비주얼 → 스왑체인 (docs/02-architecture/SAD.md §7.1)
+    return check(DCompositionCreateDevice(dxgiDevice_.Get(),
+                                          IID_PPV_ARGS(dcompDevice_.ReleaseAndGetAddressOf())),
+                 "DCompositionCreateDevice") &&
+           check(dcompDevice_->CreateTargetForHwnd(hwnd_, TRUE,
+                                                   dcompTarget_.ReleaseAndGetAddressOf()),
+                 "CreateTargetForHwnd") &&
+           check(dcompDevice_->CreateVisual(dcompVisual_.ReleaseAndGetAddressOf()),
+                 "CreateVisual") &&
+           check(dcompVisual_->SetContent(swapChain_.Get()), "SetContent") &&
+           check(dcompTarget_->SetRoot(dcompVisual_.Get()), "SetRoot") &&
+           check(dcompDevice_->Commit(), "DComp Commit");
+}
+
+bool D3D11Renderer::createRenderTargets() {
+    // flip 모델 + D3D11에서는 0번 버퍼가 항상 "현재 백버퍼"를 가리킵니다.
+    ComPtr<ID3D11Texture2D> backBuffer;
+    if (!check(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer)), "GetBuffer") ||
+        !check(device_->CreateRenderTargetView(backBuffer.Get(), nullptr,
+                                               renderTarget_.ReleaseAndGetAddressOf()),
+               "CreateRenderTargetView")) {
+        return false;
+    }
+
+    ComPtr<IDXGISurface> surface;
+    if (!check(backBuffer.As(&surface), "IDXGISurface 조회")) {
+        return false;
+    }
+
+    const D2D1_BITMAP_PROPERTIES1 properties = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (!check(d2dContext_->CreateBitmapFromDxgiSurface(surface.Get(), &properties,
+                                                        d2dTarget_.ReleaseAndGetAddressOf()),
+               "CreateBitmapFromDxgiSurface")) {
+        return false;
+    }
+    d2dContext_->SetTarget(d2dTarget_.Get());
+    return true;
+}
+
+void D3D11Renderer::releaseRenderTargets() {
+    if (d2dContext_) {
+        d2dContext_->SetTarget(nullptr);
+    }
+    d2dTarget_.Reset();
+
+    if (context_) {
+        context_->OMSetRenderTargets(0, nullptr, nullptr);
+    }
+    renderTarget_.Reset();
+
+    if (context_) {
+        context_->Flush();
+    }
+}
+
+bool D3D11Renderer::handleDeviceLost() {
+    const HRESULT reason = device_ ? device_->GetDeviceRemovedReason() : E_FAIL;
+    core::logging::warn("GPU 디바이스 손실 감지 (원인: {}). 리소스를 다시 만듭니다.",
+                        hresultToString(reason));
+
+    releaseDeviceResources();
+    if (!createDeviceResources()) {
+        core::logging::error("GPU 디바이스 복구 실패");
+        releaseDeviceResources();
+        initialized_ = false;
+        return false;
+    }
+
+    core::logging::info("GPU 디바이스 복구 완료");
+    return true;
+}
+
+D3D11Context D3D11Renderer::makeContext() const {
+    D3D11Context ctx;
+    ctx.device = device_.Get();
+    ctx.context = context_.Get();
+    ctx.renderTarget = renderTarget_.Get();
+    ctx.d2d = d2dContext_.Get();
+    ctx.viewport = size_;
+    return ctx;
+}
+
+}  // namespace deskpet::renderer::d3d11
