@@ -25,16 +25,20 @@ core::Mat4 fitCameraToBounds(const model::Bounds& bounds, core::SizeI viewport) 
     // 거리를 D = H / tan이라 하면, 앞으로 front만큼 나온 점은 D / (D − front)배 커 보임.
     // 축에서 u 떨어진 점이 들어오려면 u·D ≤ H·usable·(D − front) → u ≤ usable·(H − front·tan)
     // 상자 앞면에 맞추면 깊은 모델(돌린 꼬리 등)일수록 z = 0의 발이 원근 때문에 위로 뜸
-    const float forHeight = size.y / (2.0f * usable) + front * tanHalf * 0.5f;
-    const float forWidth = size.x * 0.5f / (aspect * usable) + front * tanHalf;
+    //
+    // 세로: 발(min.y)은 화면 맨 아래(NDC −1, 여백 없음 — 창 바닥이 곧 작업 표시줄 위),
+    //       위쪽만 여백. max.y − (min.y + H) ≤ usable·(H − front·tan)
+    // 가로: 발(x = 0)이 화면 가운데. 앱이 발 = 창 가로 중앙으로 보고 창 위치·벽을 계산하므로
+    //       상자가 한쪽으로 치우쳐도 넓은 쪽 반폭으로 좌우 대칭으로 맞춤
+    const float halfWidth = std::max(-bounds.min.x, bounds.max.x);
+    const float forHeight = (size.y + usable * front * tanHalf) / (1.0f + usable);
+    const float forWidth = halfWidth / (aspect * usable) + front * tanHalf;
     const float halfHeight = std::max(forHeight, forWidth);
     const float distance = halfHeight / tanHalf;
 
-    // 발(min.y, z = 0)이 화면 아래 여백 위치에 오도록 시선 높이를 정함
-    const float centerX = (bounds.min.x + bounds.max.x) * 0.5f;
-    const float centerY = bounds.min.y + halfHeight * usable;
-    const core::Vec3 target{centerX, centerY, 0.0f};
-    const core::Vec3 eye{centerX, centerY, distance};  // 모델 정면(+Z)에서 바라봄
+    const float centerY = bounds.min.y + halfHeight;  // 발(min.y, z = 0)이 화면 맨 아래
+    const core::Vec3 target{0.0f, centerY, 0.0f};
+    const core::Vec3 eye{0.0f, centerY, distance};  // 모델 정면(+Z)에서 바라봄
 
     const float nearZ = (distance - front) * 0.5f;
     const float farZ = (distance - std::min(bounds.min.z, 0.0f)) * 2.0f;

@@ -370,8 +370,11 @@ TEST_F(ApplicationTest, DpiChanged_ResizesWindowAndRendererKeepingFeet) {
     EXPECT_EQ(window_.size, (core::SizeI{400, 400}));
     EXPECT_EQ(renderer_.lastResize, (core::SizeI{400, 400}));
     EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{400, 400}));
-    // 발 높이는 그대로. 창이 커져 오른쪽 화면 끝(1920)을 넘으므로 안쪽으로 밀림 (FR-17)
-    EXPECT_EQ(window_.position, (PointI{1920 - 400, 1040 - 400}));
+    // 발 높이는 그대로. 커진 슬라임이 오른쪽 화면 끝(1920)을 넘지 않을 만큼만 안쪽으로 밀림
+    // (FR-17). 창의 투명한 여백은 화면 밖으로 나가도 됨
+    EXPECT_EQ(window_.position.y, 1040 - 400);
+    EXPECT_LE(window_.position.x + window_.hitRegion.right, 1920);
+    EXPECT_LT(window_.position.x, 1780 - 200);  // 발(1780)이 그대로면 넘치므로 안쪽으로 밀림
     EXPECT_LE(window_.hitRegion.right, 400);
     EXPECT_GT(window_.hitRegion.width(), 200);
 }
@@ -391,7 +394,29 @@ TEST_F(ApplicationTest, DraggedPastDesktopEdge_StaysInsideAfterRelease) {
     auto app = makeApp();
     (void)app->run();
 
-    EXPECT_LE(window_.position.x + 200, 1920);
+    // 막는 기준은 창이 아니라 그려지는 영역: 그 오른쪽 끝이 모니터 끝에 맞음.
+    // 창의 투명한 여백은 화면 밖으로 나가도 됨 (창 반폭으로 막으면 끝에서 멈춰 보임)
+    const int visibleRight = window_.position.x + window_.hitRegion.right;
+    EXPECT_LE(visibleRight, 1920);
+    EXPECT_GE(visibleRight, 1918);
+    EXPECT_GT(window_.position.x + 200, 1920);
+}
+
+TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{-500.0f, 1000.0f}}});
+    for (int i = 0; i < 12; ++i) {
+        window_.frames.push_back({});
+    }
+    window_.frames.push_back({core::PointerUpEvent{{-500.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
+    (void)app->run();
+
+    const int visibleLeft = window_.position.x + window_.hitRegion.left;
+    EXPECT_GE(visibleLeft, 0);
+    EXPECT_LE(visibleLeft, 2);
 }
 
 // ---------------------------------------------------------------------------

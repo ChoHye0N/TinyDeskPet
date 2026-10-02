@@ -12,15 +12,11 @@
 
 | 파일 이름 | 출처 (URL) | 제작자 | 라이선스 / 이용 조건 | 재배포 가능 여부 |
 |---|---|---|---|---|
-| `Seed-san.vrm` (VRM 1.0) | https://github.com/vrm-c/vrm-specification/tree/master/samples/Seed-san | VirtualCast, Inc. | [VRM Public License 1.0](https://vrm.dev/en/licenses/1.0/) | 커밋하지 않음 (아래 받기 명령 사용) |
+| (기록 필요) `zmd_EM.vrm`, `Ellen_Joe_Maid.vrm` | | | | 커밋하지 않음 |
 
-### 받기
+초기에 쓰던 VRM 공식 샘플 Seed-san은 모델 파일 안에 몸에서 1.5m 떨어진 물체가 있어 화면 맞춤이 어긋나 더 이상 쓰지 않습니다.
 
-```bash
-curl -L -o assets/models/Seed-san.vrm https://raw.githubusercontent.com/vrm-c/vrm-specification/master/samples/Seed-san/vrm/Seed-san.vrm
-```
-
-빌드하면 `assets/models/`가 실행 파일 옆 `models/`로 복사되고, `deskpet.ini`의 `[model] path`가 이 파일을 가리킵니다.
+빌드하면 `assets/models/`가 실행 파일 옆 `models/`로 복사되고, `deskpet.ini`의 `[model] path`가 가리키는 파일을 읽습니다.
 
 ## 다른 형식 (PMX, FBX)
 

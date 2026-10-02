@@ -141,9 +141,9 @@ TEST(Config, MissingFile_ReturnsDefaultsWithWarning) {
 TEST(Config, ModelPath_DefaultsToEmptyAndIsReadAsText) {
     EXPECT_TRUE(parseConfig("").config.model.path.empty());
 
-    const auto result = parseConfig("[model]\npath = models/Seed-san.vrm   ; 주석\n");
+    const auto result = parseConfig("[model]\npath = models/zmd_EM.vrm   ; 주석\n");
     EXPECT_TRUE(result.warnings.empty());
-    EXPECT_EQ(result.config.model.path, "models/Seed-san.vrm");
+    EXPECT_EQ(result.config.model.path, "models/zmd_EM.vrm");
 }
 
 TEST(Config, LastPosition_IsOptionalAndReadWhenPresent) {
