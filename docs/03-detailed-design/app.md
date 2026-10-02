@@ -106,11 +106,18 @@ if result == Fatal: exitCode = RendererFailed; break
 |---|---|---|---|
 | `About` | `DeskPet 0.1.0` (버전 문자열) | 항상 비활성 (정보 표시용) | — |
 | — | 구분선 | | |
-| `Jump` | 점프 | 캐릭터가 Idle 또는 Walk일 때 | `character.jump()` |
+| `ScaleInfo` | `크기 100%` (현재 크기) | 항상 비활성 (정보 표시용) | — |
+| `ScaleUp` | 크게 | 200% 미만 | `setScalePercent(+10)` (FR-06) |
+| `ScaleDown` | 작게 | 50% 초과 | `setScalePercent(−10)` |
+| — | 구분선 | | |
 | `ResetPosition` | 위치 초기화 | 항상 | `resetCharacterPosition()` |
 | `ToggleVisible` | 숨기기 / 보이기 | 항상 | `window.hide()/show()`. 숨김 중에는 트레이 메뉴로만 되돌릴 수 있음 |
 | — | 구분선 | | |
 | `Quit` | 종료 | 항상 | `requestQuit()` |
+
+메뉴에서 점프는 뺐습니다 (더블클릭으로만, FR-13). 메뉴 id 2(예전 `Jump`)는 비워 둡니다.
+
+**크기 조절 (FR-06)**: 50% ~ 200%, 10% 단위. 바뀌면 `resizeWindow()`가 DPI 변경과 같은 경로로 창·렌더러·카메라·벽·클릭 영역을 갱신하고, 발 위치를 기준으로 창을 다시 놓아 캐릭터가 같은 자리에 서 있습니다. 종료할 때 `[state] scale`로 저장하고, 시작할 때 10% 단위·범위로 맞춰 복원합니다.
 
 ### 4.5 좌표 변환
 
@@ -121,7 +128,7 @@ if result == Fatal: exitCode = RendererFailed; break
 | 발 → 창 좌상단 | `(round(F.x − W/2), round(F.y − H))` |
 | 시작 위치 (발) | `(workArea.right − marginRight × 배율 − W/2, workArea.bottom)` |
 | 발 x 범위 (FR-17) | `[desktop.left + (W/2 − hit.left), desktop.right − (hit.right − W/2)]` — **그려지는 영역**(`hitRegion`, 모델 경계 상자 투영)이 가상 데스크톱 안에 머묾. 창 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로, 창의 투명한 부분은 화면 밖으로 나가도 됨. 모델·DPI가 바뀌면 다시 계산 |
-| 창 크기 `W × H` | 설정 크기 × DPI 배율 (물리 px). 물리 상수(중력 등)는 배율과 무관 |
+| 창 크기 `W × H` | 설정 크기 × DPI 배율 × 사용자 크기(%) (물리 px). 슬라임·모델 모두 창에 맞춰 그리므로 창 크기만 바꾸면 캐릭터 크기가 바뀜. 물리 상수(중력 등)는 배율과 무관 |
 | 바닥 | `workArea.bottom` |
 
 플레이스홀더 캐릭터 (창 내부 좌표)

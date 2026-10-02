@@ -118,6 +118,7 @@ flowchart TD
 | FR-03 | 창은 작업 표시줄과 Alt+Tab 목록에 나타나지 않아야 한다 | M | M0 | 수동 테스트 |
 | FR-04 | 캐릭터 영역 밖의 클릭은 아래 창으로 전달되어야 한다 | M | M0 (도형 영역) / M5 (알파 기반) | 수동 테스트 |
 | FR-05 | 시작 시 캐릭터는 주 모니터 작업 영역의 오른쪽 아래, 바닥 위에 서 있어야 한다 | M | M0 | 단위 테스트 (App) |
+| FR-06 | 메뉴에서 캐릭터 크기를 50% ~ 200%(10% 단위)로 조절할 수 있고, 다음 실행 때 유지되어야 한다 | S | M1 | 단위 테스트 (App) |
 
 ### 3.2 상호작용
 
@@ -127,7 +128,7 @@ flowchart TD
 | FR-11 | 드래그 판정은 일정 거리(기본 4px) 이상 움직였을 때 시작되어야 한다 (클릭과 구분) | M | M0 | 단위 테스트 |
 | FR-12 | 공중에서 놓으면 중력에 따라 바닥까지 낙하해야 한다 | M | M0 | 단위 테스트 |
 | FR-13 | 대기 중 더블클릭하면 점프해야 한다 | M | M0 | 단위 테스트 |
-| FR-14 | 우클릭 시 컨텍스트 메뉴(점프 / 위치 초기화 / 종료)를 표시해야 한다 | M | M0 | 수동 테스트 |
+| FR-14 | 우클릭 시 컨텍스트 메뉴(크기 / 위치 초기화 / 숨기기 / 종료)를 표시해야 한다. 점프는 더블클릭(FR-13)으로만 | M | M0 | 단위 테스트 (App) |
 | FR-15 | 작업 영역이 바뀌면(작업 표시줄 이동, 해상도 변경) 바닥 높이를 다시 계산해야 한다 | S | M0 | 수동 테스트 |
 | FR-16 | 놓는 순간의 드래그 속도로 던질 수 있어야 한다 (관성) | S | M1 | 단위 테스트 |
 | FR-17 | 캐릭터는 화면(가상 데스크톱) 밖으로 완전히 나가지 않아야 한다 | S | M1 | 단위 테스트 |
@@ -191,6 +192,7 @@ flowchart TD
 | FR-01, FR-02, FR-03 | [platform.md](../03-detailed-design/platform.md), [renderer.md](../03-detailed-design/renderer.md) | `src/platform/win32/Win32Window.cpp`, `src/renderer/d3d11/D3D11Renderer.cpp` | 수동 |
 | FR-04 | [platform.md](../03-detailed-design/platform.md) | `Win32Window::setHitRegionEllipse` | 수동 |
 | FR-05, FR-15 | [app.md](../03-detailed-design/app.md) | `Application::resetCharacterPosition` | `tests/app/ApplicationTests.cpp` |
+| FR-06 | [app.md](../03-detailed-design/app.md) | `Application::setScalePercent` | `tests/app/ApplicationTests.cpp` |
 | FR-10 ~ FR-13 | [character.md](../03-detailed-design/character.md) | `CharacterController` | `tests/character/CharacterControllerTests.cpp` |
 | FR-14 | [app.md](../03-detailed-design/app.md) | `Application::onContextMenu` | `tests/app/ApplicationTests.cpp` |
 | FR-20, FR-21 | [character.md](../03-detailed-design/character.md) | `CharacterController::pose` | `tests/character/CharacterControllerTests.cpp` |

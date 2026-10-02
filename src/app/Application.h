@@ -22,11 +22,19 @@ namespace deskpet::app {
 
 enum class MenuCommand : std::uint8_t {
     About = 1,
-    Jump = 2,
+    // 2: 예전 "점프" (메뉴에서 제거, 더블클릭으로만 점프)
     ResetPosition = 3,
     Quit = 4,
     ToggleVisible = 5,  // 트레이에서 숨기기/보이기 (FR-18)
+    ScaleInfo = 6,      // "크기 100%" (정보 표시용, 비활성)
+    ScaleUp = 7,        // 크게 (FR-06)
+    ScaleDown = 8,      // 작게
 };
+
+// 캐릭터 크기 조절 범위 (%, FR-06)
+inline constexpr int kMinScalePercent = 50;
+inline constexpr int kMaxScalePercent = 200;
+inline constexpr int kScaleStepPercent = 10;
 
 enum class ExitCode : std::uint8_t {
     Ok = 0,
@@ -58,6 +66,9 @@ public:
         return character_;
     }
 
+    // 현재 캐릭터 크기 (%). 종료할 때 [state] scale로 저장
+    [[nodiscard]] int scalePercent() const noexcept { return scalePercent_; }
+
 private:
     [[nodiscard]] bool initialize();
     void shutdown();
@@ -72,6 +83,9 @@ private:
     void refreshGround();
     void refreshBounds();
     void applyDpiScale(float scale);
+    void setScalePercent(int percent);
+    void resizeWindow();  // windowSize_를 targetWindowSize()로 바꾸고 관련된 것을 모두 갱신
+    [[nodiscard]] core::SizeI targetWindowSize() const;
     void refitCamera();
     void setVisible(bool visible);
     void updateAnimation(float dt);
@@ -84,7 +98,8 @@ private:
 
     core::AppConfig config_;
     float dpiScale_ = 1.0f;
-    core::SizeI windowSize_;  // 설정 크기 × DPI 배율 (물리 px)
+    int scalePercent_ = 100;  // 사용자 크기 배율 (%)
+    core::SizeI windowSize_;  // 설정 크기 × DPI 배율 × 사용자 배율 (물리 px)
     bool hidden_ = false;
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;
