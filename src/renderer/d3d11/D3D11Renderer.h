@@ -41,7 +41,11 @@ private:
     [[nodiscard]] bool createDirect2D();
     [[nodiscard]] bool createComposition();
     [[nodiscard]] bool createRenderTargets();
+    [[nodiscard]] bool createMsaaTarget();
     void releaseRenderTargets();
+    [[nodiscard]] unsigned chooseSupportedSampleCount() const;
+    [[nodiscard]] bool runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
+                                 const RenderScene& scene);
 
     [[nodiscard]] bool handleDeviceLost();
     [[nodiscard]] D3D11Context makeContext() const;
@@ -63,7 +67,11 @@ private:
     ComPtr<ID3D11DeviceContext> context_;
     ComPtr<IDXGIDevice> dxgiDevice_;
     ComPtr<IDXGISwapChain1> swapChain_;
+    ComPtr<ID3D11Texture2D> backBuffer_;  // resolve 대상
     ComPtr<ID3D11RenderTargetView> renderTarget_;
+    unsigned sampleCount_ = 1;            // 실제로 쓰는 MSAA 샘플 수 (1 = 끔)
+    ComPtr<ID3D11Texture2D> msaaTarget_;  // sampleCount_ > 1일 때만
+    ComPtr<ID3D11RenderTargetView> msaaView_;
 
     ComPtr<ID2D1Device> d2dDevice_;
     ComPtr<ID2D1DeviceContext> d2dContext_;
@@ -73,7 +81,9 @@ private:
     ComPtr<IDCompositionTarget> dcompTarget_;
     ComPtr<IDCompositionVisual> dcompVisual_;
 
-    std::vector<std::unique_ptr<IRenderPass>> passes_;
+    // 3D 패스(sceneTarget에 그림) → MSAA resolve → 2D 패스(Direct2D, 백버퍼에 그림)
+    std::vector<std::unique_ptr<IRenderPass>> scenePasses_;
+    std::vector<std::unique_ptr<IRenderPass>> overlayPasses_;
 };
 
 }  // namespace deskpet::renderer::d3d11

@@ -1,6 +1,7 @@
 #include "renderer/d3d11/D3D11Renderer.h"
 
 #include "core/Log.h"
+#include "renderer/SampleCount.h"
 #include "renderer/d3d11/DxCheck.h"
 #include "renderer/d3d11/MeshPass.h"
 #include "renderer/d3d11/PlaceholderPass.h"
@@ -28,9 +29,10 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
     }
 
     // 패스 실행 순서 = 등록 순서 (docs/02-architecture/SAD.md §7.2)
-    passes_.clear();
-    passes_.push_back(std::make_unique<MeshPass>());  // 3D를 먼저 그림 (ADR-0008)
-    passes_.push_back(std::make_unique<PlaceholderPass>());
+    scenePasses_.clear();
+    overlayPasses_.clear();
+    scenePasses_.push_back(std::make_unique<MeshPass>());  // 3D를 먼저 그림 (ADR-0008)
+    overlayPasses_.push_back(std::make_unique<PlaceholderPass>());
 
     initialized_ = createDeviceResources();
     if (!initialized_) {
@@ -38,8 +40,8 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
         return false;
     }
 
-    core::logging::info("렌더러 초기화 완료: {}x{}, vsync={}, debugLayer={}", size_.width,
-                        size_.height, options_.vsync, options_.debugLayer);
+    core::logging::info("렌더러 초기화 완료: {}x{}, vsync={}, debugLayer={}, msaa={}", size_.width,
+                        size_.height, options_.vsync, options_.debugLayer, sampleCount_);
     return true;
 }
 
@@ -59,18 +61,27 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
     context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     context_->ClearRenderTargetView(renderTarget, kTransparent);
+    if (msaaView_) {
+        context_->ClearRenderTargetView(msaaView_.Get(), kTransparent);
+    }
 
     const D3D11_VIEWPORT viewport{
         0.0f, 0.0f, static_cast<float>(size_.width), static_cast<float>(size_.height), 0.0f, 1.0f};
     context_->RSSetViewports(1, &viewport);
 
-    // 2) 렌더 패스 실행
-    const D3D11Context ctx = makeContext();
-    for (const auto& pass : passes_) {
-        if (!pass->execute(ctx, scene)) {
-            core::logging::warn("{} 실행 실패 → 디바이스 리소스를 다시 만듭니다", pass->name());
-            return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
-        }
+    // 2) 3D 패스 → MSAA면 샘플 평균을 백버퍼로 resolve → 2D(Direct2D) 패스.
+    //    D2D는 백버퍼에 직접 그리므로 resolve보다 뒤여야 덮어쓰이지 않음
+    if (!runPasses(scenePasses_, scene)) {
+        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
+    }
+    if (msaaTarget_) {
+        // premultiplied alpha라 샘플을 단순 평균해도 가장자리 반투명이 올바름
+        context_->ResolveSubresource(backBuffer_.Get(), 0, msaaTarget_.Get(), 0,
+                                     DXGI_FORMAT_B8G8R8A8_UNORM);
+        context_->OMSetRenderTargets(1, &renderTarget, nullptr);
+    }
+    if (!runPasses(overlayPasses_, scene)) {
+        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
 
     // 3) 출력. VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
@@ -111,7 +122,8 @@ void D3D11Renderer::resize(core::SizeI size) {
 
 void D3D11Renderer::shutdown() {
     releaseDeviceResources();
-    passes_.clear();
+    scenePasses_.clear();
+    overlayPasses_.clear();
     d2dFactory_.Reset();
     initialized_ = false;
 }
@@ -127,10 +139,12 @@ bool D3D11Renderer::createDeviceResources() {
     }
 
     const D3D11Context ctx = makeContext();
-    for (const auto& pass : passes_) {
-        if (!pass->create(ctx)) {
-            core::logging::error("{} 리소스 생성 실패", pass->name());
-            return false;
+    for (const auto* passes : {&scenePasses_, &overlayPasses_}) {
+        for (const auto& pass : *passes) {
+            if (!pass->create(ctx)) {
+                core::logging::error("{} 리소스 생성 실패", pass->name());
+                return false;
+            }
         }
     }
     needsPresent_ = true;  // 새 스왑체인은 비어 있음
@@ -139,8 +153,10 @@ bool D3D11Renderer::createDeviceResources() {
 
 void D3D11Renderer::releaseDeviceResources() {
     // 생성의 역순으로 해제
-    for (const auto& pass : passes_) {
-        pass->release();
+    for (const auto* passes : {&overlayPasses_, &scenePasses_}) {
+        for (const auto& pass : *passes) {
+            pass->release();
+        }
     }
     releaseRenderTargets();
 
@@ -201,6 +217,11 @@ bool D3D11Renderer::createDevice() {
     }
     core::logging::info("D3D11 디바이스 생성: feature level {:#x}",
                         static_cast<unsigned>(featureLevel));
+    sampleCount_ = chooseSupportedSampleCount();
+    if (static_cast<int>(sampleCount_) < options_.msaaSamples) {
+        core::logging::warn("MSAA {}x를 지원하지 않아 {}x로 낮춥니다", options_.msaaSamples,
+                            sampleCount_);
+    }
 
 #ifndef NDEBUG
     // 디버거가 붙어 있으면 D3D 오류 지점에서 바로 멈춥니다.
@@ -227,7 +248,8 @@ bool D3D11Renderer::createSwapChain() {
     desc.Width = static_cast<UINT>(size_.width);
     desc.Height = static_cast<UINT>(size_.height);
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Count =
+        1;  // flip 모델 스왑체인은 멀티샘플 불가 → MSAA는 별도 텍스처에서 resolve
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc.BufferCount = 2;
     desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;  // 컴포지션 스왑체인은 flip 모델 필수
@@ -274,16 +296,17 @@ bool D3D11Renderer::createComposition() {
 
 bool D3D11Renderer::createRenderTargets() {
     // flip 모델 + D3D11에서는 0번 버퍼가 항상 "현재 백버퍼"를 가리킵니다.
-    ComPtr<ID3D11Texture2D> backBuffer;
-    if (!check(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer)), "GetBuffer") ||
-        !check(device_->CreateRenderTargetView(backBuffer.Get(), nullptr,
+    if (!check(swapChain_->GetBuffer(0, IID_PPV_ARGS(backBuffer_.ReleaseAndGetAddressOf())),
+               "GetBuffer") ||
+        !check(device_->CreateRenderTargetView(backBuffer_.Get(), nullptr,
                                                renderTarget_.ReleaseAndGetAddressOf()),
-               "CreateRenderTargetView")) {
+               "CreateRenderTargetView") ||
+        !createMsaaTarget()) {
         return false;
     }
 
     ComPtr<IDXGISurface> surface;
-    if (!check(backBuffer.As(&surface), "IDXGISurface 조회")) {
+    if (!check(backBuffer_.As(&surface), "IDXGISurface 조회")) {
         return false;
     }
 
@@ -299,6 +322,54 @@ bool D3D11Renderer::createRenderTargets() {
     return true;
 }
 
+bool D3D11Renderer::createMsaaTarget() {
+    if (sampleCount_ <= 1) {
+        return true;
+    }
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = static_cast<UINT>(size_.width);
+    desc.Height = static_cast<UINT>(size_.height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;  // resolve하려면 백버퍼와 형식이 같아야 함
+    desc.SampleDesc.Count = sampleCount_;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    return check(device_->CreateTexture2D(&desc, nullptr, msaaTarget_.ReleaseAndGetAddressOf()),
+                 "MSAA 텍스처") &&
+           check(device_->CreateRenderTargetView(msaaTarget_.Get(), nullptr,
+                                                 msaaView_.ReleaseAndGetAddressOf()),
+                 "MSAA 렌더 타깃 뷰");
+}
+
+unsigned D3D11Renderer::chooseSupportedSampleCount() const {
+    // 색(백버퍼 형식)과 깊이 형식 모두 품질 수준이 1 이상이어야 그 샘플 수를 쓸 수 있음
+    const auto supported = [this](int n) {
+        const auto count = static_cast<UINT>(n);
+        for (const DXGI_FORMAT format : {DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D32_FLOAT}) {
+            UINT quality = 0;
+            if (FAILED(device_->CheckMultisampleQualityLevels(format, count, &quality)) ||
+                quality == 0) {
+                return false;
+            }
+        }
+        return true;
+    };
+    return static_cast<unsigned>(chooseSampleCount(options_.msaaSamples, supported));
+}
+
+bool D3D11Renderer::runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
+                              const RenderScene& scene) {
+    const D3D11Context ctx = makeContext();
+    for (const auto& pass : passes) {
+        if (!pass->execute(ctx, scene)) {
+            core::logging::warn("{} 실행 실패 → 디바이스 리소스를 다시 만듭니다", pass->name());
+            return false;
+        }
+    }
+    return true;
+}
+
 void D3D11Renderer::releaseRenderTargets() {
     if (d2dContext_) {
         d2dContext_->SetTarget(nullptr);
@@ -309,6 +380,9 @@ void D3D11Renderer::releaseRenderTargets() {
         context_->OMSetRenderTargets(0, nullptr, nullptr);
     }
     renderTarget_.Reset();
+    msaaView_.Reset();
+    msaaTarget_.Reset();
+    backBuffer_.Reset();  // 백버퍼 참조가 남아 있으면 ResizeBuffers 실패
 
     if (context_) {
         context_->Flush();
@@ -337,6 +411,8 @@ D3D11Context D3D11Renderer::makeContext() const {
     ctx.device = device_.Get();
     ctx.context = context_.Get();
     ctx.renderTarget = renderTarget_.Get();
+    ctx.sceneTarget = msaaView_ ? msaaView_.Get() : renderTarget_.Get();
+    ctx.sampleCount = sampleCount_;
     ctx.d2d = d2dContext_.Get();
     ctx.viewport = size_;
     return ctx;

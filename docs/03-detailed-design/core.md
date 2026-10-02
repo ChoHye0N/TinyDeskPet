@@ -188,6 +188,7 @@ max_fall_speed = 4000  ; px/s, 1 ~ 100000
 [renderer]
 vsync = true
 debug_layer = false
+msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
 
 [model]
 path = models/Seed-san.vrm   ; 문자열 그대로 (검증은 로딩 시점에)

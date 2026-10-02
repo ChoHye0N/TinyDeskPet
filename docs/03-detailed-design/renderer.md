@@ -20,6 +20,7 @@
 |---|---|
 | `src/renderer/RenderScene.h` | 렌더러 입력 데이터 (플랫폼 독립) |
 | `src/renderer/IRenderer.h` | 렌더러 인터페이스, `RendererOptions`, `FrameResult` |
+| `src/renderer/SampleCount.h` | MSAA 샘플 수 선택 `chooseSampleCount` (플랫폼 독립, 테스트 대상) |
 | `src/renderer/d3d11/D3D11Renderer.h/.cpp` | D3D11 + DComp 구현 |
 | `src/renderer/d3d11/D3D11Context.h` | 패스에 넘기는 디바이스 묶음 |
 | `src/renderer/d3d11/IRenderPass.h` | 렌더 패스 인터페이스 |
@@ -58,6 +59,7 @@ struct RenderScene {
 struct RendererOptions {
     bool vsync = true;
     bool debugLayer = false;
+    int msaaSamples = 4;  // 1 = 끔. 지원하지 않으면 절반씩 낮춤
 };
 
 enum class FrameResult : std::uint8_t {
@@ -96,6 +98,7 @@ flowchart TB
         DC --> DT["IDCompositionTarget (HWND)"]
         DC --> DV["IDCompositionVisual"]
         SC --> RT["백버퍼 RTV<br/>+ D2D 타깃 비트맵"]
+        Dev --> MS["MSAA 색 텍스처 + RTV<br/>(samples > 1일 때)"]
         Dev --> Pass["렌더 패스 리소스<br/>(브러시, 셰이더, 버퍼...)"]
     end
 ```
@@ -105,12 +108,14 @@ flowchart TB
 1. **디바이스**: `D3D11CreateDevice(HARDWARE, BGRA_SUPPORT [| DEBUG])`
    - 디버그 플래그로 실패하면(그래픽 도구 미설치) 경고 후 플래그 없이 재시도
    - 하드웨어 생성이 실패하면 `D3D_DRIVER_TYPE_WARP`(소프트웨어)로 재시도
+   - **MSAA 샘플 수 결정**: `chooseSampleCount(options.msaaSamples, supported)`. `supported(n)`은 `B8G8R8A8_UNORM`과 `D32_FLOAT` 모두 `CheckMultisampleQualityLevels(n) > 0`. 지원하지 않으면 8 → 4 → 2 → 1로 낮추고 경고 로그
 2. **스왑체인**: 디바이스의 어댑터에서 얻은 `IDXGIFactory2`로 `CreateSwapChainForComposition`
    - `B8G8R8A8_UNORM`, `FLIP_SEQUENTIAL`, 버퍼 2개, `ALPHA_MODE_PREMULTIPLIED`
+   - 샘플 수는 항상 1: flip 모델(컴포지션 스왑체인 필수)은 멀티샘플 백버퍼를 만들 수 없음 → MSAA는 별도 텍스처에 그린 뒤 resolve
    - 같은 어댑터의 팩토리를 쓰는 이유: 다중 GPU 노트북에서 디바이스와 팩토리의 어댑터가 어긋나는 문제 방지
 3. **Direct2D**: 같은 DXGI 디바이스로 `ID2D1Device` → `ID2D1DeviceContext`
 4. **DirectComposition**: `DCompositionCreateDevice` → `CreateTargetForHwnd(topmost=TRUE)` → `CreateVisual` → `SetContent(swapChain)` → `SetRoot` → `Commit`
-5. **렌더 타깃**: 백버퍼 0번으로 RTV와 D2D 타깃 비트맵 생성
+5. **렌더 타깃**: 백버퍼 0번으로 RTV와 D2D 타깃 비트맵 생성. MSAA면 같은 크기·형식의 멀티샘플 텍스처와 RTV도 생성
 6. **렌더 패스**: 각 패스의 `create(context)`
 
 해제는 **역순**입니다 (`releaseDeviceResources`).
@@ -122,9 +127,12 @@ flowchart TD
     A["render(scene)"] --> S{"needsPresent == false<br/>그리고 scene == lastScene?"}
     S -- "예" --> SK["FrameResult::Skipped<br/>(아무것도 하지 않음)"]
     S -- "아니요" --> B["OMSetRenderTargets(RTV)<br/>ClearRenderTargetView(0,0,0,0)<br/>RSSetViewports"]
-    B --> C["각 패스 execute(ctx, scene)"]
-    C -- "실패 (D2DERR_RECREATE_TARGET 등)" --> L
-    C -- "성공" --> D["Present(vsync ? 1 : 0, 0)"]
+    B --> C["3D 패스 execute<br/>(sceneTarget에 그림)"]
+    C -- "성공" --> RS["MSAA면 ResolveSubresource<br/>(MSAA 텍스처 → 백버퍼)"]
+    RS --> C2["2D 패스 execute<br/>(Direct2D, 백버퍼에 그림)"]
+    C -- "실패" --> L
+    C2 -- "실패 (D2DERR_RECREATE_TARGET 등)" --> L
+    C2 -- "성공" --> D["Present(vsync ? 1 : 0, 0)"]
     D -- "S_OK / DXGI_STATUS_OCCLUDED" --> OK["FrameResult::Ok"]
     D -- "DXGI_ERROR_DEVICE_REMOVED<br/>DXGI_ERROR_DEVICE_RESET" --> L["handleDeviceLost()"]
     D -- "기타 실패" --> F["FrameResult::Fatal"]
@@ -133,6 +141,8 @@ flowchart TD
 ```
 
 - 투명 배경은 `(0, 0, 0, 0)`으로 지웁니다. premultiplied alpha이므로 RGB도 0이어야 완전 투명입니다.
+- **MSAA (`[renderer] msaa`, 기본 4)**: 3D 패스는 `ctx.sceneTarget`(MSAA면 멀티샘플 텍스처, 끄면 백버퍼)에 그리고, 끝나면 `ResolveSubresource`로 샘플 평균을 백버퍼에 씁니다. premultiplied alpha라 단순 평균으로도 가장자리의 반투명이 올바릅니다(투명 배경 위 외곽선이 부드럽게 섞임). 2D 패스(D2D)는 백버퍼에 직접 그리므로 resolve **뒤에** 실행해야 덮어쓰이지 않습니다.
+  - 알파 컷아웃(`discard`) 경계는 MSAA로 부드러워지지 않습니다. 필요하면 alpha-to-coverage(§6).
 - `Present(1, 0)`은 다음 VSync까지 스레드를 재우므로 별도의 `Sleep` 없이 CPU 사용률이 낮게 유지됩니다.
 - **Present 생략 (DEBT-02)**: `RenderScene`은 `operator==`를 가지며, 직전에 Present한 장면과 같으면 아무것도 하지 않고 `Skipped`를 반환합니다. DirectComposition은 마지막으로 Present된 버퍼를 계속 합성하므로 화면은 그대로이고, 창 이동(드래그)은 장면이 아니라 창 위치만 바뀌므로 역시 생략됩니다. 디바이스 재생성·`resize` 뒤에는 `needsPresent_`로 반드시 한 번 그립니다. VSync 대기가 없어지므로 앱이 `waitForEvents(16ms)`로 쉽니다.
 - 슬라임과 대기 동작(숨쉬기)을 켠 모델은 매 프레임 장면이 바뀌어 생략되지 않습니다. `[animation] idle_motion = false`면 대기 중 장면이 같아져 생략됩니다. 측정(Seed-san, Release): GPU 3D 1.6% → 0%, CPU 0.17% → 0.04%.
@@ -144,7 +154,9 @@ namespace deskpet::renderer::d3d11 {
 struct D3D11Context {
     ID3D11Device* device;
     ID3D11DeviceContext* context;
-    ID3D11RenderTargetView* renderTarget;
+    ID3D11RenderTargetView* renderTarget;  // 백버퍼
+    ID3D11RenderTargetView* sceneTarget;   // 3D 패스용 (MSAA 텍스처 또는 백버퍼)
+    unsigned sampleCount;                  // sceneTarget 샘플 수 (깊이 버퍼도 같아야 함)
     ID2D1DeviceContext* d2d;
     core::SizeI viewport;
 };
@@ -166,7 +178,7 @@ public:
 | `MeshPass` | M1a~M4 | D3D11 | 정점/인덱스 버퍼, 상수 버퍼, HLSL, 깊이 버퍼, (M4) 스키닝 |
 | `DebugOverlayPass` | 선택 | Direct2D + DirectWrite | FPS, 상태, 프레임 시간 표시 |
 
-실행 순서: `MeshPass` → `PlaceholderPass`. 모델이 있으면 앱이 `placeholder.visible = false`로 둡니다.
+실행 순서: 3D 패스(`scenePasses_`: `MeshPass`) → MSAA resolve → 2D 패스(`overlayPasses_`: `PlaceholderPass`). 모델이 있으면 앱이 `placeholder.visible = false`로 둡니다.
 
 #### MeshPass (ADR-0008)
 
@@ -183,7 +195,7 @@ public:
 | 그리기 순서 | OPAQUE·MASK 먼저(깊이 쓰기), BLEND 나중(깊이 읽기만) |
 | 블렌드 | premultiplied: `ONE, INV_SRC_ALPHA` (색·알파 모두). PS가 `rgb *= a` 출력 |
 | 셰이딩 | 2단 툰(밝음 1.0 / 그림자 0.75). 감마 공간 그대로 계산 (선형 색공간은 M5) |
-| 깊이 버퍼 | `D32_FLOAT`, 창 크기가 바뀌면 다시 만듦. 실행 후 렌더 타깃에서 분리(다음 D2D 패스용) |
+| 깊이 버퍼 | `D32_FLOAT`, `ctx.sampleCount`와 같은 샘플 수(다르면 그리기 실패). 창 크기나 샘플 수가 바뀌면 다시 만듦. 실행 후 렌더 타깃에서 분리(다음 D2D 패스용) |
 | 실패 처리 | 업로드 실패는 로그 후 그리지 않음(매 프레임 재시도 안 함). 텍스처 디코딩 실패는 흰색 |
 
 ### 4.4 디바이스 손실 복구
@@ -197,7 +209,7 @@ public:
 
 ### 4.5 크기 변경 (`resize`)
 
-RTV와 D2D 타깃 비트맵(백버퍼 참조)을 모두 해제한 뒤 `ResizeBuffers`를 호출하고 다시 만듭니다. 백버퍼 참조가 하나라도 남아 있으면 `ResizeBuffers`가 실패합니다.
+RTV, D2D 타깃 비트맵, resolve용 백버퍼 포인터(모두 백버퍼 참조)와 MSAA 텍스처를 해제한 뒤 `ResizeBuffers`를 호출하고 다시 만듭니다. 백버퍼 참조가 하나라도 남아 있으면 `ResizeBuffers`가 실패합니다.
 
 ### 4.6 HRESULT 검사
 
@@ -214,7 +226,10 @@ namespace deskpet::renderer::d3d11 {
 
 | 방법 | 내용 |
 |---|---|
+| 단위 | `SampleCount.*`: 지원되면 유지, 아니면 절반씩 낮춤, 모두 실패하면 1, 1 이하는 조회 없이 끔 |
+| 단위 | `Config.Msaa_*`, `ApplicationTest.ConfigOptions_ArePassedToRenderer`: 1·2·4·8만 허용, 렌더러로 전달 |
 | 수동 | 투명 배경에 캐릭터만 보임, 숨쉬기·깜빡임 |
+| 수동 | `msaa = 1`과 `4`를 비교해 외곽 계단 현상이 사라짐, 로그에 `msaa=4` |
 | 수동 | `debug_layer = true`로 실행 시 Visual Studio 출력 창에 D3D11 경고/오류가 없음 |
 | 수동 | `dxcap -forcetdr` 후 1초 안에 복구 (NFR-REL-01) |
 | 측정 | 작업 관리자 CPU < 1%, 메모리 < 50MB (NFR-PERF-01, 02) |
@@ -230,4 +245,6 @@ namespace deskpet::renderer::d3d11 {
 | ~~`TODO(M3)`~~ | ✅ M1a: WIC 텍스처 로딩 + 밉맵. sRGB(선형 색공간) 처리는 M5로 이동 |
 | `TODO(M2)` | (선택) WARP 오프스크린 스냅샷 테스트 |
 | ~~`TODO(M4)`~~ | ✅ 구조화 버퍼 GPU 스키닝, 표정 모프 스트림 (ADR-0010) |
+| ~~`TODO(M5)`~~ | ✅ MSAA (멀티샘플 텍스처 → resolve, §4.2) |
+| `TODO` | (선택) alpha-to-coverage로 컷아웃 경계 안티앨리어싱 |
 | `TODO(M5)` | MToon 셰이더, 아웃라인 패스 |

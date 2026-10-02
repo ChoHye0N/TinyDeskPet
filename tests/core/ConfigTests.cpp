@@ -46,6 +46,7 @@ max_fall_speed = 2000
 [renderer]
 vsync = false
 debug_layer = true
+msaa = 8
 
 [log]
 level = debug
@@ -63,6 +64,7 @@ to_file = no
     EXPECT_FLOAT_EQ(c.character.maxFallSpeed, 2000.0f);
     EXPECT_FALSE(c.renderer.vsync);
     EXPECT_TRUE(c.renderer.debugLayer);
+    EXPECT_EQ(c.renderer.msaa, 8);
     EXPECT_EQ(c.log.level, logging::Level::Debug);
     EXPECT_FALSE(c.log.toFile);
 }
@@ -200,4 +202,15 @@ TEST(Config, AnimationIdleMotion_DefaultsOnAndCanBeDisabled) {
     const auto result = parseConfig("[animation]\nidle_motion = false\n");
     EXPECT_TRUE(result.warnings.empty());
     EXPECT_FALSE(result.config.animation.idleMotion);
+}
+
+TEST(Config, Msaa_DefaultsToFourAndAcceptsOnlyPowersOfTwo) {
+    EXPECT_EQ(AppConfig{}.renderer.msaa, 4);
+    EXPECT_EQ(parseConfig("[renderer]\nmsaa = 1\n").config.renderer.msaa, 1);  // 1 = 끔
+
+    for (const char* bad : {"3", "0", "16", "-4"}) {
+        const auto result = parseConfig(std::string("[renderer]\nmsaa = ") + bad + "\n");
+        EXPECT_EQ(result.warnings.size(), 1U) << bad;
+        EXPECT_EQ(result.config.renderer.msaa, 4) << bad;
+    }
 }

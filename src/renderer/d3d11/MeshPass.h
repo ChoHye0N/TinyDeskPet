@@ -62,6 +62,7 @@ private:
     // 깊이 버퍼 (창 크기를 따라감)
     ComPtr<ID3D11DepthStencilView> depthView_;
     core::SizeI depthSize_;
+    unsigned depthSamples_ = 0;  // 깊이 버퍼 샘플 수 (sceneTarget과 같아야 함)
 
     // 업로드한 모델
     const model::Model* uploadedModel_ = nullptr;
