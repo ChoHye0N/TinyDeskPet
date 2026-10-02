@@ -34,13 +34,15 @@ git config core.hooksPath .githooks     # 커밋 전 포맷 자동 검사
 ```text
 <type>(<scope>): <요약, 50자 이내>
 
-<본문: 무엇을, 왜 (선택)>
-
-Refs: FR-16, TODO(M1)
+- <바꾼 것 1>
+- <바꾼 것 2>
 ```
 
+- 요약 한 줄, **빈 줄 하나**, 그다음 `- ` 항목으로 변경 사항을 나열합니다. 설명 문단은 쓰지 않습니다.
+  (git은 첫 빈 줄 전까지를 제목으로 보므로, 빈 줄이 없으면 항목이 제목에 붙어 `git log --oneline`이 길어집니다.)
+
 - type: `feat`, `fix`, `refactor`, `test`, `docs`, `build`, `ci`, `perf`, `chore`
-- scope: `core`, `character`, `platform`, `renderer`, `app`, `ci`, `docs`
+- scope: `core`, `model`, `anim`, `character`, `platform`, `renderer`, `app`, `ci`, `docs`
 - 예: `feat(character): 놓는 순간의 드래그 속도로 던지기 구현`
 
 ## PR 전에 확인

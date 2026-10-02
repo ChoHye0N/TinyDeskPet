@@ -43,7 +43,7 @@ git commit -m "chore: initial project skeleton (M0)"
 gh repo create deskpet --public --source=. --remote=origin --push
 
 # 방법 B: 웹에서 빈 저장소(README 없이)를 만든 뒤
-git remote add origin https://github.com/<내아이디>/deskpet.git
+git remote add origin https://github.com/ChoHye0N/TinyDeskPet.git
 git push -u origin main
 ```
 
@@ -172,8 +172,8 @@ flowchart TD
 - 던지기 (FR-16)
 - 시스템 트레이 아이콘 (FR-18)
 
-[Unreleased]: https://github.com/<내아이디>/deskpet/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/<내아이디>/deskpet/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v0.1.0...v0.2.0
 ```
 
 ### 5.3 릴리스가 실패했을 때
