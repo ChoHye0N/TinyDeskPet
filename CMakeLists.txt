@@ -39,6 +39,17 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 if(MSVC)
   add_compile_options($<$<CONFIG:Release>:/Zi>)
   add_link_options($<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+
+  # Ninja는 cl /showIncludes 출력에서 이 머리말로 헤더 의존성을 찾습니다. 머리말이 한국어 등
+  # 비 ASCII면 바이트가 콘솔 코드 페이지(949 ↔ 65001)에 따라 달라져, configure와 다른 셸에서
+  # 빌드하면 의존성이 0개로 기록 → 헤더를 고쳐도 다시 컴파일되지 않아 객체 크기가 어긋남
+  # (학습 노트 #13). VS 영어 언어 팩 + VSLANG=1033(프리셋)이면 ASCII라 안전
+  if(CMAKE_GENERATOR MATCHES "Ninja" AND CMAKE_CL_SHOWINCLUDES_PREFIX MATCHES "[^ -~]")
+    message(WARNING
+      "cl /showIncludes 머리말이 ASCII가 아닙니다 (\"${CMAKE_CL_SHOWINCLUDES_PREFIX}\"). "
+      "configure와 빌드를 같은 코드 페이지의 셸에서 실행하세요. 근본 해결: Visual Studio "
+      "Installer > 언어 팩 > 영어 설치 후 --fresh로 다시 configure")
+  endif()
 endif()
 
 # 실행 파일을 build/<preset>/bin[/<Config>] 에 모읍니다.
