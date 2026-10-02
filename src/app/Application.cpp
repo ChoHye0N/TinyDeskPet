@@ -33,6 +33,13 @@ int scaled(int value, float scale) {
     return static_cast<int>(std::lround(static_cast<float>(value) * scale));
 }
 
+// 저장된 값이 10% 단위가 아니거나 범위 밖이어도 메뉴 단계와 맞도록 정리
+int snapScalePercent(int percent) {
+    const int snapped = static_cast<int>(
+        std::lround(static_cast<float>(percent) / kScaleStepPercent) * kScaleStepPercent);
+    return std::clamp(snapped, kMinScalePercent, kMaxScalePercent);
+}
+
 // std::visit에 여러 람다를 넘기기 위한 도우미. 처리하지 않은 이벤트 타입이 있으면 컴파일 오류.
 template <class... Ts>
 struct Overloaded : Ts... {
@@ -60,7 +67,8 @@ Application::Application(core::AppConfig config, std::unique_ptr<platform::IWind
       renderer_(std::move(renderer)),
       now_(std::move(timeSource)),
       character_(character::Params::fromConfig(config_.character)) {
-    windowSize_ = {config_.window.width, config_.window.height};
+    scalePercent_ = snapScalePercent(config_.state.scale.value_or(100));
+    windowSize_ = targetWindowSize();
 }
 
 Application::~Application() = default;
@@ -138,14 +146,13 @@ bool Application::initialize() {
 
     // 고 DPI 모니터에서는 설정 크기(96 DPI 기준)를 배율만큼 키움 (DEBT-01)
     dpiScale_ = window_->dpiScale();
-    if (dpiScale_ != 1.0f) {
-        windowSize_ = {scaled(config_.window.width, dpiScale_),
-                       scaled(config_.window.height, dpiScale_)};
+    if (targetWindowSize() != windowSize_) {
+        windowSize_ = targetWindowSize();
         window_->setSize(windowSize_);
         refitCamera();
         desc.size = windowSize_;
-        core::logging::info("DPI 배율 {:.2f} → 창 {}x{}", dpiScale_, windowSize_.width,
-                            windowSize_.height);
+        core::logging::info("DPI 배율 {:.2f}, 크기 {}% → 창 {}x{}", dpiScale_, scalePercent_,
+                            windowSize_.width, windowSize_.height);
     }
 
     renderer::RendererOptions options;
@@ -269,13 +276,13 @@ void Application::handleEvent(const core::Event& event) {
 // ---------------------------------------------------------------------------
 
 void Application::onContextMenu(core::PointI screen) {
-    const bool canJump = character_.state() == character::State::Idle ||
-                         character_.state() == character::State::Walk;
-
     const std::vector<platform::MenuItem> items = {
         makeMenuItem(MenuCommand::About, std::format("DeskPet {}", DESKPET_VERSION_STRING), false),
         platform::MenuItem::makeSeparator(),
-        makeMenuItem(MenuCommand::Jump, "점프", canJump),
+        makeMenuItem(MenuCommand::ScaleInfo, std::format("크기 {}%", scalePercent_), false),
+        makeMenuItem(MenuCommand::ScaleUp, "크게", scalePercent_ < kMaxScalePercent),
+        makeMenuItem(MenuCommand::ScaleDown, "작게", scalePercent_ > kMinScalePercent),
+        platform::MenuItem::makeSeparator(),
         makeMenuItem(MenuCommand::ResetPosition, "위치 초기화"),
         makeMenuItem(MenuCommand::ToggleVisible, hidden_ ? "보이기" : "숨기기"),
         platform::MenuItem::makeSeparator(),
@@ -288,11 +295,13 @@ void Application::onContextMenu(core::PointI screen) {
 
 void Application::executeMenuCommand(int commandId) {
     switch (static_cast<MenuCommand>(commandId)) {
-        case MenuCommand::Jump: (void)character_.jump(); break;
+        case MenuCommand::ScaleUp: setScalePercent(scalePercent_ + kScaleStepPercent); break;
+        case MenuCommand::ScaleDown: setScalePercent(scalePercent_ - kScaleStepPercent); break;
         case MenuCommand::ResetPosition: resetCharacterPosition(); break;
         case MenuCommand::Quit: requestQuit(); break;
         case MenuCommand::ToggleVisible: setVisible(hidden_); break;
         case MenuCommand::About:
+        case MenuCommand::ScaleInfo:
         default: break;  // 0(취소) 포함
     }
 }
@@ -358,10 +367,31 @@ void Application::applyDpiScale(float scale) {
         return;
     }
     dpiScale_ = scale;
-    windowSize_ = {scaled(config_.window.width, scale), scaled(config_.window.height, scale)};
+    resizeWindow();
     core::logging::info("DPI 배율 변경 {:.2f} → 창 {}x{}", scale, windowSize_.width,
                         windowSize_.height);
+}
 
+void Application::setScalePercent(int percent) {
+    percent = std::clamp(percent, kMinScalePercent, kMaxScalePercent);
+    if (percent == scalePercent_) {
+        return;
+    }
+    scalePercent_ = percent;
+    resizeWindow();
+    core::logging::info("크기 {}% → 창 {}x{}", scalePercent_, windowSize_.width,
+                        windowSize_.height);
+}
+
+// 설정 크기(96 DPI 기준) × DPI 배율 × 사용자 배율. 슬라임·모델 모두 창에 맞춰 그리므로
+// 창 크기만 바꾸면 캐릭터 크기가 바뀜. 물리 상수(중력, 걷기 속도 등)는 그대로
+core::SizeI Application::targetWindowSize() const {
+    const float scale = dpiScale_ * static_cast<float>(scalePercent_) / 100.0f;
+    return {scaled(config_.window.width, scale), scaled(config_.window.height, scale)};
+}
+
+void Application::resizeWindow() {
+    windowSize_ = targetWindowSize();
     // 발 위치를 기준으로 창을 다시 놓으므로 캐릭터는 같은 자리에 서 있음
     window_->setSize(windowSize_);
     renderer_->resize(windowSize_);

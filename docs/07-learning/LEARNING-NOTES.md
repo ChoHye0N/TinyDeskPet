@@ -60,6 +60,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 | 트레이 | `Shell_NotifyIconW` + `NOTIFYICON_VERSION_4`, 탐색기 재시작(`TaskbarCreated`) 시 재등록 |
 | 단일 인스턴스 | 이름 있는 뮤텍스 `Local\DeskPet.SingleInstance`, `ERROR_ALREADY_EXISTS`면 종료 |
 | 고 DPI | 매니페스트 PerMonitorV2, `GetDpiForWindow`, `WM_DPICHANGED` → 창 크기 = 설정 × 배율 |
+| 크기 조절 | 창 크기 = 설정 × DPI × 사용자 배율. 그리는 쪽이 창에 맞춰 그리므로 창만 바꾸면 됨. DPI 변경과 같은 갱신 경로(`resizeWindow`)를 재사용해 창·렌더러·카메라·벽을 한 번에 |
 | 전력 절약 | 장면이 직전과 같으면 Present 생략 + `MsgWaitForMultipleObjectsEx`로 입력이 올 때까지 대기 |
 
 ### 물리·상태 (character)
