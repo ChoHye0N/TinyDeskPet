@@ -191,7 +191,7 @@ debug_layer = false
 msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
 
 [model]
-path = models/Seed-san.vrm   ; 문자열 그대로 (검증은 로딩 시점에)
+path = models/zmd_EM.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
 
 [state]                      ; 프로그램이 종료할 때 기록
 last_x = 1720                ; -100000 ~ 100000

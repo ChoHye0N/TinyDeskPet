@@ -29,18 +29,19 @@ std::array<Vec3, 8> projectCorners(const Bounds& b, const Mat4& viewProjection) 
 constexpr Bounds kHumanoid{{-0.75f, 0.0f, -0.15f}, {0.75f, 1.6f, 0.15f}};
 // 걸을 때 돌린 몸까지 포함한 깊은 상자 (꼬리·치마가 앞뒤로 0.8m)
 constexpr Bounds kDeep{{-0.8f, 0.0f, -0.8f}, {0.8f, 1.6f, 0.8f}};
+// 한쪽으로 치우친 상자 (한 손에 든 소품, 비대칭 꼬리 등)
+constexpr Bounds kLopsided{{-0.3f, 0.0f, -0.2f}, {1.2f, 1.6f, 0.2f}};
 
-// 발이 닿는 점 (상자 가로 중앙, 바닥, z = 0)의 NDC y
-float feetNdcY(const Bounds& b, const Mat4& viewProjection) {
-    const auto clip =
-        deskpet::core::transform({(b.min.x + b.max.x) * 0.5f, b.min.y, 0.0f}, viewProjection);
-    return clip.y / clip.w;
+// 발이 닿는 점 (모델 원점 x = 0, 바닥, z = 0)의 NDC
+Vec3 feetNdc(const Bounds& b, const Mat4& viewProjection) {
+    const auto clip = deskpet::core::transform({0.0f, b.min.y, 0.0f}, viewProjection);
+    return {clip.x / clip.w, clip.y / clip.w, clip.z / clip.w};
 }
 
 }  // namespace
 
 TEST(CameraFit, WholeModelIsInsideViewAndDepthRange) {
-    for (const Bounds& bounds : {kHumanoid, kDeep}) {
+    for (const Bounds& bounds : {kHumanoid, kDeep, kLopsided}) {
         for (const SizeI viewport : {SizeI{240, 400}, SizeI{400, 200}}) {
             for (const Vec3& p : projectCorners(bounds, fitCameraToBounds(bounds, viewport))) {
                 EXPECT_GE(p.x, -1.0f);
@@ -55,13 +56,14 @@ TEST(CameraFit, WholeModelIsInsideViewAndDepthRange) {
 
 TEST(CameraFit, PointsOnFeetPlaneAndBehindAreAboveBottom) {
     // 아래 기준은 발이 닿는 평면(z = 0). 그보다 뒤의 바닥 점은 원근 때문에 더 위로 보임.
-    // (상자 앞쪽 바닥 모서리는 실제 정점이 아니라 상자의 빈 구석이므로 검사하지 않음)
-    for (const Bounds& bounds : {kHumanoid, kDeep}) {
-        const Mat4 camera = fitCameraToBounds(bounds, {240, 400});
-        for (const Vec3& p : projectCorners(bounds, camera)) {
-            EXPECT_GE(p.y, p.z > 0.0f ? -1.1f : -1.0f);
+    // (상자 앞쪽 바닥 모서리는 실제 정점이 아니라 상자의 빈 구석이라 조금 내려가도 됨)
+    for (const Bounds& bounds : {kHumanoid, kDeep, kLopsided}) {
+        const auto corners = projectCorners(bounds, fitCameraToBounds(bounds, {240, 400}));
+        for (std::size_t i = 0; i < 8; ++i) {
+            if ((i & 4U) == 0) {  // min.z(발 평면 뒤쪽) 꼭짓점만. 순서는 projectCorners와 같음
+                EXPECT_GE(corners[i].y, -1.0f - 1e-4f);
+            }
         }
-        EXPECT_GE(feetNdcY(bounds, camera), -1.0f);
     }
 }
 
@@ -78,10 +80,18 @@ TEST(CameraFit, ModelFillsLimitingAxisAndIsCentered) {
     EXPECT_NEAR(minX + maxX, 0.0f, 1e-4f);
 }
 
-TEST(CameraFit, FeetAreNearBottomOfView) {
-    // 발이 창 아래쪽에 있어야 창을 바닥에 맞춰 놓았을 때 땅에 서 있음.
-    // 앞뒤로 깊은 모델이라도 떠 보이면 안 됨 (상자 앞면 기준으로 맞추면 발이 위로 뜸)
-    for (const Bounds& bounds : {kHumanoid, kDeep}) {
-        EXPECT_LT(feetNdcY(bounds, fitCameraToBounds(bounds, {240, 400})), -0.95f);
+TEST(CameraFit, FeetTouchBottomOfView) {
+    // 창 바닥 = 작업 표시줄 위. 아래 여백이 있으면 발이 떠 보임.
+    // 앞뒤로 깊은 모델이라도 마찬가지 (상자 앞면 기준으로 맞추면 발이 위로 뜸)
+    for (const Bounds& bounds : {kHumanoid, kDeep, kLopsided}) {
+        EXPECT_NEAR(feetNdc(bounds, fitCameraToBounds(bounds, {240, 400})).y, -1.0f, 1e-4f);
+    }
+}
+
+TEST(CameraFit, FeetAreHorizontallyCenteredEvenForLopsidedBounds) {
+    // 앱은 발이 창 가로 중앙이라고 보고 창 위치·벽을 계산함. 상자 중앙에 맞추면 치우친 모델이
+    // 한쪽으로 밀려 그려져 화면 끝과 어긋남
+    for (const SizeI viewport : {SizeI{240, 400}, SizeI{400, 200}}) {
+        EXPECT_NEAR(feetNdc(kLopsided, fitCameraToBounds(kLopsided, viewport)).x, 0.0f, 1e-4f);
     }
 }

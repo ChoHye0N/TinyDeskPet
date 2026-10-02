@@ -74,6 +74,7 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
         displayBounds_ = animator_->displayBounds(kWalkTurnRadians);
     }
     refitCamera();
+    refreshBounds();  // 그려지는 폭이 바뀌었으므로 벽 위치도 다시 계산
 }
 
 void Application::refitCamera() {
@@ -340,11 +341,15 @@ void Application::refreshGround() {
 }
 
 void Application::refreshBounds() {
-    // 창이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 창 반폭만큼 안쪽으로 (FR-17)
+    // 그려지는 영역(hitRegion)이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
+    // 창 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로,
+    // 창의 투명한 부분은 화면 밖으로 나가도 됨. 발은 창 가로 중앙
     const core::RectI desktop = window_->desktopBounds();
-    const float halfWidth = static_cast<float>(windowSize_.width) / 2.0f;
-    character_.setHorizontalBounds(static_cast<float>(desktop.left) + halfWidth,
-                                   static_cast<float>(desktop.right) - halfWidth);
+    const core::RectI visible = hitRegion();
+    const float center = static_cast<float>(windowSize_.width) / 2.0f;
+    character_.setHorizontalBounds(
+        static_cast<float>(desktop.left) + (center - static_cast<float>(visible.left)),
+        static_cast<float>(desktop.right) - (static_cast<float>(visible.right) - center));
 }
 
 void Application::applyDpiScale(float scale) {
