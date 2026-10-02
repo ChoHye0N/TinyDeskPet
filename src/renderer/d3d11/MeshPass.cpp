@@ -321,7 +321,7 @@ bool MeshPass::updateMorphs(ID3D11DeviceContext* context, const model::Model& mo
 }
 
 bool MeshPass::ensureDepthBuffer(const D3D11Context& ctx) {
-    if (depthView_ && depthSize_ == ctx.viewport) {
+    if (depthView_ && depthSize_ == ctx.viewport && depthSamples_ == ctx.sampleCount) {
         return true;
     }
     depthView_.Reset();
@@ -332,7 +332,7 @@ bool MeshPass::ensureDepthBuffer(const D3D11Context& ctx) {
     desc.MipLevels = 1;
     desc.ArraySize = 1;
     desc.Format = DXGI_FORMAT_D32_FLOAT;
-    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Count = ctx.sampleCount;  // 렌더 타깃과 샘플 수가 다르면 그리기 실패
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 
@@ -343,6 +343,7 @@ bool MeshPass::ensureDepthBuffer(const D3D11Context& ctx) {
         return false;
     }
     depthSize_ = ctx.viewport;
+    depthSamples_ = ctx.sampleCount;
     return true;
 }
 
@@ -375,7 +376,7 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
         return false;
     }
 
-    ID3D11RenderTargetView* renderTarget = ctx.renderTarget;
+    ID3D11RenderTargetView* renderTarget = ctx.sceneTarget;
     context->OMSetRenderTargets(1, &renderTarget, depthView_.Get());
     context->ClearDepthStencilView(depthView_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
     context->OMSetBlendState(premultipliedBlend_.Get(), nullptr, 0xFFFFFFFFU);

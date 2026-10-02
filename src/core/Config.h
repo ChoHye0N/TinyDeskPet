@@ -29,6 +29,7 @@ struct CharacterConfig {
 
 struct RendererConfig {
     bool vsync = true;
+    int msaa = 4;  // MSAA 샘플 수 (1 = 끔, 2, 4, 8). 장치가 지원하지 않으면 렌더러가 낮춤
 #ifdef NDEBUG
     bool debugLayer = false;
 #else

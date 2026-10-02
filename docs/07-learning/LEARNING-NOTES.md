@@ -100,6 +100,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 | 표정 | 희소 정점 델타를 표정이 바뀔 때만 CPU에서 합산 → 두 번째 정점 스트림 |
 | 텍스처 메모리 | 긴 변 512로 축소 + 밉맵 (메모리 169MB → 101MB) |
 | 디바이스 손실 | Present가 `DEVICE_REMOVED/RESET`이면 모든 GPU 리소스를 다시 만듦 |
+| MSAA | 컴포지션 스왑체인(flip 모델)은 멀티샘플 불가 → 멀티샘플 텍스처에 3D를 그리고 `ResolveSubresource`로 백버퍼에 평균. 깊이 버퍼도 같은 샘플 수. premultiplied alpha라 평균만으로 투명 배경 위 외곽이 부드러움. D2D는 resolve 뒤에 그려야 덮어쓰이지 않음 |
 
 ### 애니메이션 (anim)
 

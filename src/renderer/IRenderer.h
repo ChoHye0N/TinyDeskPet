@@ -12,6 +12,7 @@ namespace deskpet::renderer {
 struct RendererOptions {
     bool vsync = true;        // true면 Present가 VSync까지 대기 → CPU 휴식
     bool debugLayer = false;  // D3D11 디버그 레이어 (Windows "그래픽 도구" 필요)
+    int msaaSamples = 4;  // 1이면 MSAA 끔. 지원하지 않으면 chooseSampleCount로 낮춤
 };
 
 enum class FrameResult : std::uint8_t {

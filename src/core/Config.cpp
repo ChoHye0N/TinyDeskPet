@@ -54,6 +54,15 @@ ApplyResult assignInt(std::string_view value, int minValue, int maxValue, int& o
     return std::nullopt;
 }
 
+ApplyResult assignSampleCount(std::string_view value, int& out) {
+    int parsed = 0;
+    if (assignInt(value, 1, 8, parsed).has_value() || (parsed & (parsed - 1)) != 0) {
+        return std::string("1, 2, 4, 8 중 하나가 아닙니다");
+    }
+    out = parsed;
+    return std::nullopt;
+}
+
 ApplyResult assignFloat(std::string_view value, float minValue, float maxValue, float& out) {
     float parsed = 0.0f;
     const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
@@ -131,6 +140,8 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.vsync); }},
         {"renderer.debug_layer",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.debugLayer); }},
+        {"renderer.msaa",
+         [](std::string_view v, AppConfig& c) { return assignSampleCount(v, c.renderer.msaa); }},
         {"model.path",
          [](std::string_view v, AppConfig& c) {
              c.model.path = std::string(v);

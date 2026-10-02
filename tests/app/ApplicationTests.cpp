@@ -226,12 +226,14 @@ TEST_F(ApplicationTest, WorkAreaChanged_MovesCharacterToNewGround) {
 TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     config_.renderer.vsync = false;
     config_.renderer.debugLayer = true;
+    config_.renderer.msaa = 2;
     window_.pollsBeforeQuit = 1;
     auto app = makeApp();
     (void)app->run();
 
     EXPECT_FALSE(renderer_.options.vsync);
     EXPECT_TRUE(renderer_.options.debugLayer);
+    EXPECT_EQ(renderer_.options.msaaSamples, 2);
 }
 
 // ---------------------------------------------------------------------------

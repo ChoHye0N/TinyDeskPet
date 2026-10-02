@@ -32,6 +32,7 @@ add_executable(deskpet_tests
   model/TexturePaddingTests.cpp
   model/TextureSourceTests.cpp
   character/CharacterControllerTests.cpp
+  renderer/SampleCountTests.cpp
   app/ApplicationTests.cpp
   app/CameraFitTests.cpp
   app/Fakes.h)
