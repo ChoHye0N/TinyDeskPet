@@ -115,3 +115,114 @@ TEST(ProceduralAnimator, ModelWithoutHumanoid_StaysInBindPose) {
     ASSERT_EQ(out.skin.size(), 3U);
     EXPECT_EQ(out.skin[1], deskpet::core::Mat4::identity());
 }
+
+// ---------------------------------------------------------------------------
+// 상태 전환 보간 (animate)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr float kDt = 1.0f / 60.0f;
+
+AnimationInput staticInput(Motion motion) {
+    AnimationInput input;
+    input.motion = motion;
+    input.idleMotion = false;
+    return input;
+}
+
+float distance(Vec3 a, Vec3 b) {
+    const Vec3 d = a - b;
+    return std::sqrt(deskpet::core::dot(d, d));
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorTransition, FirstFrame_MatchesTargetPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput out;
+    animator.animate(staticInput(Motion::Dragged), kDt, out);
+    EXPECT_EQ(out.skin, evaluate(model, staticInput(Motion::Dragged)).skin);
+}
+
+TEST(ProceduralAnimatorTransition, MotionChange_BlendsFromPreviousPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput out;
+    animator.animate(staticInput(Motion::Idle), kDt, out);
+    const Vec3 idleHand = posed(model, out, 3);
+    const Vec3 airHand = posed(model, evaluate(model, staticInput(Motion::Airborne)), 3);
+
+    animator.animate(staticInput(Motion::Airborne), kDt, out);
+    const Vec3 hand = posed(model, out, 3);
+    EXPECT_LT(distance(hand, idleHand), distance(hand, airHand));  // 바로 바뀌지 않음
+    EXPECT_GT(distance(hand, idleHand), 0.0f);                     // 그래도 움직이기 시작
+
+    // 전환 시간이 지나면 목표 자세와 같아짐
+    for (float t = kDt; t < ProceduralAnimator::kTransitionSeconds; t += kDt) {
+        animator.animate(staticInput(Motion::Airborne), kDt, out);
+    }
+    EXPECT_LT(distance(posed(model, out, 3), airHand), 1e-4f);
+}
+
+TEST(ProceduralAnimatorTransition, InterruptedTransition_DoesNotJump) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput out;
+    animator.animate(staticInput(Motion::Idle), kDt, out);
+    for (int i = 0; i < 5; ++i) {
+        animator.animate(staticInput(Motion::Airborne), kDt, out);
+    }
+    const Vec3 before = posed(model, out, 3);
+    animator.animate(staticInput(Motion::Idle), kDt, out);  // 전환 도중 다시 바뀜
+    EXPECT_LT(distance(posed(model, out, 3), before), 0.05f);
+}
+
+TEST(ProceduralAnimatorTransition, LandingSquash_IsNotDelayed) {
+    // 착지 반동은 전환과 같은 프레임에 시작하므로 보간으로 약해지면 안 됨
+    const auto model = deskpet::test::makeSkeletonModel();
+    const auto footAfterLanding = [&](float squash) {
+        ProceduralAnimator animator(model);
+        AnimationOutput out;
+        animator.animate(staticInput(Motion::Airborne), kDt, out);
+        AnimationInput landed = staticInput(Motion::Idle);
+        landed.squash = squash;
+        animator.animate(landed, kDt, out);
+        return posed(model, out, 8);
+    };
+    AnimationInput squashed = staticInput(Motion::Idle);
+    squashed.squash = 0.18f;
+    const float expected = distance(posed(model, evaluate(model, squashed), 8),
+                                    posed(model, evaluate(model, staticInput(Motion::Idle)), 8));
+    EXPECT_GT(distance(footAfterLanding(0.18f), footAfterLanding(0.0f)), expected * 0.8f);
+}
+
+TEST(ProceduralAnimatorTransition, Expressions_FadeWithPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput out;
+    animator.animate(staticInput(Motion::Dragged), kDt, out);
+    animator.animate(staticInput(Motion::Idle), kDt, out);
+    const float surprised = expression(out, Expression::Surprised);
+    EXPECT_GT(surprised, 0.0f);
+    EXPECT_LT(surprised, 1.0f);
+    for (float t = 0.0f; t < ProceduralAnimator::kTransitionSeconds; t += kDt) {
+        animator.animate(staticInput(Motion::Idle), kDt, out);
+    }
+    EXPECT_FLOAT_EQ(expression(out, Expression::Surprised), 0.0f);
+}
+
+TEST(ProceduralAnimatorTransition, AfterTransition_IdleIsStatic) {
+    // 전환이 끝나면 다시 같은 skin → Present 생략 유지 (DEBT-02)
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput a;
+    AnimationOutput b;
+    animator.animate(staticInput(Motion::Walk), kDt, a);
+    for (float t = 0.0f; t <= ProceduralAnimator::kTransitionSeconds; t += kDt) {
+        animator.animate(staticInput(Motion::Idle), kDt, a);
+    }
+    animator.animate(staticInput(Motion::Idle), kDt, b);
+    EXPECT_EQ(a.skin, b.skin);
+}

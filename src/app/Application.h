@@ -74,7 +74,7 @@ private:
     void applyDpiScale(float scale);
     void refitCamera();
     void setVisible(bool visible);
-    void updateAnimation();
+    void updateAnimation(float dt);
     void syncWindowToCharacter();
 
     [[nodiscard]] core::PointI windowTopLeftFor(core::Vec2 feet) const;

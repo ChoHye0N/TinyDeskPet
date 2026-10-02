@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 namespace deskpet::anim {
 namespace {
@@ -85,12 +86,16 @@ PoseParams paramsFor(const AnimationInput& in) {
             p.leftKnee = p.rightKnee = 35.0f;
             break;
     }
-    // 착지 반동: 무릎을 굽히고 허벅지를 앞으로 (squash 최대 약 0.18 → 무릎 약 27°)
-    p.leftKnee += 150.0f * in.squash;
-    p.rightKnee += 150.0f * in.squash;
-    p.leftLegSwing += 60.0f * in.squash;
-    p.rightLegSwing += 60.0f * in.squash;
-    return p;
+    return p;  // 착지 반동은 전환 보간 뒤에 더함 (applySquash)
+}
+
+// 표정 (깜빡임 제외): 들려 있거나 공중이면 놀람, 걸을 때는 살짝 웃음
+Expressions expressionsFor(Motion motion) {
+    Expressions e{};
+    const bool surprised = motion == Motion::Dragged || motion == Motion::Airborne;
+    e[static_cast<std::size_t>(Expression::Surprised)] = surprised ? 1.0f : 0.0f;
+    e[static_cast<std::size_t>(Expression::Happy)] = motion == Motion::Walk ? 0.6f : 0.0f;
+    return e;
 }
 
 }  // namespace
@@ -140,7 +145,7 @@ void ProceduralAnimator::poseLeg(int upper, int lower, float swing, float knee) 
     setRotation(lower, core::Quat::axisAngle(kAxisX, radians(knee)));  // + = 발이 뒤로 (무릎 굽힘)
 }
 
-void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& out) const {
+void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     rotations_.assign(skeleton_.size(), core::Quat{});
     const PoseParams p = paramsFor(input);
 
@@ -163,17 +168,77 @@ void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& 
         setRotation(skeleton_.find(HumanBone::Head),
                     core::Quat::axisAngle(kAxisZ, radians(p.headTilt)));
     }
+}
 
+// 착지 반동: 무릎을 굽히고 허벅지를 앞으로 (squash 최대 약 0.18 → 무릎 약 27°).
+// 다리 회전은 모두 X축이라 뒤에 곱해도 각도를 더한 것과 같음
+void ProceduralAnimator::applySquash(float squash) const {
+    if (squash == 0.0f) {
+        return;
+    }
+    const core::Quat thigh = core::Quat::axisAngle(kAxisX, -radians(60.0f * squash));
+    const core::Quat knee = core::Quat::axisAngle(kAxisX, radians(150.0f * squash));
+    for (const auto& [upper, lower] :
+         {std::pair{HumanBone::LeftUpperLeg, HumanBone::LeftLowerLeg},
+          std::pair{HumanBone::RightUpperLeg, HumanBone::RightLowerLeg}}) {
+        const int u = skeleton_.find(upper);
+        const int l = skeleton_.find(lower);
+        if (u >= 0) {
+            setRotation(u, rotations_[static_cast<std::size_t>(u)] * thigh);
+        }
+        if (l >= 0) {
+            setRotation(l, rotations_[static_cast<std::size_t>(l)] * knee);
+        }
+    }
+}
+
+void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressions& base,
+                                     AnimationOutput& out) const {
     skeleton_.computeSkinMatrices(rotations_, out.skin);
-
-    // 표정: 들려 있거나 공중이면 놀람, 걸을 때는 살짝 웃음. 놀람 중에는 깜빡이지 않음
-    out.expressions = {};
-    const bool surprised = input.motion == Motion::Dragged || input.motion == Motion::Airborne;
-    out.expressions[static_cast<std::size_t>(Expression::Surprised)] = surprised ? 1.0f : 0.0f;
-    out.expressions[static_cast<std::size_t>(Expression::Happy)] =
-        input.motion == Motion::Walk ? 0.6f : 0.0f;
+    out.expressions = base;
+    // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
+    const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];
     out.expressions[static_cast<std::size_t>(Expression::Blink)] =
-        input.blink && !surprised ? 1.0f : 0.0f;
+        input.blink ? 1.0f - surprised : 0.0f;
+}
+
+void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& out) const {
+    computeRotations(input);
+    applySquash(input.squash);
+    writeOutput(input, expressionsFor(input.motion), out);
+}
+
+void ProceduralAnimator::animate(const AnimationInput& input, float dt, AnimationOutput& out) {
+    computeRotations(input);
+    Expressions expressions = expressionsFor(input.motion);
+
+    if (!hasPose_) {
+        hasPose_ = true;  // 첫 프레임은 넘어올 자세가 없음
+        motion_ = input.motion;
+    } else if (input.motion != motion_) {
+        // 직전에 그린 자세(전환 도중이면 섞인 자세)에서 출발하므로 전환이 끊겨도 튀지 않음
+        motion_ = input.motion;
+        fromRotations_ = lastRotations_;
+        fromExpressions_ = lastExpressions_;
+        elapsed_ = 0.0f;
+    }
+
+    if (elapsed_ < kTransitionSeconds) {
+        elapsed_ = std::min(elapsed_ + dt, kTransitionSeconds);
+        const float x = elapsed_ / kTransitionSeconds;
+        const float w = x * x * (3.0f - 2.0f * x);  // smoothstep: 시작·끝에서 속도 0
+        for (std::size_t i = 0; i < rotations_.size(); ++i) {
+            rotations_[i] = core::slerp(fromRotations_[i], rotations_[i], w);
+        }
+        for (std::size_t i = 0; i < expressions.size(); ++i) {
+            expressions[i] = fromExpressions_[i] + (expressions[i] - fromExpressions_[i]) * w;
+        }
+    }
+
+    lastRotations_ = rotations_;
+    lastExpressions_ = expressions;
+    applySquash(input.squash);
+    writeOutput(input, expressions, out);
 }
 
 model::Bounds ProceduralAnimator::displayBounds() const {

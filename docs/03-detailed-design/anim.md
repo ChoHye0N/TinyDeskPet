@@ -42,7 +42,9 @@ struct AnimationOutput { std::vector<core::Mat4> skin; std::array<float, Express
 class ProceduralAnimator {
 public:
     explicit ProceduralAnimator(const model::Model& model);  // model은 animator보다 오래 살아야 함
-    void evaluate(const AnimationInput& input, AnimationOutput& out) const;
+    static constexpr float kTransitionSeconds = 0.2f;
+    void evaluate(const AnimationInput& input, AnimationOutput& out) const;  // 입력만으로 정해지는 자세
+    void animate(const AnimationInput& input, float dt, AnimationOutput& out);  // 전환 보간 포함 (매 프레임)
     model::Bounds displayBounds() const;  // 대기·매달림·공중 자세를 모두 담는 경계 상자
 };
 }
@@ -77,7 +79,16 @@ public:
 - 회전 방향: 허벅지 `X축 −각도` = 발이 앞(+Z), 무릎 `X축 +각도` = 발이 뒤, 팔꿈치 `X축 −각도` = 손이 앞.
 - 가슴 본이 없으면 척추 본을 씁니다. 필요한 본이 없으면 그 부위만 움직이지 않습니다.
 - `idleMotion = false`면 Idle 자세가 시간과 무관해져, 장면이 같아지므로 렌더러가 Present를 생략합니다.
-- 놀람 중에는 깜빡이지 않습니다.
+- 깜빡임 가중치 = `1 − 놀람` (완전히 놀라면 깜빡이지 않음).
+
+### 4.2a 상태 전환 보간 (`animate`)
+
+- 동작(`Motion`)이 바뀌면 **직전 프레임에 그린 자세**를 저장하고, `kTransitionSeconds`(0.2초) 동안 본마다 `slerp(이전, 새 자세, w)`로 섞습니다. `w = smoothstep(경과/0.2)` — 시작·끝에서 속도 0.
+- 표정(기쁨·놀람)도 같은 `w`로 선형 보간합니다.
+- 전환 도중 다시 바뀌어도 섞인 자세에서 출발하므로 튀지 않습니다. 이전 자세는 멈춘 상태로 쓰는데(걷던 다리가 그 자리에서 사라짐), 0.2초라 눈에 띄지 않습니다.
+- **착지 반동은 보간 뒤에 더합니다.** 반동은 Airborne→Idle 전환과 같은 프레임에 시작하므로, 함께 섞으면 약해집니다. 다리 회전은 모두 X축이라 뒤에 곱해도 각도를 더한 것과 같습니다. 저장하는 자세에는 반동을 빼서 두 번 더해지지 않게 합니다.
+- 첫 프레임은 넘어올 자세가 없어 그대로 그립니다. 전환이 끝나면 보간을 건너뛰므로 대기 자세가 정지하면 다시 Present 생략이 됩니다.
+- `dt`는 앱이 이번 프레임에 진행한 고정 스텝 시간(`steps × 1/60`)을 넘깁니다. `evaluate`(상태 없음)는 `displayBounds`와 테스트에서 씁니다.
 
 ### 4.3 표시용 경계 상자 (`displayBounds`)
 
@@ -98,11 +109,17 @@ Idle·Dragged·Airborne 자세로 정점을 CPU에서 스키닝해 합친 경계
 | `IdleMotionDisabled_IsStaticOverTime` | 대기 동작 끄면 시간이 달라도 스킨 행렬이 같음 |
 | `DisplayBounds_AreNarrowerThanTPoseButCoverRaisedArms` | 경계 상자가 T포즈보다 좁고 벌린 팔은 포함 |
 | `ModelWithoutHumanoid_StaysInBindPose` | 휴머노이드 본이 없으면 항등 |
+| `ProceduralAnimatorTransition.FirstFrame_MatchesTargetPose` | 첫 프레임은 보간 없음 |
+| `MotionChange_BlendsFromPreviousPose` | 바뀐 직후엔 이전 자세 가까이, 0.2초 뒤 목표 자세 |
+| `InterruptedTransition_DoesNotJump` | 전환 도중 다시 바뀌어도 튀지 않음 |
+| `LandingSquash_IsNotDelayed` | 착지 반동이 전환으로 약해지지 않음 |
+| `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
+| `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
 
 ## 6. 확장 지점
 
 | TODO | 내용 |
 |---|---|
 | `TODO(M4)` | 모션 파일 재생 (VRMA, VMD, FBX) — 같은 휴머노이드 본으로 리타기팅 |
-| `TODO(M4)` | 자세 사이 보간(상태가 바뀔 때 부드럽게 전환), 손가락 |
+| `TODO(M4)` | 손가락 |
 | `TODO(M5)` | SpringBone(머리카락·옷 흔들림), 시선(LookAt) |

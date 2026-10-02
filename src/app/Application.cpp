@@ -80,7 +80,7 @@ void Application::refitCamera() {
 }
 
 // 캐릭터 상태 → 애니메이션 입력 (character와 anim이 서로를 모르도록 app이 변환, SAD 규칙 R3)
-void Application::updateAnimation() {
+void Application::updateAnimation(float dt) {
     if (!animator_) {
         return;
     }
@@ -96,7 +96,7 @@ void Application::updateAnimation() {
     input.squash = pose.squash;
     input.blink = pose.eyesClosed;
     input.idleMotion = config_.animation.idleMotion;
-    animator_->evaluate(input, animation_);
+    animator_->animate(input, dt, animation_);
 }
 
 int Application::run() {
@@ -202,7 +202,7 @@ bool Application::tick() {
     }
 
     syncWindowToCharacter();
-    updateAnimation();
+    updateAnimation(static_cast<float>(steps) * dt);  // 이번 프레임에 진행한 시뮬레이션 시간
 
     switch (renderer_->render(buildScene())) {
         case renderer::FrameResult::Ok:

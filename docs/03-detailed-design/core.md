@@ -247,7 +247,7 @@ Mat4 perspectiveFovRH(float fovY, float aspect, float nearZ, float farZ);  // �
 }
 ```
 
-`Quat` (애니메이션, ADR-0010): `axisAngle`, `fromTo`(정반대 방향은 수직 축으로 180°), `normalized`, 해밀턴 곱 `a * b`(**b 먼저**), `rotate(v)`, `toMat4()`(행 벡터 규약: `p * M == q.rotate(p)`). 쿼터니언 곱과 행렬 곱은 적용 순서가 반대이니 주의.
+`Quat` (애니메이션, ADR-0010): `axisAngle`, `fromTo`(정반대 방향은 수직 축으로 180°), `normalized`, 해밀턴 곱 `a * b`(**b 먼저**), `rotate(v)`, `toMat4()`(행 벡터 규약: `p * M == q.rotate(p)`), 자유 함수 `slerp(a, b, t)`(내적이 음수면 b 부호를 뒤집어 짧은 경로, 거의 같으면 선형 보간 후 정규화). 쿼터니언 곱과 행렬 곱은 적용 순서가 반대이니 주의.
 
 | 규약 | 내용 |
 |---|---|
