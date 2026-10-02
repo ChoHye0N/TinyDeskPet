@@ -92,7 +92,12 @@ public:
 
 ### 4.3 표시용 경계 상자 (`displayBounds`)
 
-Idle·Dragged·Airborne 자세로 정점을 CPU에서 스키닝해 합친 경계 상자입니다. T포즈 경계를 쓰면 팔 폭 때문에 캐릭터가 작게 보이고, Idle만 쓰면 매달림·공중에서 벌린 팔이 창 밖으로 잘립니다. 스킨 가중치가 있는 정점이 하나도 없으면 원래 `Model::bounds`를 씁니다.
+`displayBounds(maxTurnRadians)` — 화면에 실제로 그려질 수 있는 모든 모습을 담는 경계 상자입니다. T포즈 경계를 쓰면 팔 폭 때문에 캐릭터가 작게 보이고, 일부 자세만 쓰면 빠진 자세에서 창 밖으로 잘립니다.
+
+- **자세**: Idle·Dragged·Airborne + **Walk 한 주기를 8등분**(다리를 가장 멀리 뻗는 1/4·3/4, 무릎을 가장 굽히는 0·1/2 포함). 정점은 CPU에서 스키닝합니다.
+- **몸 돌리기**: 앱은 걸을 때 몸을 Y축으로 최대 ±50° 돌려 그립니다. 그러면 정면에선 깊이(Z)였던 꼬리·치마·뒤로 뻗은 머리카락이 화면 가로(X)로 나옵니다. 각 정점에 대해 θ ∈ [−T, T]에서 `x' = x·cos θ + z·sin θ`의 범위를 **해석적으로** 구합니다: `= r·cos(θ − φ)`이므로 양 끝값과, φ가 구간 안이면 ±r. 양 끝 각도만 샘플링하면 비스듬히 뒤로 뻗은 점의 최대(θ = φ)를 놓칩니다. z'도 같은 방법.
+- 스킨 가중치가 있는 정점이 하나도 없으면 원래 `Model::bounds`(돌릴 각도가 있으면 그 꼭짓점 8개를 돌려서)를 씁니다.
+- 걷기 중 바뀌는 회전은 모든 동작에 적용합니다 (걷다가 들리면 돌아오는 도중에도 회전이 남아 있음).
 
 ## 5. 테스트 항목
 
@@ -108,6 +113,9 @@ Idle·Dragged·Airborne 자세로 정점을 CPU에서 스키닝해 합친 경계
 | `Expressions_FollowMotion` | 깜빡임, 매달림 → 놀람(깜빡임 억제), 걷기 → 기쁨 |
 | `IdleMotionDisabled_IsStaticOverTime` | 대기 동작 끄면 시간이 달라도 스킨 행렬이 같음 |
 | `DisplayBounds_AreNarrowerThanTPoseButCoverRaisedArms` | 경계 상자가 T포즈보다 좁고 벌린 팔은 포함 |
+| `DisplayBounds_IncludeWalkingStride` | 걷기에서 앞뒤로 뻗은 발 포함 |
+| `DisplayBounds_CoverBodyTurnedWhileWalking` | 뒤로 뻗은 꼬리가 ±50° 돌렸을 때 옆으로 나오는 만큼 포함 |
+| `DisplayBounds_CoverIntermediateTurnAngles` | 양 끝 각도가 아닌 중간 각도의 최대도 포함 |
 | `ModelWithoutHumanoid_StaysInBindPose` | 휴머노이드 본이 없으면 항등 |
 | `ProceduralAnimatorTransition.FirstFrame_MatchesTargetPose` | 첫 프레임은 보간 없음 |
 | `MotionChange_BlendsFromPreviousPose` | 바뀐 직후엔 이전 자세 가까이, 0.2초 뒤 목표 자세 |

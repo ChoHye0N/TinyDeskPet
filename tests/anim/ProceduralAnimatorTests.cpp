@@ -226,3 +226,50 @@ TEST(ProceduralAnimatorTransition, AfterTransition_IdleIsStatic) {
     animator.animate(staticInput(Motion::Idle), kDt, b);
     EXPECT_EQ(a.skin, b.skin);
 }
+
+// ---------------------------------------------------------------------------
+// 표시용 경계 상자: 걷기 자세, 걷는 방향으로 돌린 몸
+// ---------------------------------------------------------------------------
+
+TEST(ProceduralAnimator, DisplayBounds_IncludeWalkingStride) {
+    // 걷기에서 발이 앞뒤로 약 0.35 나감 (다리 0.82 × sin 25°)
+    const auto model = deskpet::test::makeSkeletonModel();
+    const auto bounds = ProceduralAnimator(model).displayBounds();
+    EXPECT_GT(bounds.max.z, 0.3f);
+    EXPECT_LT(bounds.min.z, -0.3f);
+}
+
+TEST(ProceduralAnimator, DisplayBounds_CoverBodyTurnedWhileWalking) {
+    // 뒤로 1.0 뻗은 꼬리: 정면에서는 폭에 영향이 없지만, 50° 돌리면 옆으로 sin 50° ≈ 0.77
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Vertex tail;
+    tail.position = {0.0f, 1.0f, -1.0f};
+    tail.joints[0] = 1;  // hips
+    tail.weights[0] = 1.0f;
+    model.vertices.push_back(tail);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+    const ProceduralAnimator animator(model);
+
+    EXPECT_LT(animator.displayBounds().max.x, 0.75f);
+
+    constexpr float kTurn = 50.0f * 3.14159265f / 180.0f;
+    const auto turned = animator.displayBounds(kTurn);
+    EXPECT_GT(turned.max.x, 0.76f);  // 왼쪽·오른쪽으로 돌 때 모두 포함
+    EXPECT_LT(turned.min.x, -0.76f);
+}
+
+TEST(ProceduralAnimator, DisplayBounds_CoverIntermediateTurnAngles) {
+    // (0.6, -0.6) 점은 x' = 0.6·cos θ − 0.6·sin θ가 θ = −45°에서 최대 (0.849).
+    // 양 끝(±50°)만 보면 0.845로 조금 모자람 → 중간 각도도 샘플링해야 함
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Vertex point;
+    point.position = {0.6f, 1.0f, -0.6f};
+    point.joints[0] = 1;
+    point.weights[0] = 1.0f;
+    model.vertices.push_back(point);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+
+    constexpr float kTurn = 50.0f * 3.14159265f / 180.0f;
+    const auto bounds = ProceduralAnimator(model).displayBounds(kTurn);
+    EXPECT_GT(bounds.max.x, 0.6f * std::sqrt(2.0f) - 0.002f);
+}

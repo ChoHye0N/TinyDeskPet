@@ -241,27 +241,84 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
     writeOutput(input, expressions, out);
 }
 
-model::Bounds ProceduralAnimator::displayBounds() const {
+namespace {
+
+// a·cos θ + b·sin θ (θ ∈ [−T, T], 0 ≤ T ≤ π/2)의 최소·최대.
+// = r·cos(θ − φ) (r = |(a, b)|, φ = atan2(b, a)) 이므로 양 끝값과, 구간 안에 있으면 ±r.
+// 양 끝 각도만 보면 비스듬히 뒤로 뻗은 점의 최대(θ = φ)를 놓침
+std::pair<float, float> rotatedRange(float a, float b, float turn) {
+    const float c = std::cos(turn);
+    const float s = std::sin(turn);
+    float lo = std::min(a * c - b * s, a * c + b * s);
+    float hi = std::max(a * c - b * s, a * c + b * s);
+    if (turn > 0.0f) {
+        const float r = std::hypot(a, b);
+        const float phi = std::atan2(b, a);
+        if (std::abs(phi) <= turn) {
+            hi = r;
+        }
+        if (kPi - std::abs(phi) <= turn) {  // θ = φ ± π가 구간 안
+            lo = -r;
+        }
+    }
+    return {lo, hi};
+}
+
+// 몸을 Y축으로 θ ∈ [−turn, turn] 돌린 p를 모두 포함 (Mat4::rotationY, 행 벡터):
+// x' = x·cos θ + z·sin θ, z' = z·cos θ − x·sin θ, y는 그대로
+void includeTurnedPoint(core::Vec3 p, float turn, model::Bounds& bounds) {
+    const auto [minX, maxX] = rotatedRange(p.x, p.z, turn);
+    const auto [minZ, maxZ] = rotatedRange(p.z, -p.x, turn);
+    bounds.min = {std::min(bounds.min.x, minX), std::min(bounds.min.y, p.y),
+                  std::min(bounds.min.z, minZ)};
+    bounds.max = {std::max(bounds.max.x, maxX), std::max(bounds.max.y, p.y),
+                  std::max(bounds.max.z, maxZ)};
+}
+
+}  // namespace
+
+model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
+    constexpr float kMax = std::numeric_limits<float>::max();
+    model::Bounds bounds{{kMax, kMax, kMax}, {-kMax, -kMax, -kMax}};
     const bool skinned = std::ranges::any_of(
         model_.vertices, [](const model::Vertex& v) { return v.weights[0] > 0.0f; });
     if (!skinned) {
-        return model_.bounds;  // 움직일 정점이 없으면 원래 경계 그대로
+        if (maxTurnRadians == 0.0f) {
+            return model_.bounds;  // 움직일 정점도, 돌릴 각도도 없으면 원래 경계 그대로
+        }
+        // 원래 경계 상자의 꼭짓점을 돌려서 포함 (정점보다 model.bounds가 기준)
+        const model::Bounds& b = model_.bounds;
+        for (unsigned i = 0; i < 8; ++i) {
+            includeTurnedPoint(
+                {(i & 1U) != 0 ? b.max.x : b.min.x, (i & 2U) != 0 ? b.max.y : b.min.y,
+                 (i & 4U) != 0 ? b.max.z : b.min.z},
+                maxTurnRadians, bounds);
+        }
+        return bounds;
     }
-    constexpr float kMax = std::numeric_limits<float>::max();
-    model::Bounds bounds{{kMax, kMax, kMax}, {-kMax, -kMax, -kMax}};
-    AnimationOutput out;
+
+    // 걷기는 한 주기를 8등분해 샘플링: 다리를 가장 멀리 뻗는 순간(1/4, 3/4)과
+    // 무릎을 가장 굽히는 순간(0, 1/2)이 모두 포함됨
+    constexpr int kWalkSamples = 8;
+    std::vector<AnimationInput> inputs;
     for (const Motion motion : {Motion::Idle, Motion::Dragged, Motion::Airborne}) {
-        AnimationInput input;
-        input.motion = motion;
-        input.idleMotion = false;
+        inputs.push_back({.motion = motion, .idleMotion = false});
+    }
+    for (int i = 0; i < kWalkSamples; ++i) {
+        inputs.push_back(
+            {.motion = Motion::Walk, .time = kWalkCycle * static_cast<float>(i) / kWalkSamples});
+    }
+
+    AnimationOutput out;
+    for (const AnimationInput& input : inputs) {
         evaluate(input, out);
-        includePosedVertices(out.skin, bounds);
+        includePosedVertices(out.skin, maxTurnRadians, bounds);
     }
     return bounds;
 }
 
 void ProceduralAnimator::includePosedVertices(const std::vector<core::Mat4>& skin,
-                                              model::Bounds& bounds) const {
+                                              float maxTurnRadians, model::Bounds& bounds) const {
     for (const model::Vertex& v : model_.vertices) {
         core::Vec3 p = v.position;
         if (v.weights[0] > 0.0f) {
@@ -272,10 +329,7 @@ void ProceduralAnimator::includePosedVertices(const std::vector<core::Mat4>& ski
                 }
             }
         }
-        bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y),
-                      std::min(bounds.min.z, p.z)};
-        bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y),
-                      std::max(bounds.max.z, p.z)};
+        includeTurnedPoint(p, maxTurnRadians, bounds);
     }
 }
 

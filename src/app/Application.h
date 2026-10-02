@@ -90,6 +90,7 @@ private:
     std::optional<anim::ProceduralAnimator> animator_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용
     model::Bounds displayBounds_;  // 카메라·클릭 영역 기준 (애니메이션 자세 포함)
+    float turnRadians_ = 0.0f;  // 걷는 방향으로 돌린 몸 각도 (목표 각도로 서서히 돎)
     core::Mat4 camera_ = core::Mat4::identity();  // model_의 뷰×투영
     std::unique_ptr<platform::IWindow> window_;
     std::unique_ptr<renderer::IRenderer> renderer_;

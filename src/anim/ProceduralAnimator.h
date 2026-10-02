@@ -45,9 +45,11 @@ public:
     // dt = 이번 프레임에 흐른 시뮬레이션 시간 (s)
     void animate(const AnimationInput& input, float dt, AnimationOutput& out);
 
-    // 대기·매달림·공중 자세를 모두 담는 경계 상자. T포즈 경계 대신 카메라 맞춤에 씀
-    // (팔을 내린 대기 자세만 쓰면 매달림·공중에서 벌린 팔이 창 밖으로 잘림)
-    [[nodiscard]] model::Bounds displayBounds() const;
+    // 모든 동작(대기·걷기 한 주기·매달림·공중) 자세를 담는 경계 상자. T포즈 경계 대신 카메라
+    // 맞춤에 씀 (대기 자세만 쓰면 벌린 팔·걷는 다리가 창 밖으로 잘림).
+    // maxTurnRadians: 앱이 몸을 Y축으로 ±이 각도 안에서 돌려 그림 → 뒤로 뻗은 꼬리·치마가
+    // 옆으로 나오는 만큼도 포함
+    [[nodiscard]] model::Bounds displayBounds(float maxTurnRadians = 0.0f) const;
 
 private:
     struct Limb {
@@ -65,7 +67,8 @@ private:
     void applySquash(float squash) const;
     void writeOutput(const AnimationInput& input, const Expressions& base,
                      AnimationOutput& out) const;
-    void includePosedVertices(const std::vector<core::Mat4>& skin, model::Bounds& bounds) const;
+    void includePosedVertices(const std::vector<core::Mat4>& skin, float maxTurnRadians,
+                              model::Bounds& bounds) const;
 
     const model::Model& model_;
     Skeleton skeleton_;

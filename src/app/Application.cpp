@@ -26,6 +26,8 @@ constexpr int kHiddenWaitMs = 100;
 
 // 걷는 방향으로 몸을 돌리는 각도. 90°면 옆모습만 보이므로 얼굴이 보이게 덜 돌림
 constexpr float kWalkTurnRadians = 50.0f * std::numbers::pi_v<float> / 180.0f;
+// 몸 돌리기 속도: 정면 ↔ 걷는 방향을 자세 전환과 같은 시간에 돎 (방향을 바꾸면 그 두 배)
+constexpr float kTurnSpeed = kWalkTurnRadians / anim::ProceduralAnimator::kTransitionSeconds;
 
 int scaled(int value, float scale) {
     return static_cast<int>(std::lround(static_cast<float>(value) * scale));
@@ -68,7 +70,8 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
     animator_.reset();
     if (model_) {
         animator_.emplace(*model_);
-        displayBounds_ = animator_->displayBounds();  // T포즈 폭 대신 실제로 취할 자세 기준
+        // T포즈 폭 대신 실제로 취할 자세 + 걸을 때 돌린 몸 기준 (꼬리·치마가 옆으로 나옴)
+        displayBounds_ = animator_->displayBounds(kWalkTurnRadians);
     }
     refitCamera();
 }
@@ -97,6 +100,10 @@ void Application::updateAnimation(float dt) {
     input.blink = pose.eyesClosed;
     input.idleMotion = config_.animation.idleMotion;
     animator_->animate(input, dt, animation_);
+
+    // 걷는 방향으로 몸 돌리기: 목표 각도로 일정한 속도로 돌아감 (즉시 바뀌면 튀어 보임)
+    const float targetTurn = static_cast<float>(pose.facing) * kWalkTurnRadians;
+    turnRadians_ = core::moveTowards(turnRadians_, targetTurn, kTurnSpeed * dt);
 }
 
 int Application::run() {
@@ -468,8 +475,7 @@ renderer::RenderScene Application::buildScene() const {
         squash.m[0][0] = squash.m[2][2] = 1.0f + 0.5f * pose.squash;
         squash.m[1][1] = 1.0f - pose.squash;
         // 걷는 방향으로 몸을 돌림 (정면 +Z → +X 쪽이 +각도)
-        const core::Mat4 turn =
-            core::Mat4::rotationY(static_cast<float>(pose.facing) * kWalkTurnRadians);
+        const core::Mat4 turn = core::Mat4::rotationY(turnRadians_);
         scene.character.model = model_.get();
         scene.character.viewProjection = turn * squash * camera_;
         scene.character.skinMatrices = animation_.skin;
