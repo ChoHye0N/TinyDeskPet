@@ -157,6 +157,8 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) {
              return assignOptionalInt(v, -100000, 100000, c.state.lastY);
          }},
+        {"state.scale", [](std::string_view v,
+                           AppConfig& c) { return assignOptionalInt(v, 50, 200, c.state.scale); }},
         {"log.level", [](std::string_view v, AppConfig& c) { return assignLevel(v, c.log.level); }},
         {"log.to_file",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.log.toFile); }},

@@ -214,3 +214,12 @@ TEST(Config, Msaa_DefaultsToFourAndAcceptsOnlyPowersOfTwo) {
         EXPECT_EQ(result.config.renderer.msaa, 4) << bad;
     }
 }
+
+TEST(Config, StateScale_IsOptionalPercentWithinRange) {
+    EXPECT_FALSE(parseConfig("").config.state.scale.has_value());
+    EXPECT_EQ(parseConfig("[state]\nscale = 150\n").config.state.scale, 150);
+
+    const auto result = parseConfig("[state]\nscale = 300\n");  // 범위 50 ~ 200 밖
+    EXPECT_EQ(result.warnings.size(), 1U);
+    EXPECT_FALSE(result.config.state.scale.has_value());
+}

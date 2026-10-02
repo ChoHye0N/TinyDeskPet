@@ -50,6 +50,7 @@ struct AnimationConfig {
 struct StateConfig {
     std::optional<int> lastX;  // 마지막 발 위치 (화면 좌표, 물리 px)
     std::optional<int> lastY;
+    std::optional<int> scale;  // 캐릭터 크기 (%, 50 ~ 200). 메뉴의 크게/작게로 바뀜 (FR-06)
 
     // 둘 다 있을 때만 유효
     [[nodiscard]] std::optional<PointI> lastPosition() const {

@@ -196,6 +196,7 @@ path = models/zmd_EM.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
 [state]                      ; 프로그램이 종료할 때 기록
 last_x = 1720                ; -100000 ~ 100000
 last_y = 1032
+scale = 100                  ; 캐릭터 크기 % (50 ~ 200, FR-06)
 
 [log]
 level = info           ; trace/debug/info/warn/error/off

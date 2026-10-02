@@ -178,14 +178,105 @@ TEST_F(ApplicationTest, RightClick_ShowsMenuAndQuitSelectionExits) {
     EXPECT_TRUE(hasQuit);
 }
 
-TEST_F(ApplicationTest, MenuJump_MakesCharacterAirborne) {
+// ---------------------------------------------------------------------------
+// 캐릭터 크기 조절 (FR-06)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const deskpet::platform::MenuItem* findMenuItem(
+    const std::vector<deskpet::platform::MenuItem>& menu, MenuCommand command) {
+    const auto it = std::find_if(menu.begin(), menu.end(), [command](const auto& item) {
+        return item.id == static_cast<int>(command);
+    });
+    return it != menu.end() ? &*it : nullptr;
+}
+
+}  // namespace
+
+TEST_F(ApplicationTest, ContextMenu_HasScaleItemsButNoJump) {
     window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
-    window_.menuChoice = static_cast<int>(MenuCommand::Jump);
+    window_.pollsBeforeQuit = 2;
+    auto app = makeApp();
+    (void)app->run();
+
+    const auto& menu = window_.lastMenu;
+    EXPECT_TRUE(std::none_of(menu.begin(), menu.end(),
+                             [](const auto& item) { return item.label == "점프"; }));
+    const auto* size = findMenuItem(menu, MenuCommand::ScaleInfo);
+    ASSERT_NE(size, nullptr);
+    EXPECT_EQ(size->label, "크기 100%");
+    EXPECT_FALSE(size->enabled);  // 정보 표시용
+    ASSERT_NE(findMenuItem(menu, MenuCommand::ScaleUp), nullptr);
+    ASSERT_NE(findMenuItem(menu, MenuCommand::ScaleDown), nullptr);
+    EXPECT_TRUE(findMenuItem(menu, MenuCommand::ScaleUp)->enabled);
+    EXPECT_TRUE(findMenuItem(menu, MenuCommand::ScaleDown)->enabled);
+}
+
+TEST_F(ApplicationTest, ScaleUp_EnlargesWindowAndKeepsFeetOnGround) {
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::ScaleUp);
     window_.pollsBeforeQuit = 3;
     auto app = makeApp();
     (void)app->run();
 
-    EXPECT_EQ(app->character().state(), State::Airborne);
+    EXPECT_EQ(app->scalePercent(), 110);
+    EXPECT_EQ(window_.size, (core::SizeI{220, 220}));
+    EXPECT_EQ(renderer_.lastResize, (core::SizeI{220, 220}));
+    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{220, 220}));
+    EXPECT_EQ(window_.position.y + 220, 1040);  // 발은 그대로 바닥에
+    EXPECT_FLOAT_EQ(app->character().position().x, kStartFeet.x);
+}
+
+TEST_F(ApplicationTest, ScaleDown_ShrinksWindow) {
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::ScaleDown);
+    window_.pollsBeforeQuit = 3;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(app->scalePercent(), 90);
+    EXPECT_EQ(window_.size, (core::SizeI{180, 180}));
+}
+
+TEST_F(ApplicationTest, ScaleAtMaximum_DisablesScaleUpAndIgnoresIt) {
+    config_.state.scale = 200;
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::ScaleUp);
+    window_.pollsBeforeQuit = 3;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleUp)->enabled);
+    EXPECT_TRUE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
+    EXPECT_EQ(app->scalePercent(), 200);
+    EXPECT_EQ(window_.size, (core::SizeI{400, 400}));
+}
+
+TEST_F(ApplicationTest, ScaleAtMinimum_DisablesScaleDownAndIgnoresIt) {
+    config_.state.scale = 50;
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::ScaleDown);
+    window_.pollsBeforeQuit = 3;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
+    EXPECT_EQ(app->scalePercent(), 50);
+    EXPECT_EQ(window_.size, (core::SizeI{100, 100}));
+}
+
+TEST_F(ApplicationTest, SavedScale_IsRestoredSnappedToStepAndCombinedWithDpi) {
+    config_.state.scale = 137;  // 10% 단위로 맞춤 → 140%
+    window_.dpiScale = 1.5f;
+    window_.pollsBeforeQuit = 2;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(app->scalePercent(), 140);
+    EXPECT_EQ(window_.size, (core::SizeI{420, 420}));  // 200 × 1.5 × 1.4
+    EXPECT_EQ(renderer_.initialSize, (core::SizeI{420, 420}));
+    EXPECT_EQ(window_.position.y + 420, 1040);
 }
 
 TEST_F(ApplicationTest, RendererFatal_ReturnsRendererFailed) {

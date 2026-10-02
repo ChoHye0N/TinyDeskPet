@@ -91,14 +91,15 @@ private:
     bool alreadyRunning_ = false;
 };
 
-// 다음 실행 때 같은 자리에 나타나도록 발 위치를 deskpet.ini [state]에 기록
-void saveLastPosition(const fs::path& configFile, core::Vec2 feet) {
+// 다음 실행 때 같은 자리·같은 크기로 나타나도록 발 위치와 크기를 deskpet.ini [state]에 기록
+void saveState(const fs::path& configFile, core::Vec2 feet, int scalePercent) {
     const std::vector<core::IniValue> values = {
         {"state", "last_x", std::to_string(std::lround(feet.x))},
         {"state", "last_y", std::to_string(std::lround(feet.y))},
+        {"state", "scale", std::to_string(scalePercent)},
     };
     if (!core::saveConfigValues(configFile, values)) {
-        logging::warn("마지막 위치를 저장하지 못했습니다 (쓰기 권한 확인)");
+        logging::warn("마지막 위치·크기를 저장하지 못했습니다 (쓰기 권한 확인)");
     }
 }
 
@@ -194,7 +195,8 @@ int runApplication(HINSTANCE instance) {
     if (exitCode == 0) {
         // 공중에서 종료했어도 높이는 바닥으로 저장 (화면 위쪽 밖 좌표는 복원 시 버려지므로)
         const auto& character = application.character();
-        saveLastPosition(configFile, {character.position().x, character.ground()});
+        saveState(configFile, {character.position().x, character.ground()},
+                  application.scalePercent());
     }
     if (exitCode != 0) {
         const std::u8string logPath = logFile.u8string();
