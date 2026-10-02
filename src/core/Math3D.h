@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cmath>
+#include <numbers>
 
 namespace deskpet::core {
 
@@ -174,7 +175,7 @@ struct Quat {
             if (dot(axis, axis) < 1e-6f) {
                 axis = cross({0.0f, 1.0f, 0.0f}, from);
             }
-            return axisAngle(axis, 3.14159265358979f);
+            return axisAngle(axis, std::numbers::pi_v<float>);
         }
         // q = (from × to, 1 + from·to)를 정규화하면 두 벡터 사이 각의 절반 회전이 됨
         const Vec3 c = cross(from, to);

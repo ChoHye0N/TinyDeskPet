@@ -2,6 +2,8 @@
 # CodeQL — GitHub의 정적 보안 분석. 버퍼 오버플로, 정수 오버플로, 잘못된 포인터 사용 등을
 # 데이터 흐름 분석으로 찾아 Security 탭 > Code scanning 에 보고합니다.
 # 공개 저장소는 무료, 비공개 저장소는 GitHub Advanced Security가 필요합니다.
+# 비공개인 동안은 분석을 건너뜁니다 (결과 업로드가 거부되어 매번 실패하고 약 20분을 소모하므로).
+# 저장소를 공개로 바꾸면 별도 수정 없이 다시 실행됩니다.
 # =============================================================================
 name: CodeQL
 
@@ -22,8 +24,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 예약 실행(schedule) 이벤트에는 저장소 정보가 없어 github.event.repository.private를 쓸 수 없으므로
+  # API로 공개 여부를 직접 조회합니다.
+  visibility:
+    name: Check repository visibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      private: ${{ steps.check.outputs.private }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "private=$(gh api "repos/${{ github.repository }}" --jq .private)" >> "$GITHUB_OUTPUT"
+
   analyze:
     name: Analyze (C/C++)
+    needs: visibility
+    if: needs.visibility.outputs.private == 'false'
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
