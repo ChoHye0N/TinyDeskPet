@@ -17,6 +17,9 @@
       "inherits": "base",
       "generator": "Ninja Multi-Config",
       "architecture": { "value": "x64", "strategy": "external" },
+      "environment": {
+        "VSLANG": "1033"
+      },
       "cacheVariables": {
         "CMAKE_CXX_COMPILER": "cl",
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
