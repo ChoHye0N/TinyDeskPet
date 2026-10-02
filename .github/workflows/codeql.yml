@@ -49,7 +49,7 @@ jobs:
       security-events: write   # 분석 결과 업로드
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -58,7 +58,7 @@ jobs:
           build-mode: manual                 # 아래 빌드를 CodeQL이 관찰해 분석
           queries: security-and-quality
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
