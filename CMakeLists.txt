@@ -37,6 +37,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # 사용자 PC에서 난 크래시 주소를 함수 이름으로 바꿀 때 필요합니다 (PDB는 배포하지 않고 보관).
 # /OPT:REF·ICF: /DEBUG를 켜면 기본값이 꺼지므로 다시 켜서 쓰지 않는 코드를 제거
 if(MSVC)
+  # 프리셋의 architecture(x64, strategy external)는 검사 없이 PATH의 cl을 그대로 씁니다.
+  # 일반 "Developer Command Prompt"는 x86이라, 거기서 configure하면 32비트로 빌드되거나
+  # x64 셸 빌드와 섞여 링크 오류(__stdcall/__thiscall 기호)가 납니다. 여기서 바로 멈춤
+  if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR
+      "64비트 MSVC가 아닙니다 (${CMAKE_CXX_COMPILER}). 'x64 Native Tools Command Prompt for VS'"
+      " 또는 vcvars64.bat 환경에서 cmake --preset <이름> --fresh 로 다시 configure하세요.")
+  endif()
+
   add_compile_options($<$<CONFIG:Release>:/Zi>)
   add_link_options($<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 
