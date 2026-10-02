@@ -3,6 +3,7 @@
 // VRM 정적 메시를 D3D11로 그리는 패스 (ADR-0008, renderer.md §4.5)
 // 불투명·마스크 프리미티브를 먼저, 반투명(BLEND)을 나중에 그립니다.
 
+#include "core/Config.h"
 #include "renderer/d3d11/IRenderPass.h"
 
 #include <wrl/client.h>
@@ -16,6 +17,8 @@ namespace deskpet::renderer::d3d11 {
 
 class MeshPass final : public IRenderPass {
 public:
+    explicit MeshPass(core::OutlineMode outline) : outlineMode_(outline) {}
+
     [[nodiscard]] std::string_view name() const override { return "MeshPass"; }
     [[nodiscard]] bool create(const D3D11Context& ctx) override;
     [[nodiscard]] bool execute(const D3D11Context& ctx, const RenderScene& scene) override;
@@ -31,6 +34,7 @@ private:
         int material = -1;
         bool blend = false;
         bool doubleSided = false;
+        float outlineWidth = 0.0f;  // 0이면 외곽선 없음 (outlineMode_ 반영 후)
     };
 
     [[nodiscard]] bool upload(const D3D11Context& ctx, const model::Model& model);
@@ -42,6 +46,9 @@ private:
     void releaseModel();
     void drawPrimitive(const D3D11Context& ctx, const model::Model& model,
                        const GpuPrimitive& primitive);
+    void drawOutline(const D3D11Context& ctx, const model::Model& model,
+                     const GpuPrimitive& primitive);
+    [[nodiscard]] float outlineWidthFor(const model::Material* material) const;
 
     // 디바이스 독립
     ComPtr<IWICImagingFactory> wic_;
@@ -69,7 +76,10 @@ private:
     ComPtr<ID3D11Buffer> vertexBuffer_;
     ComPtr<ID3D11Buffer> indexBuffer_;
     std::vector<ComPtr<ID3D11ShaderResourceView>> textures_;  // model.textures와 같은 순서
-    std::vector<GpuPrimitive> drawOrder_;                     // 불투명 → 반투명
+    core::OutlineMode outlineMode_;
+    ComPtr<ID3D11PixelShader> outlineShader_;
+    ComPtr<ID3D11RasterizerState> cullFront_;  // 외곽선(반전 헐): 부풀린 껍데기의 뒷면만
+    std::vector<GpuPrimitive> drawOrder_;  // 불투명 → 반투명
 
     // 애니메이션 (ADR-0010)
     ComPtr<ID3D11Buffer> skinBuffer_;  // 본별 스킨 행렬 (구조화 버퍼, 매 프레임 갱신)

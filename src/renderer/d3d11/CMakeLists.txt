@@ -40,10 +40,11 @@ endfunction()
 
 deskpet_compile_shader(shaders/Mesh.hlsl VSMain vs_5_0 g_MeshVS)
 deskpet_compile_shader(shaders/Mesh.hlsl PSMain ps_5_0 g_MeshPS)
+deskpet_compile_shader(shaders/Mesh.hlsl PSOutline ps_5_0 g_MeshOutlinePS)
 target_include_directories(deskpet_renderer_d3d11 PRIVATE "${DESKPET_SHADER_DIR}")
 
 # 생성된 헤더를 포함하는 소스는 의존성을 명시해야 합니다. Ninja Multi-Config에서 컴파일러가 보고하는
 # 포함 파일 목록(/showIncludes)만으로는 생성 헤더가 바뀐 것을 놓쳐, 셰이더를 고쳐도 옛 바이트코드가
 # 실행 파일에 남는 일이 있었습니다.
 set_source_files_properties(MeshPass.cpp PROPERTIES OBJECT_DEPENDS
-  "${DESKPET_SHADER_DIR}/g_MeshVS.h;${DESKPET_SHADER_DIR}/g_MeshPS.h")
+  "${DESKPET_SHADER_DIR}/g_MeshVS.h;${DESKPET_SHADER_DIR}/g_MeshPS.h;${DESKPET_SHADER_DIR}/g_MeshOutlinePS.h")

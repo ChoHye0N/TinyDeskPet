@@ -66,6 +66,10 @@ TEST(PmxImporter, Material_ReadsColorFlagsAndTexture) {
     EXPECT_TRUE(material.doubleSided);
     EXPECT_EQ(material.baseColorTexture, 0);
     EXPECT_EQ(material.alphaMode, AlphaMode::Mask);  // 텍스처 알파로 머리카락 끝 등을 잘라냄
+    // 에지 플래그(0x10) + 에지 크기 1 → MToon과 같은 단위(m)의 외곽선, 에지 색 (0, 0, 0, 1)
+    EXPECT_GT(material.outlineWidth, 0.0f);
+    EXPECT_FLOAT_EQ(material.outlineColor.x, 0.0f);
+    EXPECT_FLOAT_EQ(material.outlineColor.w, 1.0f);
 
     ASSERT_EQ(model.textures.size(), 1U);
     EXPECT_TRUE(model.textures[0].empty());  // 기준 폴더가 없어 외부 파일을 읽지 않음

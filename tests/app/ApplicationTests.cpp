@@ -227,6 +227,7 @@ TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     config_.renderer.vsync = false;
     config_.renderer.debugLayer = true;
     config_.renderer.msaa = 2;
+    config_.renderer.outline = core::OutlineMode::All;
     window_.pollsBeforeQuit = 1;
     auto app = makeApp();
     (void)app->run();
@@ -234,6 +235,7 @@ TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     EXPECT_FALSE(renderer_.options.vsync);
     EXPECT_TRUE(renderer_.options.debugLayer);
     EXPECT_EQ(renderer_.options.msaaSamples, 2);
+    EXPECT_EQ(renderer_.options.outline, core::OutlineMode::All);
 }
 
 // ---------------------------------------------------------------------------

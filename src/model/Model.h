@@ -39,6 +39,10 @@ struct Material {
     AlphaMode alphaMode = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
+    // 외곽선 (반전 헐): 법선 방향으로 밀어낼 굵기 (m, 0이면 없음)와 색.
+    // VRM MToon의 _OutlineWidth / outlineWidthFactor, PMX 에지에서 읽음
+    float outlineWidth = 0.0f;
+    core::Vec4 outlineColor{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 // 텍스처 이미지. 둘 중 하나만 채워지며, 둘 다 비어 있으면 읽기에 실패한 것(렌더러가 흰색 처리)

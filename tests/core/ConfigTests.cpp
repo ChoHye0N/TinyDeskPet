@@ -214,3 +214,14 @@ TEST(Config, Msaa_DefaultsToFourAndAcceptsOnlyPowersOfTwo) {
         EXPECT_EQ(result.config.renderer.msaa, 4) << bad;
     }
 }
+
+TEST(Config, RendererOutline_AcceptsModelAllOff) {
+    using deskpet::core::OutlineMode;
+    EXPECT_EQ(AppConfig{}.renderer.outline, OutlineMode::Model);
+    EXPECT_EQ(parseConfig("[renderer]\noutline = all\n").config.renderer.outline, OutlineMode::All);
+    EXPECT_EQ(parseConfig("[renderer]\noutline = OFF\n").config.renderer.outline, OutlineMode::Off);
+
+    const auto result = parseConfig("[renderer]\noutline = thick\n");
+    EXPECT_EQ(result.warnings.size(), 1U);
+    EXPECT_EQ(result.config.renderer.outline, OutlineMode::Model);
+}

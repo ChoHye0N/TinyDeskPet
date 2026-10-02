@@ -13,6 +13,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace deskpet::model::detail {
 namespace {
@@ -202,6 +203,34 @@ std::optional<float> floatMember(std::string_view json, std::string_view key) {
     return value;
 }
 
+// "[0.1, 0.2, ...]" 배열의 숫자들. 숫자가 아닌 값을 만나면 거기서 멈춤
+std::vector<float> floatArray(std::string_view array) {
+    std::vector<float> values;
+    for (std::size_t pos = skipSpaces(array, 1); pos < array.size() && array[pos] != ']';
+         pos = skipSpaces(array, pos)) {
+        float value = 0.0f;
+        const auto [end, ec] =
+            std::from_chars(array.data() + pos, array.data() + array.size(), value);
+        if (ec != std::errc{}) {
+            break;
+        }
+        values.push_back(value);
+        pos = static_cast<std::size_t>(end - array.data());
+    }
+    return values;
+}
+
+core::Vec4 colorOr(std::optional<std::string_view> array, core::Vec4 fallback) {
+    if (!array) {
+        return fallback;
+    }
+    const std::vector<float> v = floatArray(*array);
+    if (v.size() < 3) {
+        return fallback;
+    }
+    return {v[0], v[1], v[2], v.size() >= 4 ? v[3] : 1.0f};
+}
+
 std::string_view extensionJson(const cgltf_data& data, std::string_view wanted) {
     for (cgltf_size i = 0; i < data.data_extensions_count; ++i) {
         const cgltf_extension& extension = data.data_extensions[i];
@@ -304,6 +333,10 @@ public:
         }
         readExpressions();
         model_.bounds = computeBounds(model_.vertices);
+        const float height = model_.bounds.max.y - model_.bounds.min.y;
+        for (const cgltf_size index : screenOutlines_) {
+            model_.materials[index].outlineWidth *= height;
+        }
         return std::move(model_);
     }
 
@@ -371,7 +404,62 @@ private:
             dst.alphaMode = toAlphaMode(src.alpha_mode);
             dst.alphaCutoff = src.alpha_cutoff;
             dst.doubleSided = src.double_sided != 0;
+            readMToon1Outline(src, i);
         }
+        readMToon0Outlines();
+    }
+
+    // VRM 1.0: materials[i].extensions.VRMC_materials_mtoon
+    //   outlineWidthMode: "none" | "worldCoordinates"(m) | "screenCoordinates"(화면 높이 비율)
+    void readMToon1Outline(const cgltf_material& src, cgltf_size index) {
+        for (cgltf_size e = 0; e < src.extensions_count; ++e) {
+            const cgltf_extension& extension = src.extensions[e];
+            if (extension.name == nullptr || extension.data == nullptr ||
+                std::string_view(extension.name) != "VRMC_materials_mtoon") {
+                continue;
+            }
+            const std::string_view json = extension.data;
+            const auto mode = stringMember(json, "outlineWidthMode");
+            const float width = floatMember(json, "outlineWidthFactor").value_or(0.0f);
+            if (!mode || *mode == "none" || width <= 0.0f) {
+                return;
+            }
+            Material& dst = model_.materials[index];
+            dst.outlineWidth = width;
+            dst.outlineColor = colorOr(valueSpan(json, "outlineColorFactor"), dst.outlineColor);
+            if (*mode == "screenCoordinates") {
+                // 화면 높이 비율: 이 앱은 모델 키에 맞춰 창을 채우므로 모델 키를 곱해 m로 근사
+                screenOutlines_.push_back(index);
+            }
+        }
+    }
+
+    // VRM 0.x: extensions.VRM.materialProperties[{name, floatProperties, vectorProperties}]
+    //   _OutlineWidthMode 0 = 없음, 1 = 월드, 2 = 화면 / _OutlineWidth는 cm (둘 다 cm로 취급)
+    void readMToon0Outlines() {
+        const std::string_view json = extensionJson(data_, "VRM");
+        const auto properties = json.empty() ? std::nullopt : valueSpan(json, "materialProperties");
+        if (!properties) {
+            return;
+        }
+        forEachObject(*properties, [&](std::string_view object) {
+            const auto name = stringMember(object, "name");
+            const auto floats = valueSpan(object, "floatProperties");
+            if (!name || !floats) {
+                return;
+            }
+            const auto it = std::ranges::find_if(
+                model_.materials, [&](const Material& m) { return m.name == *name; });
+            const float mode = floatMember(*floats, "_OutlineWidthMode").value_or(0.0f);
+            const float width = floatMember(*floats, "_OutlineWidth").value_or(0.0f);
+            if (it == model_.materials.end() || mode <= 0.0f || width <= 0.0f) {
+                return;
+            }
+            it->outlineWidth = width * 0.01f;  // cm → m
+            const auto vectors = valueSpan(object, "vectorProperties");
+            it->outlineColor = colorOr(
+                vectors ? valueSpan(*vectors, "_OutlineColor") : std::nullopt, it->outlineColor);
+        });
     }
 
     // 표정 = VRM이 지정한 (메시, 모프 타깃, 가중치) 묶음의 합 (ADR-0010)
@@ -635,6 +723,7 @@ private:
     }
 
     const cgltf_data& data_;
+    std::vector<cgltf_size> screenOutlines_;  // 화면 비율 외곽선 → 모델 키를 곱할 재질
     const ImportContext& context_;
     Model model_;
     std::map<int, std::vector<Morph>> nodeMorphs_;  // 노드 → 모프 타깃 번호별 델타

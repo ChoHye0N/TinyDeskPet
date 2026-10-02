@@ -17,7 +17,8 @@ cbuffer MaterialConstants : register(b1)
     float alphaCutoff;  // 0 미만이면 알파 테스트 안 함
     float hasTexture;   // bool 대신 float: 상수 버퍼의 bool은 4바이트라 C++ bool(1바이트)과 어긋나기 쉬움
     float forceOpaque;  // OPAQUE/MASK는 알파를 1로
-    float materialPad;
+    float outlineWidth; // 외곽선 패스에서만 0보다 큼: 법선 방향으로 밀어낼 거리 (m)
+    float4 outlineColor;
 };
 
 // 본별 스킨 행렬. 본 수가 수백 개일 수 있어 상수 버퍼(최대 4096 float4) 대신 구조화 버퍼를 씀.
@@ -66,6 +67,10 @@ PSInput VSMain(VSInput input)
         normal = mul(normal, (float3x3)skin);  // 균등 회전만 있으므로 역전치 없이 사용
     }
 
+    // 외곽선 패스(반전 헐): 법선 방향으로 부풀린 껍데기를 뒷면만 그림 → 원래 몸 바깥으로
+    // 삐져나온 테두리만 보임. 메인 패스는 outlineWidth = 0. 길이 0인 법선은 NaN 방지
+    position.xyz += normal * rsqrt(max(dot(normal, normal), 1e-8f)) * outlineWidth;
+
     PSInput output;
     output.position = mul(position, viewProjection);
     output.normal = normal;
@@ -98,4 +103,16 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
     // 스왑체인이 premultiplied alpha(ADR-0001)이므로 RGB에 알파를 미리 곱해 출력
     color.rgb *= color.a;
     return color;
+}
+
+// 외곽선 색 (조명 없음). 마스크 재질(머리카락 끝 등)은 잘린 모양대로 외곽선도 잘라야
+// 사각형 카드 모양 테두리가 생기지 않음
+float4 PSOutline(PSInput input) : SV_Target
+{
+    if (alphaCutoff >= 0.0f && hasTexture > 0.5f &&
+        baseColor.a * baseTexture.Sample(linearWrap, input.uv).a < alphaCutoff)
+    {
+        discard;
+    }
+    return float4(outlineColor.rgb * outlineColor.a, outlineColor.a);
 }

@@ -5,6 +5,7 @@
 #include "core/Log.h"
 #include "core/Math.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -12,6 +13,9 @@
 #include <vector>
 
 namespace deskpet::core {
+
+// 외곽선 (반전 헐) 대상: 모델이 지정한 재질만 / 모든 불투명 재질 / 끔
+enum class OutlineMode : std::uint8_t { Model, All, Off };
 
 struct WindowConfig {
     int width = 200;
@@ -29,7 +33,10 @@ struct CharacterConfig {
 
 struct RendererConfig {
     bool vsync = true;
-    int msaa = 4;  // MSAA 샘플 수 (1 = 끔, 2, 4, 8). 장치가 지원하지 않으면 렌더러가 낮춤
+    int msaa = 4;
+    OutlineMode outline =
+        OutlineMode::Model;  // all이면 외곽선 정보가 없는 모델(MMD 변환 등)도 그림  // MSAA 샘플 수
+                             // (1 = 끔, 2, 4, 8). 장치가 지원하지 않으면 렌더러가 낮춤
 #ifdef NDEBUG
     bool debugLayer = false;
 #else

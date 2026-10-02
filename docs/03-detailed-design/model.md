@@ -45,7 +45,8 @@ enum class Expression : std::uint8_t { Blink, Happy, Surprised, Count };
 struct Morph { std::vector<std::uint32_t> vertices; std::vector<core::Vec3> deltas; };  // 희소 정점 오프셋
 enum class AlphaMode : std::uint8_t { Opaque, Mask, Blend };
 struct Material { std::string name; core::Vec4 baseColor; int baseColorTexture;  // -1 = 없음
-                  AlphaMode alphaMode; float alphaCutoff; bool doubleSided; };
+                  AlphaMode alphaMode; float alphaCutoff; bool doubleSided;
+                  float outlineWidth /* m, 0 = 없음 */; core::Vec4 outlineColor; };
 struct Texture { std::string name, mimeType;
                  std::vector<std::uint8_t> encoded;           // WIC가 읽는 형식 원본 (PNG/JPEG/BMP…)
                  int width, height; std::vector<std::uint8_t> rgba;  // 미리 푼 픽셀 (TGA)
@@ -193,6 +194,15 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | 파싱 실패, 손상, 검증 실패 | 〃 + 형식별 이유 |
 | 그릴 메시 없음 / 인덱스 범위 초과 / 정점 2³²개 초과 | 〃 |
 | 텍스처 파일 없음·디코딩 실패 | 모델은 성공, 해당 텍스처만 흰색 |
+
+### 외곽선 정보 (반전 헐용)
+
+| 형식 | 출처 | 변환 |
+|---|---|---|
+| VRM 0.x | `extensions.VRM.materialProperties[]` (재질 이름으로 매칭): `_OutlineWidthMode` ≠ 0, `_OutlineWidth`(cm), `_OutlineColor` | cm → m. 화면 모드(2)도 cm로 취급 |
+| VRM 1.0 | `materials[].extensions.VRMC_materials_mtoon`: `outlineWidthMode`, `outlineWidthFactor`, `outlineColorFactor` | `worldCoordinates`: m 그대로. `screenCoordinates`(화면 높이 비율): 모델 키를 곱해 m로 근사 (이 앱은 창을 모델 키에 맞춤) |
+| PMX | 재질 플래그 0x10(에지 그리기), 에지 색, 에지 크기 | 크기 1 → 4mm (MMD 에지는 화면 기준이라 단위가 없어 근사) |
+| glTF(VRM 아님), FBX | 없음 | 0 (`[renderer] outline = all`이면 렌더러가 4mm 적용) |
 
 ## 5. 테스트 항목
 
