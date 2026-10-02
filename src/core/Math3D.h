@@ -218,6 +218,26 @@ struct Quat {
     constexpr bool operator==(const Quat&) const noexcept = default;
 };
 
+// 구면 선형 보간: t에 비례해 회전 각도가 바뀜 (t = 0 → a, 1 → b)
+[[nodiscard]] inline Quat slerp(Quat a, Quat b, float t) noexcept {
+    float d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    if (d < 0.0f) {
+        // q와 -q는 같은 회전. 부호를 맞춰야 짧은 쪽(180° 이하)으로 돎
+        b = {-b.x, -b.y, -b.z, -b.w};
+        d = -d;
+    }
+    float wa = 1.0f - t;
+    float wb = t;
+    if (d < 0.9995f) {  // 거의 같으면 sin(θ) ≈ 0으로 나누게 되므로 선형 보간 후 정규화
+        const float theta = std::acos(d);
+        const float s = std::sin(theta);
+        wa = std::sin(wa * theta) / s;
+        wb = std::sin(wb * theta) / s;
+    }
+    return Quat{wa * a.x + wb * b.x, wa * a.y + wb * b.y, wa * a.z + wb * b.z, wa * a.w + wb * b.w}
+        .normalized();
+}
+
 // 오른손 좌표계 뷰 행렬 (XMMatrixLookAtRH와 같음). 카메라는 -Z 방향을 봅니다.
 [[nodiscard]] inline Mat4 lookAtRH(Vec3 eye, Vec3 target, Vec3 up) noexcept {
     const Vec3 zAxis = normalize(eye - target);  // 카메라 뒤쪽

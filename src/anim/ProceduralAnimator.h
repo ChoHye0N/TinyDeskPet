@@ -24,16 +24,26 @@ struct AnimationInput {
     bool idleMotion = true;  // false면 대기 중 숨쉬기 동작을 끔 → 화면이 멈춰 Present 생략 가능
 };
 
+using Expressions = std::array<float, static_cast<std::size_t>(model::Expression::Count)>;
+
 struct AnimationOutput {
     std::vector<core::Mat4> skin;  // 본별 스킨 행렬 (Model::bones 순서)
-    std::array<float, static_cast<std::size_t>(model::Expression::Count)> expressions{};
+    Expressions expressions{};
 };
 
 class ProceduralAnimator {
 public:
+    // 동작이 바뀔 때 이전 자세에서 새 자세로 넘어가는 시간 (s)
+    static constexpr float kTransitionSeconds = 0.2f;
+
     explicit ProceduralAnimator(const model::Model& model);
 
+    // 입력만으로 정해지는 자세 (전환 보간 없음, 상태를 바꾸지 않음)
     void evaluate(const AnimationInput& input, AnimationOutput& out) const;
+
+    // 매 프레임 호출. 동작이 바뀌면 직전에 그린 자세에서 kTransitionSeconds 동안 slerp로 넘어감.
+    // dt = 이번 프레임에 흐른 시뮬레이션 시간 (s)
+    void animate(const AnimationInput& input, float dt, AnimationOutput& out);
 
     // 대기·매달림·공중 자세를 모두 담는 경계 상자. T포즈 경계 대신 카메라 맞춤에 씀
     // (팔을 내린 대기 자세만 쓰면 매달림·공중에서 벌린 팔이 창 밖으로 잘림)
@@ -51,6 +61,10 @@ private:
     void setRotation(int bone, const core::Quat& q) const;
     void poseArm(const Limb& arm, float outward, float swing, float elbow) const;
     void poseLeg(int upper, int lower, float swing, float knee) const;
+    void computeRotations(const AnimationInput& input) const;  // 착지 반동 제외 → rotations_
+    void applySquash(float squash) const;
+    void writeOutput(const AnimationInput& input, const Expressions& base,
+                     AnimationOutput& out) const;
     void includePosedVertices(const std::vector<core::Mat4>& skin, model::Bounds& bounds) const;
 
     const model::Model& model_;
@@ -58,6 +72,15 @@ private:
     Limb leftArm_;
     Limb rightArm_;
     mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
+
+    // 전환 상태 (animate 전용). 자세는 착지 반동을 빼고 저장해 반동이 두 번 더해지지 않게 함
+    bool hasPose_ = false;
+    Motion motion_ = Motion::Idle;
+    float elapsed_ = kTransitionSeconds;  // 전환 시작 후 흐른 시간. kTransitionSeconds 이상 = 끝
+    std::vector<core::Quat> fromRotations_;
+    std::vector<core::Quat> lastRotations_;
+    Expressions fromExpressions_{};
+    Expressions lastExpressions_{};
 };
 
 }  // namespace deskpet::anim

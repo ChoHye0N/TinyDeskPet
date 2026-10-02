@@ -458,7 +458,7 @@ TEST_F(ApplicationTest, SkinnedModel_SceneHasSkinMatrixPerBone) {
 TEST_F(ApplicationTest, DraggingModel_ShowsSurprisedExpression) {
     window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
     window_.frames.push_back({core::PointerMoveEvent{{1700.0f, 700.0f}}});
-    window_.pollsBeforeQuit = 4;
+    window_.pollsBeforeQuit = 20;  // 표정도 자세 전환(0.2초)에 맞춰 서서히 바뀜
     auto app = makeApp();
     app->setModel(makeSkinnedModel());
     (void)app->run();

@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <numbers>
 
 using deskpet::core::lookAtRH;
@@ -61,6 +62,7 @@ TEST(Mat4, PerspectiveFovRH_MapsNearAndFarToZeroAndOne) {
 // ---------------------------------------------------------------------------
 
 using deskpet::core::Quat;
+using deskpet::core::slerp;
 
 TEST(Quat, AxisAngle_RotatesByRightHandRule) {
     // +Z축 기준 90°: +X → +Y
@@ -90,4 +92,32 @@ TEST(Quat, ToMat4_MatchesRotateInRowVectorConvention) {
     const Quat q = Quat::axisAngle(deskpet::core::normalize(Vec3{1.0f, 2.0f, 3.0f}), 0.7f);
     const Vec3 p{0.3f, -1.2f, 2.0f};
     expectNear(transformPoint(p, q.toMat4()), q.rotate(p));
+}
+
+TEST(Quat, Slerp_InterpolatesAngleLinearly) {
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const Vec3 z{0.0f, 0.0f, 1.0f};
+    const Quat a{};
+    const Quat b = Quat::axisAngle(z, kPi / 2.0f);
+    expectNear(slerp(a, b, 0.0f).rotate({1.0f, 0.0f, 0.0f}), {1.0f, 0.0f, 0.0f});
+    expectNear(slerp(a, b, 1.0f).rotate({1.0f, 0.0f, 0.0f}), {0.0f, 1.0f, 0.0f});
+    const float h = std::sqrt(0.5f);  // 45°
+    expectNear(slerp(a, b, 0.5f).rotate({1.0f, 0.0f, 0.0f}), {h, h, 0.0f});
+}
+
+TEST(Quat, Slerp_TakesShortestPath) {
+    // -q는 q와 같은 회전. 부호를 맞추지 않으면 반대쪽으로 크게 돌아감
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const Quat b = Quat::axisAngle({0.0f, 0.0f, 1.0f}, kPi / 2.0f);
+    const Quat negB{-b.x, -b.y, -b.z, -b.w};
+    const float h = std::sqrt(0.5f);
+    expectNear(slerp(Quat{}, negB, 0.5f).rotate({1.0f, 0.0f, 0.0f}), {h, h, 0.0f});
+}
+
+TEST(Quat, Slerp_NearlyEqualRotationsStayFinite) {
+    const Quat a = Quat::axisAngle({0.0f, 1.0f, 0.0f}, 0.3f);
+    const Quat b = Quat::axisAngle({0.0f, 1.0f, 0.0f}, 0.3f + 1e-6f);
+    const Quat q = slerp(a, b, 0.5f);
+    EXPECT_TRUE(std::isfinite(q.w));
+    EXPECT_NEAR(q.w, a.w, 1e-5f);
 }
