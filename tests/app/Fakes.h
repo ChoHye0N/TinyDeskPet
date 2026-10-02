@@ -38,6 +38,7 @@ struct FakeWindowState {
     core::PointI position;
     std::vector<core::PointI> positionHistory;
     core::RectI hitRegion;
+    platform::HitShape hitShape = platform::HitShape::Ellipse;
     int menuShownCount = 0;
     std::vector<platform::MenuItem> lastMenu;
 };
@@ -96,7 +97,10 @@ public:
         return state_.trayResult;
     }
 
-    void setHitRegionEllipse(const core::RectI& local) override { state_.hitRegion = local; }
+    void setHitRegion(const core::RectI& local, platform::HitShape shape) override {
+        state_.hitRegion = local;
+        state_.hitShape = shape;
+    }
 
     int showContextMenu(const std::vector<platform::MenuItem>& items,
                         core::PointI /*screen*/) override {

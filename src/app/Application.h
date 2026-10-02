@@ -93,6 +93,7 @@ private:
 
     [[nodiscard]] core::PointI windowTopLeftFor(core::Vec2 feet) const;
     [[nodiscard]] core::RectI hitRegion() const;
+    void applyHitRegion();
     [[nodiscard]] core::RectI modelHitRegion() const;
     [[nodiscard]] renderer::RenderScene buildScene() const;
 

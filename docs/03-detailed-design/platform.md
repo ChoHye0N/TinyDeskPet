@@ -58,7 +58,7 @@ public:
     [[nodiscard]] virtual core::RectI desktopBounds() const = 0;     // 가상 데스크톱 (모든 모니터)
     [[nodiscard]] virtual float dpiScale() const = 0;                // 1.0 = 96 DPI
     virtual bool showTrayIcon(const std::string& tooltip) = 0;      // 클릭 → TrayMenuRequestedEvent
-    virtual void setHitRegionEllipse(const core::RectI& local) = 0;  // 창 내부 좌표
+    virtual void setHitRegion(const core::RectI& local, HitShape shape) = 0;  // 창 내부 좌표, Ellipse | Rectangle
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0; // 선택한 id, 취소 시 0
     [[nodiscard]] virtual void* nativeHandle() const = 0;            // Win32에서는 HWND
@@ -129,7 +129,7 @@ flowchart TD
 | `setSize` | `SetWindowPos(SWP_NOMOVE \| SWP_NOZORDER \| SWP_NOACTIVATE)` |
 | `hide` / `show` | `ShowWindow(SW_HIDE / SW_SHOWNOACTIVATE)` |
 | `showTrayIcon` | `Shell_NotifyIconW(NIM_ADD)` + `NIM_SETVERSION(4)`. 아이콘은 시스템 기본(`IDI_APPLICATION`). 소멸자에서 `NIM_DELETE` (없으면 "유령 아이콘"이 남음) |
-| `setHitRegionEllipse` | `CreateEllipticRgn` → `SetWindowRgn`. 성공하면 리전 소유권이 OS로 넘어가므로 직접 삭제하지 않음 |
+| `setHitRegion` | `CreateEllipticRgn`(슬라임) / `CreateRectRgn`(모델) → `SetWindowRgn`. 성공하면 리전 소유권이 OS로 넘어가므로 직접 삭제하지 않음. **윈도 리전은 그리기도 잘라내므로** 그려질 수 있는 모든 픽셀을 포함해야 함 |
 | `showContextMenu` | `CreatePopupMenu` → 항목 추가(UTF-8→UTF-16) → `SetForegroundWindow` → `TrackPopupMenu(TPM_RETURNCMD)` → `PostMessage(WM_NULL)` (메뉴가 바로 닫히지 않는 알려진 문제 회피) |
 
 ### 4.5 창 프로시저와 `this` 연결
