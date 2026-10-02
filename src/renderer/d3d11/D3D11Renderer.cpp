@@ -31,7 +31,8 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
     // 패스 실행 순서 = 등록 순서 (docs/02-architecture/SAD.md §7.2)
     scenePasses_.clear();
     overlayPasses_.clear();
-    scenePasses_.push_back(std::make_unique<MeshPass>());  // 3D를 먼저 그림 (ADR-0008)
+    scenePasses_.push_back(
+        std::make_unique<MeshPass>(options_.outline));  // 3D를 먼저 그림 (ADR-0008)
     overlayPasses_.push_back(std::make_unique<PlaceholderPass>());
 
     initialized_ = createDeviceResources();

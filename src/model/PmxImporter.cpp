@@ -17,6 +17,7 @@ namespace {
 
 // MMD 1단위 ≈ 8cm (미쿠 키 약 20단위 ≈ 1.58m에서 나온 관례값)
 constexpr float kMetersPerUnit = 0.08f;
+constexpr float kEdgeMetersPerSize = 0.004f;
 
 // 범위를 검사하는 리더. 끝을 넘으면 failed가 되고 이후 값은 0 — 호출자가 구간마다 failed()를 확인
 class Reader {
@@ -344,7 +345,14 @@ private:
             reader_.skip(12 + 4 + 12);  // 반사색, 반사 강도, 환경색
             const auto flags = reader_.read<std::uint8_t>();
             material.doubleSided = (flags & 0x01U) != 0;  // "양면 그리기"
-            reader_.skip(16 + 4);                         // 에지 색, 에지 크기
+            const core::Vec3 edgeRgb = reader_.vec3();
+            const auto edgeAlpha = reader_.read<float>();
+            const auto edgeSize = reader_.read<float>();
+            if ((flags & 0x10U) != 0 && edgeSize > 0.0f) {  // "에지 그리기"
+                // MMD 에지 크기는 화면 기준이라 단위가 없음. MToon과 비슷한 굵기(1 → 4mm)로 근사
+                material.outlineWidth = edgeSize * kEdgeMetersPerSize;
+                material.outlineColor = {edgeRgb.x, edgeRgb.y, edgeRgb.z, edgeAlpha};
+            }
             const int texture = reader_.index(tex);
             reader_.index(tex);  // 스피어 텍스처 (M5 이후)
             reader_.skip(1);     // 스피어 모드

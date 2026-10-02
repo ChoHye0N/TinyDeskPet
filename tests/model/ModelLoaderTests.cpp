@@ -300,3 +300,64 @@ TEST(ModelLoader, Vrm0BlendShape_ReadsMeshBindsWithPercentWeight) {
     ASSERT_EQ(happy.vertices.size(), 2U);
     EXPECT_FLOAT_EQ(happy.deltas[0].y, -1.0f);  // 가중치 100% = 1.0
 }
+
+// ---------------------------------------------------------------------------
+// 외곽선 (MToon): 재질별 굵기(m)와 색
+// ---------------------------------------------------------------------------
+
+TEST(ModelLoader, Vrm0MToonOutline_IsReadPerMaterialByName) {
+    // VRM 0.x: _OutlineWidth는 cm 단위, _OutlineWidthMode 0이면 없음
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+        R"(,"materials":[{"name":"Body"},{"name":"Eye"}],"extensionsUsed":["VRM"],)"
+        R"("extensions":{"VRM":{"materialProperties":[)"
+        R"({"name":"Eye","shader":"VRM/MToon","floatProperties":{"_OutlineWidthMode":0,"_OutlineWidth":0.5}},)"
+        R"({"name":"Body","shader":"VRM/MToon","floatProperties":{"_OutlineWidthMode":1,"_OutlineWidth":0.6},)"
+        R"("vectorProperties":{"_OutlineColor":[0.3,0.2,0.1,1]}}]}})";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& materials = result.model->materials;
+    ASSERT_EQ(materials.size(), 2U);
+    EXPECT_NEAR(materials[0].outlineWidth, 0.006f, 1e-6f);
+    EXPECT_FLOAT_EQ(materials[0].outlineColor.x, 0.3f);
+    EXPECT_FLOAT_EQ(materials[0].outlineColor.z, 0.1f);
+    EXPECT_FLOAT_EQ(materials[1].outlineWidth, 0.0f);  // 모드 0 (외곽선 없음)
+}
+
+TEST(ModelLoader, Vrm1MToonOutline_ReadsWorldAndScreenModes) {
+    // VRM 1.0: worldCoordinates는 m, screenCoordinates는 화면 높이 비율 → 모델 높이(2)로 근사
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRMC_vrm","VRMC_materials_mtoon"],"materials":[)"
+        R"({"name":"World","extensions":{"VRMC_materials_mtoon":{"outlineWidthMode":"worldCoordinates",)"
+        R"("outlineWidthFactor":0.004,"outlineColorFactor":[0.5,0.25,0]}}},)"
+        R"({"name":"Screen","extensions":{"VRMC_materials_mtoon":{"outlineWidthMode":"screenCoordinates",)"
+        R"("outlineWidthFactor":0.01}}},)"
+        R"({"name":"None","extensions":{"VRMC_materials_mtoon":{"outlineWidthMode":"none",)"
+        R"("outlineWidthFactor":0.01}}}])";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& materials = result.model->materials;
+    ASSERT_EQ(materials.size(), 3U);
+    EXPECT_NEAR(materials[0].outlineWidth, 0.004f, 1e-6f);
+    EXPECT_FLOAT_EQ(materials[0].outlineColor.x, 0.5f);
+    EXPECT_FLOAT_EQ(materials[0].outlineColor.w, 1.0f);
+    EXPECT_NEAR(materials[1].outlineWidth, 0.02f, 1e-6f);
+    EXPECT_FLOAT_EQ(materials[1].outlineColor.x, 0.0f);  // 색 지정 없으면 검정
+    EXPECT_FLOAT_EQ(materials[2].outlineWidth, 0.0f);
+}
+
+TEST(ModelLoader, PlainGltfMaterial_HasNoOutline) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(b.build(meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+                                           R"(,"materials":[{"name":"A"}])"));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_FLOAT_EQ(result.model->materials[0].outlineWidth, 0.0f);
+}

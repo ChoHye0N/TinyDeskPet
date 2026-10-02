@@ -159,6 +159,7 @@ bool Application::initialize() {
     options.vsync = config_.renderer.vsync;
     options.debugLayer = config_.renderer.debugLayer;
     options.msaaSamples = config_.renderer.msaa;
+    options.outline = config_.renderer.outline;
     if (!renderer_->initialize(window_->nativeHandle(), desc.size, options)) {
         core::logging::error("렌더러를 초기화할 수 없습니다");
         return false;
@@ -168,7 +169,7 @@ bool Application::initialize() {
     if (!restoreSavedPosition()) {
         resetCharacterPosition();
     }
-    window_->setHitRegionEllipse(hitRegion());
+    applyHitRegion();
     window_->show();
     if (!window_->showTrayIcon("DeskPet")) {
         core::logging::warn("트레이 아이콘을 만들 수 없습니다");
@@ -397,7 +398,7 @@ void Application::resizeWindow() {
     refitCamera();
     refreshBounds();
     syncWindowToCharacter();
-    window_->setHitRegionEllipse(hitRegion());
+    applyHitRegion();
 }
 
 void Application::setVisible(bool visible) {
@@ -446,6 +447,23 @@ core::RectI Application::hitRegion() const {
     rect.right = std::clamp(rect.right, 0, windowSize_.width);
     rect.bottom = std::clamp(rect.bottom, 0, windowSize_.height);
     return rect;
+}
+
+// 창의 클릭 영역(= 그려지는 영역). 슬라임은 몸 모양 타원. 모델은 사각형: 윈도 리전이
+// 그리기도 잘라내므로 타원이면 걸을 때 다리·꼬리가 있는 아래 모서리가 원 모양으로 잘림.
+// 외곽선이 정점보다 몇 px 바깥에 그려지므로 그만큼 여유를 둠
+void Application::applyHitRegion() {
+    if (!model_) {
+        window_->setHitRegion(hitRegion(), platform::HitShape::Ellipse);
+        return;
+    }
+    constexpr int kOutlinePaddingPx = 3;
+    core::RectI rect = hitRegion();
+    rect.left = std::max(rect.left - kOutlinePaddingPx, 0);
+    rect.top = std::max(rect.top - kOutlinePaddingPx, 0);
+    rect.right = std::min(rect.right + kOutlinePaddingPx, windowSize_.width);
+    rect.bottom = std::min(rect.bottom + kOutlinePaddingPx, windowSize_.height);
+    window_->setHitRegion(rect, platform::HitShape::Rectangle);
 }
 
 // 모델 경계 상자 8개 꼭짓점을 화면에 투영한 사각형 (TODO(M6): 픽셀 알파 기반 히트 테스트)

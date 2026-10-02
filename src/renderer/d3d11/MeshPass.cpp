@@ -5,6 +5,7 @@
 #include "renderer/d3d11/WicTexture.h"
 
 // fxc가 빌드 시 생성하는 바이트코드 배열 (d3d11/CMakeLists.txt)
+#include "g_MeshOutlinePS.h"
 #include "g_MeshPS.h"
 #include "g_MeshVS.h"
 
@@ -32,7 +33,8 @@ struct MaterialConstants {
     float alphaCutoff = -1.0f;
     float hasTexture = 0.0f;
     float forceOpaque = 1.0f;
-    float pad = 0.0f;
+    float outlineWidth = 0.0f;  // 외곽선 패스에서만 0보다 큼 (m)
+    core::Vec4 outlineColor;
 };
 static_assert(sizeof(MaterialConstants) % 16 == 0);
 
@@ -82,6 +84,9 @@ bool MeshPass::create(const D3D11Context& ctx) {
                "CreateVertexShader") ||
         !check(device->CreatePixelShader(g_MeshPS, sizeof(g_MeshPS), nullptr, &pixelShader_),
                "CreatePixelShader") ||
+        !check(device->CreatePixelShader(g_MeshOutlinePS, sizeof(g_MeshOutlinePS), nullptr,
+                                         &outlineShader_),
+               "CreatePixelShader(외곽선)") ||
         // 입력 레이아웃은 정점 셰이더 입력 시그니처와 대조되므로 VS 바이트코드가 필요합니다.
         !check(device->CreateInputLayout(kInputLayout, static_cast<UINT>(std::size(kInputLayout)),
                                          g_MeshVS, sizeof(g_MeshVS), &inputLayout_),
@@ -124,6 +129,12 @@ bool MeshPass::create(const D3D11Context& ctx) {
     if (!check(device->CreateRasterizerState(&raster, &cullNone_), "래스터라이저(양면)")) {
         return false;
     }
+    // 외곽선: 앞면을 잘라 부풀린 껍데기의 안쪽(뒷면)만 그림. 몸 앞쪽은 원래 메시가 깊이로
+    // 가리므로 실루엣과 겹친 경계에서만 테두리가 보임
+    raster.CullMode = D3D11_CULL_FRONT;
+    if (!check(device->CreateRasterizerState(&raster, &cullFront_), "래스터라이저(외곽선)")) {
+        return false;
+    }
 
     // premultiplied alpha 합성: out = src + dst × (1 - srcA). 알파 채널도 같은 식으로 누적해야
     // DirectComposition이 바탕화면과 올바르게 섞습니다 (ADR-0001).
@@ -157,8 +168,10 @@ void MeshPass::release() {
     depthReadOnly_.Reset();
     depthWrite_.Reset();
     premultipliedBlend_.Reset();
+    cullFront_.Reset();
     cullNone_.Reset();
     cullBack_.Reset();
+    outlineShader_.Reset();
     sampler_.Reset();
     materialConstants_.Reset();
     frameConstants_.Reset();
@@ -227,9 +240,9 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
             const bool blend =
                 material != nullptr && material->alphaMode == model::AlphaMode::Blend;
             if (blend == blendPass) {
-                drawOrder_.push_back({p.firstIndex, p.indexCount,
-                                      material != nullptr ? p.material : -1, blend,
-                                      material != nullptr && material->doubleSided});
+                drawOrder_.push_back(
+                    {p.firstIndex, p.indexCount, material != nullptr ? p.material : -1, blend,
+                     material != nullptr && material->doubleSided, outlineWidthFor(material)});
             }
         }
     }
@@ -238,9 +251,11 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
         return false;
     }
 
-    core::logging::info("모델 GPU 업로드: 정점 {}, 삼각형 {}, 텍스처 {}, 드로우 {}",
+    const auto outlined = std::ranges::count_if(
+        drawOrder_, [](const GpuPrimitive& p) { return p.outlineWidth > 0.0f; });
+    core::logging::info("모델 GPU 업로드: 정점 {}, 삼각형 {}, 텍스처 {}, 드로우 {} (외곽선 {})",
                         model.vertices.size(), model.indices.size() / 3, textures_.size(),
-                        drawOrder_.size());
+                        drawOrder_.size(), outlined);
     return true;
 }
 
@@ -396,15 +411,36 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
     ID3D11Buffer* constants[] = {frameConstants_.Get(), materialConstants_.Get()};
     ID3D11SamplerState* sampler = sampler_.Get();
     context->VSSetShader(vertexShader_.Get(), nullptr, 0);
-    context->VSSetConstantBuffers(0, 1, constants);
+    // VS도 b1(재질)이 필요: 외곽선 굵기만큼 정점을 밀어냄. 빠지면 굵기 0으로 읽혀 외곽선이 안 보임
+    context->VSSetConstantBuffers(0, 2, constants);
     ID3D11ShaderResourceView* skinView = skinView_.Get();
     context->VSSetShaderResources(0, 1, &skinView);
     context->PSSetShader(pixelShader_.Get(), nullptr, 0);
     context->PSSetConstantBuffers(0, 2, constants);
     context->PSSetSamplers(0, 1, &sampler);
 
+    // 불투명·마스크 → 외곽선 → 반투명. 외곽선은 깊이를 쓰므로 반투명보다 먼저 그려야
+    // 반투명 뒤에 비쳐 보임
     for (const GpuPrimitive& primitive : drawOrder_) {
-        drawPrimitive(ctx, *model, primitive);
+        if (!primitive.blend) {
+            drawPrimitive(ctx, *model, primitive);
+        }
+    }
+    const bool anyOutline = std::ranges::any_of(
+        drawOrder_, [](const GpuPrimitive& p) { return p.outlineWidth > 0.0f; });
+    if (anyOutline) {
+        context->PSSetShader(outlineShader_.Get(), nullptr, 0);
+        for (const GpuPrimitive& primitive : drawOrder_) {
+            if (primitive.outlineWidth > 0.0f) {
+                drawOutline(ctx, *model, primitive);
+            }
+        }
+        context->PSSetShader(pixelShader_.Get(), nullptr, 0);
+    }
+    for (const GpuPrimitive& primitive : drawOrder_) {
+        if (primitive.blend) {
+            drawPrimitive(ctx, *model, primitive);
+        }
     }
 
     // 다음 패스(Direct2D)가 깊이 버퍼에 묶이지 않도록 원래 상태로 되돌림
@@ -442,6 +478,48 @@ void MeshPass::drawPrimitive(const D3D11Context& ctx, const model::Model& model,
     context->PSSetShaderResources(0, 1, &texture);
     context->RSSetState(primitive.doubleSided ? cullNone_.Get() : cullBack_.Get());
     context->OMSetDepthStencilState(primitive.blend ? depthReadOnly_.Get() : depthWrite_.Get(), 0);
+    context->DrawIndexed(primitive.indexCount, primitive.firstIndex, 0);
+}
+
+// 재질별 외곽선 굵기 (m). 반투명은 뒤가 비쳐야 하므로 외곽선 없음
+float MeshPass::outlineWidthFor(const model::Material* material) const {
+    // outline = all일 때 모델에 정보가 없는 재질에 쓰는 굵기 (MToon 기본값과 비슷한 4mm)
+    constexpr float kDefaultOutlineWidth = 0.004f;
+    if (material == nullptr || material->alphaMode == model::AlphaMode::Blend) {
+        return 0.0f;
+    }
+    switch (outlineMode_) {
+        case core::OutlineMode::Off: return 0.0f;
+        case core::OutlineMode::All:
+            return material->outlineWidth > 0.0f ? material->outlineWidth : kDefaultOutlineWidth;
+        case core::OutlineMode::Model:
+        default: return material->outlineWidth;
+    }
+}
+
+void MeshPass::drawOutline(const D3D11Context& ctx, const model::Model& model,
+                           const GpuPrimitive& primitive) {
+    ID3D11DeviceContext* context = ctx.context;
+    const model::Material& material = model.materials[static_cast<std::size_t>(primitive.material)];
+
+    MaterialConstants constants;
+    constants.baseColor = material.baseColor;
+    constants.alphaCutoff =
+        material.alphaMode == model::AlphaMode::Mask ? material.alphaCutoff : -1.0f;
+    constants.outlineWidth = primitive.outlineWidth;
+    constants.outlineColor = material.outlineColor;
+    ID3D11ShaderResourceView* texture = nullptr;
+    if (material.baseColorTexture >= 0 &&
+        static_cast<std::size_t>(material.baseColorTexture) < textures_.size()) {
+        texture = textures_[static_cast<std::size_t>(material.baseColorTexture)].Get();
+    }
+    constants.hasTexture = texture != nullptr ? 1.0f : 0.0f;
+    if (!writeConstants(context, materialConstants_.Get(), constants)) {
+        return;
+    }
+    context->PSSetShaderResources(0, 1, &texture);
+    context->RSSetState(cullFront_.Get());
+    context->OMSetDepthStencilState(depthWrite_.Get(), 0);
     context->DrawIndexed(primitive.indexCount, primitive.firstIndex, 0);
 }
 

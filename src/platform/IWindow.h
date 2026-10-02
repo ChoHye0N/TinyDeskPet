@@ -6,10 +6,14 @@
 #include "core/Events.h"
 #include "core/Math.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace deskpet::platform {
+
+// 클릭 영역 모양. 슬라임은 타원, 모델은 경계 상자를 투영한 사각형
+enum class HitShape : std::uint8_t { Ellipse, Rectangle };
 
 struct WindowDesc {
     std::string title = "DeskPet";  // UTF-8
@@ -69,8 +73,9 @@ public:
     // 아이콘은 창이 파괴될 때 함께 제거됩니다.
     virtual bool showTrayIcon(const std::string& tooltip) = 0;
 
-    // 창 내부 좌표의 타원 바깥은 클릭이 아래 창으로 통과합니다 (FR-04)
-    virtual void setHitRegionEllipse(const core::RectI& local) = 0;
+    // 창 내부 좌표의 도형 바깥은 클릭이 아래 창으로 통과합니다 (FR-04).
+    // 윈도 리전은 그리기도 잘라내므로, 그려질 수 있는 모든 픽셀을 포함해야 합니다
+    virtual void setHitRegion(const core::RectI& local, HitShape shape) = 0;
 
     // 선택한 항목의 id를 반환합니다. 취소하면 0.
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,

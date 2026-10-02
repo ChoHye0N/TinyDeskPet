@@ -189,13 +189,16 @@ core::RectI Win32Window::workArea() const {
     return toRect(fallback);
 }
 
-void Win32Window::setHitRegionEllipse(const core::RectI& local) {
+void Win32Window::setHitRegion(const core::RectI& local, HitShape shape) {
     if (hwnd_ == nullptr) {
         return;
     }
-    const HRGN region = CreateEllipticRgn(local.left, local.top, local.right, local.bottom);
+    // 윈도 리전은 클릭뿐 아니라 그리기(DirectComposition 출력 포함)도 잘라냄
+    const HRGN region = shape == HitShape::Ellipse
+                            ? CreateEllipticRgn(local.left, local.top, local.right, local.bottom)
+                            : CreateRectRgn(local.left, local.top, local.right, local.bottom);
     if (region == nullptr) {
-        core::logging::warn("CreateEllipticRgn 실패");
+        core::logging::warn("윈도 리전 생성 실패");
         return;
     }
     // 성공하면 리전 소유권이 OS로 넘어갑니다. 실패했을 때만 직접 삭제합니다.

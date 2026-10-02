@@ -99,6 +99,20 @@ ApplyResult assignBool(std::string_view value, bool& out) {
     return std::string("true/false 값이 아닙니다");
 }
 
+ApplyResult assignOutline(std::string_view value, OutlineMode& out) {
+    const std::string lower = toLower(value);
+    if (lower == "model") {
+        out = OutlineMode::Model;
+    } else if (lower == "all") {
+        out = OutlineMode::All;
+    } else if (lower == "off") {
+        out = OutlineMode::Off;
+    } else {
+        return std::string("model/all/off 중 하나가 아닙니다");
+    }
+    return std::nullopt;
+}
+
 ApplyResult assignLevel(std::string_view value, logging::Level& out) {
     if (const auto parsed = logging::parseLevel(value)) {
         out = *parsed;
@@ -140,6 +154,8 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.vsync); }},
         {"renderer.debug_layer",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.debugLayer); }},
+        {"renderer.outline",
+         [](std::string_view v, AppConfig& c) { return assignOutline(v, c.renderer.outline); }},
         {"renderer.msaa",
          [](std::string_view v, AppConfig& c) { return assignSampleCount(v, c.renderer.msaa); }},
         {"model.path",

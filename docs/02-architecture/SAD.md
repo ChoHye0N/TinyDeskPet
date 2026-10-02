@@ -151,7 +151,7 @@ classDiagram
         +pollEvents(vector~Event~) void
         +setPosition(PointI) void
         +workArea() RectI
-        +setHitRegionEllipse(RectI) void
+        +setHitRegion(RectI, HitShape) void
         +showContextMenu(items, PointI) int
         +nativeHandle() void*
     }
@@ -228,7 +228,7 @@ sequenceDiagram
     Rnd-->>App: true
     App->>Win: workArea()
     App->>App: resetCharacterPosition()<br/>(오른쪽 아래, 바닥 위)
-    App->>Win: setHitRegionEllipse(...)
+    App->>Win: setHitRegion(...)
     App->>Win: show()
     App->>App: 메인 루프 진입
 ```

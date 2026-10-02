@@ -215,6 +215,17 @@ TEST(Config, Msaa_DefaultsToFourAndAcceptsOnlyPowersOfTwo) {
     }
 }
 
+TEST(Config, RendererOutline_AcceptsModelAllOff) {
+    using deskpet::core::OutlineMode;
+    EXPECT_EQ(AppConfig{}.renderer.outline, OutlineMode::Model);
+    EXPECT_EQ(parseConfig("[renderer]\noutline = all\n").config.renderer.outline, OutlineMode::All);
+    EXPECT_EQ(parseConfig("[renderer]\noutline = OFF\n").config.renderer.outline, OutlineMode::Off);
+
+    const auto result = parseConfig("[renderer]\noutline = thick\n");
+    EXPECT_EQ(result.warnings.size(), 1U);
+    EXPECT_EQ(result.config.renderer.outline, OutlineMode::Model);
+}
+
 TEST(Config, StateScale_IsOptionalPercentWithinRange) {
     EXPECT_FALSE(parseConfig("").config.state.scale.has_value());
     EXPECT_EQ(parseConfig("[state]\nscale = 150\n").config.state.scale, 150);

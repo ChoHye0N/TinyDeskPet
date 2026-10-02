@@ -87,6 +87,7 @@ TEST_F(ApplicationTest, Startup_SetsHitRegionInsideWindow) {
     (void)app->run();
 
     const core::RectI& hit = window_.hitRegion;
+    EXPECT_EQ(window_.hitShape, deskpet::platform::HitShape::Ellipse);  // 슬라임은 타원
     EXPECT_GT(hit.width(), 0);
     EXPECT_GT(hit.height(), 0);
     EXPECT_GE(hit.left, 0);
@@ -318,6 +319,7 @@ TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     config_.renderer.vsync = false;
     config_.renderer.debugLayer = true;
     config_.renderer.msaa = 2;
+    config_.renderer.outline = core::OutlineMode::All;
     window_.pollsBeforeQuit = 1;
     auto app = makeApp();
     (void)app->run();
@@ -325,6 +327,7 @@ TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     EXPECT_FALSE(renderer_.options.vsync);
     EXPECT_TRUE(renderer_.options.debugLayer);
     EXPECT_EQ(renderer_.options.msaaSamples, 2);
+    EXPECT_EQ(renderer_.options.outline, core::OutlineMode::All);
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +378,9 @@ TEST_F(ApplicationTest, WithModel_HitRegionCoversProjectedModel) {
     app->setModel(makeHumanoidModel());
     (void)app->run();
 
+    // 모델은 사각형: 윈도 리전은 그리기도 잘라내므로, 타원이면 걸을 때 발·꼬리가 있는
+    // 아래 모서리가 원 모양으로 잘림
+    EXPECT_EQ(window_.hitShape, deskpet::platform::HitShape::Rectangle);
     // T포즈(폭 1.5 > 키 1.6 × 창 비율 1)라 거의 창 전체 폭을 차지
     const core::RectI& hit = window_.hitRegion;
     EXPECT_GE(hit.left, 0);
@@ -505,7 +511,8 @@ TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
     app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
     (void)app->run();
 
-    const int visibleLeft = window_.position.x + window_.hitRegion.left;
+    // 모델 클릭 영역은 외곽선 여유(3px)만큼 경계 상자보다 넓음 → 그 안쪽이 모니터 끝
+    const int visibleLeft = window_.position.x + window_.hitRegion.left + 3;
     EXPECT_GE(visibleLeft, 0);
     EXPECT_LE(visibleLeft, 2);
 }
