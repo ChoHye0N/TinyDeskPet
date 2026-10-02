@@ -31,7 +31,7 @@ public:
     [[nodiscard]] float dpiScale() const override;
     bool showTrayIcon(const std::string& tooltip) override;
 
-    void setHitRegionEllipse(const core::RectI& local) override;
+    void setHitRegion(const core::RectI& local, HitShape shape) override;
     [[nodiscard]] int showContextMenu(const std::vector<MenuItem>& items,
                                       core::PointI screen) override;
 

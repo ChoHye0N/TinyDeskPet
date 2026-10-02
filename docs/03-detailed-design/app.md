@@ -63,7 +63,7 @@ public:
 | 2 | `dpiScale = window->dpiScale()`. 1이 아니면 `창 크기 = 설정 × 배율`로 `setSize`, 카메라 재계산 (DEBT-01) | — |
 | 3 | `renderer->initialize(window->nativeHandle(), 창 크기, options)` | `InitializationFailed` |
 | 4 | `refreshBounds()` → 저장된 위치 복원(§4.8), 없거나 화면 밖이면 `resetCharacterPosition()` | — |
-| 5 | `window->setHitRegionEllipse(hitRect)` | — |
+| 5 | `applyHitRegion()` — 슬라임 타원 / 모델 사각형(+외곽선 여유 3px) | — |
 | 6 | `window->show()`, `showTrayIcon("DeskPet")`(실패해도 계속), 시간 기준점 기록 | — |
 
 ### 4.2 메인 루프 (`tick`, 한 프레임)
