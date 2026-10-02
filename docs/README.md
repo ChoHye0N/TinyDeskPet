@@ -25,6 +25,7 @@ flowchart LR
 | 코딩 규칙 | [coding-style.md](04-conventions/coding-style.md) | 명명 규칙, 소유권, 오류 처리, 포맷팅 규칙 |
 | DevOps | [05-devops/](05-devops/README.md) | CI/CD 구현 설명, 사용 가이드, 브랜치·릴리스 전략, 로컬 개발 환경 |
 | 로드맵 | [ROADMAP.md](06-roadmap/ROADMAP.md) | 마일스톤별 구현 과제와 완료 기준 |
+| 학습 노트 | [LEARNING-NOTES.md](07-learning/LEARNING-NOTES.md) | 구조, 사용한 기술·알고리즘, 버그와 해결을 요약한 학습용 기록 |
 
 ## 문서 작성 규칙
 

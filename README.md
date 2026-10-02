@@ -1,8 +1,8 @@
 # DeskPet
 
-[![CI](https://github.com/OWNER/deskpet/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/deskpet/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/OWNER/deskpet/actions/workflows/codeql.yml/badge.svg)](https://github.com/OWNER/deskpet/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/OWNER/deskpet)](https://github.com/OWNER/deskpet/releases)
+[![CI](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/ci.yml/badge.svg)](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/codeql.yml/badge.svg)](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/ChoHye0N/TinyDeskPet)](https://github.com/ChoHye0N/TinyDeskPet/releases)
 
 바탕화면 위에 캐릭터를 띄워 두고 상호작용하는 **가볍고 빠른 Windows 데스크톱 컴패니언**입니다.
 게임 엔진 없이 **C++20 + Direct3D 11 + DirectComposition**으로 직접 구현합니다.

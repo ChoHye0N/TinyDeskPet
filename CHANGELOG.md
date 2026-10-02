@@ -52,5 +52,5 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/OWNER/deskpet/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/OWNER/deskpet/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v0.1.0
