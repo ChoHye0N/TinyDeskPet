@@ -12,6 +12,10 @@ namespace {
 // 긴 변을 이 크기 이하로 줄여 디코딩합니다. RGBA8 512² + 밉맵 ≈ 1.3MB.
 constexpr UINT kMaxTextureSize = 512;
 
+// 섬 바깥 여백을 채울 폭 (축소된 텍스처 기준 텍셀). 밉 단계 k는 2^k 텍셀을 평균하므로
+// 16이면 밉 4단계(512 → 32)까지 여백 색이 섞이지 않음. 더 작은 밉은 화면에서 몇 픽셀이라 무시
+constexpr int kPaddingTexels = 16;
+
 }  // namespace
 
 using Microsoft::WRL::ComPtr;
@@ -67,7 +71,8 @@ ComPtr<IWICBitmapSource> wrapPixels(IWICImagingFactory* wic, const model::Textur
 
 ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11Device* device,
                                                ID3D11DeviceContext* context,
-                                               const model::Texture& image) {
+                                               const model::Texture& image,
+                                               std::span<const model::UvTriangle> islands) {
     const ComPtr<IWICBitmapSource> decoded =
         image.rgba.empty() ? decode(wic, image.encoded) : wrapPixels(wic, image);
     if (!decoded) {
@@ -112,6 +117,9 @@ ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11De
                "CopyPixels")) {
         return nullptr;
     }
+    // 밉맵을 만들기 전에 해야 작은 밉 단계에도 여백 색(보통 검정)이 섞이지 않음
+    model::padUvIslands(pixels, static_cast<int>(width), static_cast<int>(height), islands,
+                        kPaddingTexels);
 
     // GenerateMips를 쓰려면 RENDER_TARGET 바인딩과 GENERATE_MIPS 플래그가 필요합니다.
     // 밉맵이 없으면 큰 텍스처를 작은 창에 그릴 때 지글거림(앨리어싱)이 심합니다.

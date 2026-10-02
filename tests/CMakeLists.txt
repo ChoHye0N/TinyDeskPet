@@ -29,6 +29,7 @@ add_executable(deskpet_tests
   model/ModelLoaderTests.cpp
   model/PmxBuilder.h
   model/PmxImporterTests.cpp
+  model/TexturePaddingTests.cpp
   model/TextureSourceTests.cpp
   character/CharacterControllerTests.cpp
   app/ApplicationTests.cpp

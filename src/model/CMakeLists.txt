@@ -37,6 +37,7 @@ add_library(deskpet_model STATIC
   Humanoid.cpp
   ModelLoader.cpp
   PmxImporter.cpp
+  TexturePadding.cpp
   TextureSource.cpp)
 add_library(deskpet::model ALIAS deskpet_model)
 

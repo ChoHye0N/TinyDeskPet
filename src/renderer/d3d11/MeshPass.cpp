@@ -208,7 +208,9 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
     textures_.resize(model.textures.size());
     for (std::size_t i = 0; i < model.textures.size(); ++i) {
         const model::Texture& texture = model.textures[i];
-        textures_[i] = createTexture(wic_.Get(), ctx.device, ctx.context, texture);
+        const std::vector<model::UvTriangle> islands =
+            model::collectUvTriangles(model, static_cast<int>(i));
+        textures_[i] = createTexture(wic_.Get(), ctx.device, ctx.context, texture, islands);
         if (!textures_[i]) {
             core::logging::warn("텍스처 {} ({}) {} → 흰색으로 대체", i, texture.name,
                                 texture.empty() ? "파일 없음" : "디코딩 실패");

@@ -24,6 +24,7 @@
 | `src/model/GltfImporter.cpp` | glTF 2.0 / GLB / VRM 0.x·1.0 (cgltf) |
 | `src/model/PmxImporter.cpp` | PMX 2.0·2.1 (직접 구현) |
 | `src/model/FbxImporter.cpp` | FBX 바이너리·ASCII (ufbx) |
+| `src/model/TexturePadding.h/.cpp` | 텍스처 패딩: UV 섬 바깥 여백을 섬 색으로 채워 이음매 선 방지 (§4.8) |
 | `src/model/TextureSource.h/.cpp` | 텍스처 바이트 정리, 외부 텍스처 파일 읽기, TGA 디코딩 |
 | `src/model/Humanoid.h/.cpp` | `HumanBone`과 형식별 본 이름 매핑표 |
 | `src/model/ThirdPartyImpl.cpp` | cgltf·stb_image 구현부 (우리 경고 옵션 미적용 타깃 `deskpet_model_thirdparty`, ufbx.c 포함) |
@@ -173,6 +174,17 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | 그 외 | TGA로 보고 stb_image로 디코딩 → `rgba` (RGBA8). 실패하면 원본을 `encoded`로 (렌더러가 마지막으로 시도) |
 | 외부 파일 | `baseDirectory / 상대 경로`(`\`→`/`, UTF-8 → `u8string` 경로). 기준 폴더가 없거나 파일이 없으면 빈 텍스처 (경고 로그) |
 
+### 4.8 텍스처 패딩 (`padUvIslands`)
+
+텍스처는 그림 조각(UV 섬)과 그 사이 여백(보통 검정)으로 되어 있습니다. 선형 필터·밉맵·축소는 주변 텍셀을 섞으므로 섬 가장자리에 여백 색이 섞여 들어오고, 조각끼리 맞닿는 이음매(좌우 대칭 몸통의 중앙, 입 테두리 등)에 얇은 선이 생깁니다. 게임 엔진이 텍스처를 구울 때 하는 처리처럼, 여백을 섬 색으로 미리 채웁니다.
+
+1. `collectUvTriangles(model, 텍스처)`: 그 텍스처를 쓰는 머티리얼의 삼각형 UV를 모음
+2. 덮인 텍셀 표시: UV 삼각형을 텍셀 격자에 래스터화 (텍셀 중심이 삼각형 안이면 덮임). UV는 반복(REPEAT)으로 해석해 `[1, 2)` 등도 같은 텍셀로
+3. 번짐(dilation): 덮인 이웃(8방향, 가장자리는 감싸서)이 있는 빈 텍셀을 이웃 평균색으로 채우는 것을 한 겹씩 `maxDistance`번. 한 겹을 다 계산한 뒤 표시해 거리 = 겹 수. 다음 겹 후보는 직전에 칠한 텍셀의 이웃만 봄 (전체 재탐색 없음)
+4. 섬 안 텍셀은 바꾸지 않고, 삼각형이 없으면 아무것도 하지 않음
+
+렌더러는 디코딩·축소 직후, **밉맵을 만들기 전에** 16텍셀(512 기준 밉 4단계까지)을 채웁니다. 측정: 펭귄 모델(텍스처 7장, 삼각형 5.3만 개) 로드 + 업로드 0.2초.
+
 ### 4.7 오류
 
 | 상황 | 결과 |
@@ -193,6 +205,7 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
+| `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
 | `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑 |
 
