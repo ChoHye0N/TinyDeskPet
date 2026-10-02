@@ -52,4 +52,12 @@ struct RectI {
     constexpr bool operator==(const RectI&) const noexcept = default;
 };
 
+// current에서 target 쪽으로 최대 maxDelta만큼 이동 (target을 넘어가지 않음)
+[[nodiscard]] constexpr float moveTowards(float current, float target, float maxDelta) noexcept {
+    if (current < target) {
+        return current + maxDelta < target ? current + maxDelta : target;
+    }
+    return current - maxDelta > target ? current - maxDelta : target;
+}
+
 }  // namespace deskpet::core

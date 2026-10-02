@@ -28,3 +28,11 @@ TEST(RectI, WidthAndHeight_AreHalfOpen) {
     EXPECT_EQ(rect.width(), 100);
     EXPECT_EQ(rect.height(), 50);
 }
+
+TEST(MoveTowards, StepsByMaxDeltaWithoutOvershooting) {
+    using deskpet::core::moveTowards;
+    EXPECT_FLOAT_EQ(moveTowards(0.0f, 1.0f, 0.25f), 0.25f);
+    EXPECT_FLOAT_EQ(moveTowards(0.0f, -1.0f, 0.25f), -0.25f);
+    EXPECT_FLOAT_EQ(moveTowards(0.9f, 1.0f, 0.25f), 1.0f);  // 넘어가지 않음
+    EXPECT_FLOAT_EQ(moveTowards(1.0f, 1.0f, 0.25f), 1.0f);
+}
