@@ -146,6 +146,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 | 11 | 메모리 169MB | 2048~4096 텍스처를 원본 크기로 업로드 | 긴 변 512로 축소 디코딩 | 창 크기에 비해 과한 리소스는 줄이기 |
 | 12 | 다른 모델이 걸을 때 일부가 창 밖으로 잘림 | 카메라 맞춤 경계 상자에 걷기 자세와 걷는 방향으로 돌린 몸(50°)이 빠짐 → 꼬리·치마가 옆으로 나옴. 넣고 나니 상자 앞면 기준 맞춤 때문에 발이 위로 뜸 | 걷기 8샘플 + 회전 범위를 해석적으로 포함, 카메라는 발 평면(z = 0) 기준으로 맞춤, 회전도 서서히 | 경계 상자는 "실제로 그려지는 모든 변환"을 담아야 함. 회전 극값은 양 끝이 아니라 중간에 있을 수 있음 |
 | 13 | 종료 시 `Run-Time Check Failure #2` (`application` 주변 스택 손상) | 한국어 `cl /showIncludes` 머리말은 콘솔 코드 페이지(949/65001)마다 바이트가 달라, configure와 다른 셸에서 빌드한 `.cpp` 20개의 헤더 의존성이 0개로 기록됨 → `Application.h`에 멤버를 추가해도 `main_win32.cpp`가 재컴파일되지 않아 객체 크기 불일치 | Clean 빌드, 비 ASCII 머리말이면 configure 경고, 프리셋에 `VSLANG=1033`(영어 언어 팩 필요) | 증상이 코드와 무관하면 빌드 산출물을 의심 (`ninja -t deps`로 기록된 의존성 확인). #6과 같은 계열 |
+| 14 | Debug 빌드 링크 실패 (`__stdcall`·`__thiscall`·`__purecall` 미해결) | 일반 Developer Command Prompt(x86)에서 `--fresh` configure → 캐시에 `Hostx86/x86/cl.exe` 고정, x64 셸 빌드와 섞임. 프리셋 `architecture`(strategy external)는 검사하지 않음 | x64 환경에서 다시 configure, 64비트가 아니면 configure에서 `FATAL_ERROR` | 이름 꾸밈의 호출 규약(`__stdcall`)만 봐도 32비트 오브젝트임을 알 수 있음. 환경 가정은 빌드 스크립트가 검사하게 |
 
 ---
 

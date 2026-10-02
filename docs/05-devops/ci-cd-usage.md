@@ -206,7 +206,7 @@ git push origin v0.2.0
 | Format & Hygiene | `python scripts/format.py --check` |
 | Static Analysis | (Linux/WSL) `cmake --preset linux-gcc` → `python scripts/run_clang_tidy.py --build-dir build/linux-gcc` |
 | Linux | (Linux/WSL) `cmake --workflow --preset ci-linux` |
-| Windows (debug/release) | (개발자 명령 프롬프트) `cmake --workflow --preset ci-windows-debug` / `ci-windows-release` |
+| Windows (debug/release) | (**x64** Native Tools 프롬프트) `cmake --workflow --preset ci-windows-debug` / `ci-windows-release` |
 
 > Windows에서도 **WSL(Ubuntu 24.04)** 을 설치하면 Linux 잡을 그대로 재현할 수 있습니다: `sudo apt install g++ cmake ninja-build python3-pip`
 
@@ -223,7 +223,8 @@ git push origin v0.2.0
 | `No tests were found!!!` | 테스트 실행 파일이 빌드되지 않았거나 등록 실패 | `tests/CMakeLists.txt`에 새 파일을 추가했는지 확인 |
 | `FetchContent ... Failed to clone` | 일시적 네트워크 문제 | Re-run failed jobs |
 | `Could not find Ninja` / `cl is not a full path` | MSVC/Ninja 환경 미설정 | 워크플로 순서(pip install ninja → msvc-dev-cmd) 확인. 로컬은 개발자 명령 프롬프트 사용 |
-| (로컬) Debug 실행 중·종료 시 `Run-Time Check Failure #2 - Stack around the variable ... was corrupted`, 헤더를 고쳤는데 반영 안 됨 | 한국어 MSVC의 `/showIncludes` 머리말이 콘솔 코드 페이지(949/65001)마다 바이트가 달라, configure와 다른 셸에서 빌드하면 Ninja가 헤더 의존성을 0개로 기록 → 헤더가 바뀌어도 일부 `.cpp`가 재컴파일되지 않아 객체 크기가 어긋남. configure 때 경고가 뜸 | 당장: `cmake --build --preset <이름> --clean-first`. 근본: VS Installer > 언어 팩 > **영어** 설치 후 `cmake --preset <이름> --fresh` (프리셋이 `VSLANG=1033`을 넣어 머리말이 ASCII가 됨) |
+| (로컬) Debug 실행 중·종료 시 `Run-Time Check Failure #2 - Stack around the variable ... was corrupted`, 헤더를 고쳤는데 반영 안 됨 | 한국어 MSVC의 `/showIncludes` 머리말이 콘솔 코드 페이지(949/65001)마다 바이트가 달라, configure와 다른 셸에서 빌드하면 Ninja가 헤더 의존성을 0개로 기록 → 헤더가 바뀌어도 일부 `.cpp`가 재컴파일되지 않아 객체 크기가 어긋남. configure 때 경고가 뜸 | 당장: `cmake --build --preset <이름> --clean-first`. 근본: VS Installer > 언어 팩 > **영어** 설치 후 **x64 Native Tools 프롬프트**에서 `cmake --preset <이름> --fresh` (프리셋이 `VSLANG=1033`을 넣어 머리말이 ASCII가 됨) |
+| (로컬) 링크 오류 `unresolved external symbol ... __stdcall` / `__thiscall` / `__purecall`, 또는 configure가 `64비트 MSVC가 아닙니다`로 멈춤 | 일반 "Developer Command Prompt"(기본 x86)에서 configure → 32비트 컴파일러가 캐시에 고정되고 x64 셸 빌드와 섞임. 프리셋의 `architecture: x64`(strategy external)는 검사하지 않음 | **x64 Native Tools Command Prompt for VS**(또는 `vcvars64.bat`)에서 `cmake --preset <이름> --fresh` → `cmake --build --preset <이름> --clean-first` |
 
 ## 7. 기타 자동화 사용법
 
