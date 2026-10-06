@@ -15,6 +15,7 @@
 - **VRM · PMX · FBX 모델** — 형식별 로더를 하나의 모델 표현으로 통일 ([ADR-0009](docs/02-architecture/adr/0009-multiple-model-formats.md))
 - **코드로 만든 애니메이션** — 대기·걷기·매달림·공중·착지 자세, GPU 스키닝, 표정, 상태 전환 slerp 보간 ([ADR-0010](docs/02-architecture/adr/0010-procedural-animation.md))
 - **렌더링** — 2단 툰 셰이딩, MSAA, 반전 헐 외곽선 (모델의 MToon·PMX 에지 설정 사용)
+- **머리카락·옷 흔들림** — VRM SpringBone. 끌거나 걸으면 관성으로 날리고 다리·팔 충돌체를 피함
 - **드래그 · 던지기 · 낙하 · 점프 · 걷기** — 고정 시간 간격 물리 ([ADR-0004](docs/02-architecture/adr/0004-fixed-timestep-update.md)), 드래그 중에도 애니메이션 유지 ([ADR-0003](docs/02-architecture/adr/0003-manual-window-drag.md))
 - **크기 조절 · 트레이 아이콘 · 고 DPI · 위치/크기 기억**
 - **GPU 디바이스 손실 자동 복구** — 드라이버가 리셋되어도 펫이 사라지지 않음

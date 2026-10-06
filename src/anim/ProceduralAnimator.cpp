@@ -103,6 +103,7 @@ Expressions expressionsFor(Motion motion) {
 ProceduralAnimator::ProceduralAnimator(const model::Model& model)
     : model_(model),
       skeleton_(model),
+      springs_(model),
       leftArm_(makeLimb(HumanBone::LeftUpperArm, HumanBone::LeftLowerArm)),
       rightArm_(makeLimb(HumanBone::RightUpperArm, HumanBone::RightLowerArm)) {}
 
@@ -238,6 +239,8 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
     lastRotations_ = rotations_;
     lastExpressions_ = expressions;
     applySquash(input.squash);
+    // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)
+    springs_.update(skeleton_, rotations_, input.movement, dt);
     writeOutput(input, expressions, out);
 }
 

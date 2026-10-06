@@ -26,6 +26,13 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return positions_.size(); }
     [[nodiscard]] int find(model::HumanBone bone) const noexcept;
     [[nodiscard]] core::Vec3 bindPosition(int bone) const noexcept;
+    [[nodiscard]] int parent(int bone) const noexcept;
+    // 부모가 자식보다 먼저 오는 본 순서
+    [[nodiscard]] std::span<const int> order() const noexcept { return order_; }
+
+    // FK만 계산: accumulated[본] = 누적 회전 Aⱼ, posed[본] = 자세를 적용한 관절 위치 Pⱼ
+    void computePose(std::span<const core::Quat> rotations, std::vector<core::Quat>& accumulated,
+                     std::vector<core::Vec3>& posed) const;
 
     // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐
     void computeSkinMatrices(std::span<const core::Quat> rotations,
