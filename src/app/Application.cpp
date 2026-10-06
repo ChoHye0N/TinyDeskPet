@@ -88,6 +88,12 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
 void Application::refitCamera() {
     if (model_) {
         camera_ = fitCameraToBounds(displayBounds_, windowSize_);
+        // 발 평면에서 1m가 화면에서 몇 px인지 → 창이 움직인 px를 모델 공간 m로 바꿀 때 씀
+        const core::Vec4 a = core::transform({0.0f, 0.0f, 0.0f}, camera_);
+        const core::Vec4 b = core::transform({0.0f, 1.0f, 0.0f}, camera_);
+        const float pixelsPerMeter =
+            (b.y / b.w - a.y / a.w) * 0.5f * static_cast<float>(windowSize_.height);
+        metersPerPixel_ = pixelsPerMeter > 0.0f ? 1.0f / pixelsPerMeter : 0.0f;
     }
 }
 
@@ -108,6 +114,20 @@ void Application::updateAnimation(float dt) {
     input.squash = pose.squash;
     input.blink = pose.eyesClosed;
     input.idleMotion = config_.animation.idleMotion;
+
+    // 흔들림 관성: 이번 프레임에 화면에서 움직인 거리 → 모델 공간 m.
+    // 화면 y는 아래가 +, 모델 y는 위가 +. 걸을 때 돌린 몸의 반대로 돌려 모델 축에 맞춤
+    // (앞으로 걸으면 머리카락이 뒤로 날림). 시뮬레이션 단계가 없던 프레임은 다음으로 넘김
+    const core::Vec2 feet = character_.position();
+    if (dt > 0.0f) {
+        if (hasLastFeet_) {
+            const core::Vec2 moved = feet - lastFeet_;
+            const core::Vec3 world{moved.x * metersPerPixel_, -moved.y * metersPerPixel_, 0.0f};
+            input.movement = core::Quat::axisAngle({0.0f, 1.0f, 0.0f}, -turnRadians_).rotate(world);
+        }
+        lastFeet_ = feet;
+        hasLastFeet_ = true;
+    }
     animator_->animate(input, dt, animation_);
 
     // 걷는 방향으로 몸 돌리기: 목표 각도로 일정한 속도로 돌아감 (즉시 바뀌면 튀어 보임)

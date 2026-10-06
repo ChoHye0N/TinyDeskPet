@@ -22,6 +22,7 @@ add_executable(deskpet_tests
   anim/AnimTestModels.h
   anim/ProceduralAnimatorTests.cpp
   anim/SkeletonTests.cpp
+  anim/SpringBoneTests.cpp
   model/FbxImporterTests.cpp
   model/GltfBuilder.h
   model/HumanoidTests.cpp

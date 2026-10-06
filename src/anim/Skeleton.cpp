@@ -50,26 +50,39 @@ core::Vec3 Skeleton::bindPosition(int bone) const noexcept {
                : core::Vec3{};
 }
 
-void Skeleton::computeSkinMatrices(std::span<const core::Quat> rotations,
-                                   std::vector<core::Mat4>& out) const {
-    const std::size_t count = positions_.size();
-    accumulated_.assign(count, core::Quat{});
-    posed_.assign(count, core::Vec3{});
-    out.resize(count);
+int Skeleton::parent(int bone) const noexcept {
+    return bone >= 0 && static_cast<std::size_t>(bone) < parents_.size()
+               ? parents_[static_cast<std::size_t>(bone)]
+               : -1;
+}
 
+void Skeleton::computePose(std::span<const core::Quat> rotations,
+                           std::vector<core::Quat>& accumulated,
+                           std::vector<core::Vec3>& posed) const {
+    const std::size_t count = positions_.size();
+    accumulated.assign(count, core::Quat{});
+    posed.assign(count, core::Vec3{});
     for (const int index : order_) {
         const auto j = static_cast<std::size_t>(index);
         const core::Quat delta = j < rotations.size() ? rotations[j] : core::Quat{};
         const int parent = parents_[j];
         if (parent < 0) {
-            accumulated_[j] = delta;
-            posed_[j] = positions_[j];  // 루트는 제자리에서 회전
+            accumulated[j] = delta;
+            posed[j] = positions_[j];  // 루트는 제자리에서 회전
         } else {
             const auto p = static_cast<std::size_t>(parent);
             // 부모 자세가 먼저, 그 위에 이 본의 델타 (해밀턴 곱은 오른쪽이 먼저 적용)
-            accumulated_[j] = delta * accumulated_[p];
-            posed_[j] = posed_[p] + accumulated_[p].rotate(positions_[j] - positions_[p]);
+            accumulated[j] = delta * accumulated[p];
+            posed[j] = posed[p] + accumulated[p].rotate(positions_[j] - positions_[p]);
         }
+    }
+}
+
+void Skeleton::computeSkinMatrices(std::span<const core::Quat> rotations,
+                                   std::vector<core::Mat4>& out) const {
+    computePose(rotations, accumulated_, posed_);
+    out.resize(positions_.size());
+    for (std::size_t j = 0; j < positions_.size(); ++j) {
         // v' = A(v - p) + P  →  T(-p) · R(A) · T(P)
         out[j] = core::Mat4::translation(positions_[j] * -1.0f) * accumulated_[j].toMat4() *
                  core::Mat4::translation(posed_[j]);

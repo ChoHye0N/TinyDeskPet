@@ -5,6 +5,7 @@
 // 없는 본은 건너뛰므로, 본이 부족한 모델도 할 수 있는 만큼만 움직입니다.
 
 #include "anim/Skeleton.h"
+#include "anim/SpringBone.h"
 #include "model/Model.h"
 
 #include <array>
@@ -22,6 +23,7 @@ struct AnimationInput {
     float squash = 0.0f;  // 착지 반동 (0 ~ 약 0.2) → 무릎 굽힘
     bool blink = false;   // 눈 감는 순간
     bool idleMotion = true;  // false면 대기 중 숨쉬기 동작을 끔 → 화면이 멈춰 Present 생략 가능
+    core::Vec3 movement;  // 이번 프레임에 캐릭터가 화면에서 움직인 거리 (모델 공간 m) → 흔들림 관성
 };
 
 using Expressions = std::array<float, static_cast<std::size_t>(model::Expression::Count)>;
@@ -72,6 +74,7 @@ private:
 
     const model::Model& model_;
     Skeleton skeleton_;
+    SpringBoneSimulator springs_;  // animate 전용 (머리카락·옷 흔들림)
     Limb leftArm_;
     Limb rightArm_;
     mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)

@@ -103,6 +103,7 @@ Expressions expressionsFor(Motion motion) {
 ProceduralAnimator::ProceduralAnimator(const model::Model& model)
     : model_(model),
       skeleton_(model),
+      springs_(model),
       leftArm_(makeLimb(HumanBone::LeftUpperArm, HumanBone::LeftLowerArm)),
       rightArm_(makeLimb(HumanBone::RightUpperArm, HumanBone::RightLowerArm)) {}
 
@@ -238,6 +239,8 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
     lastRotations_ = rotations_;
     lastExpressions_ = expressions;
     applySquash(input.squash);
+    // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)
+    springs_.update(skeleton_, rotations_, input.movement, dt);
     writeOutput(input, expressions, out);
 }
 
@@ -302,11 +305,14 @@ model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
     constexpr int kWalkSamples = 8;
     std::vector<AnimationInput> inputs;
     for (const Motion motion : {Motion::Idle, Motion::Dragged, Motion::Airborne}) {
-        inputs.push_back({.motion = motion, .idleMotion = false});
+        AnimationInput& input = inputs.emplace_back();
+        input.motion = motion;
+        input.idleMotion = false;
     }
     for (int i = 0; i < kWalkSamples; ++i) {
-        inputs.push_back(
-            {.motion = Motion::Walk, .time = kWalkCycle * static_cast<float>(i) / kWalkSamples});
+        AnimationInput& input = inputs.emplace_back();
+        input.motion = Motion::Walk;
+        input.time = kWalkCycle * static_cast<float>(i) / kWalkSamples;
     }
 
     AnimationOutput out;

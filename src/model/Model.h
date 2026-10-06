@@ -67,6 +67,24 @@ struct Bone {
     HumanBone human = HumanBone::None;
 };
 
+// SpringBone 충돌체 (구). 본을 따라 움직임
+struct SpringCollider {
+    int bone = -1;        // Model::bones 인덱스
+    core::Vec3 offset;    // 본 위치에서의 오프셋 (바인드 포즈 모델 공간, m)
+    float radius = 0.0f;  // m
+};
+
+// SpringBone 그룹: roots의 자손 본 전체가 같은 파라미터로 흔들림 (VRM secondaryAnimation)
+struct SpringGroup {
+    float stiffness = 1.0f;     // 원래 방향으로 돌아가려는 힘
+    float gravityPower = 0.0f;  // 중력 세기
+    core::Vec3 gravityDir{0.0f, -1.0f, 0.0f};
+    float dragForce = 0.4f;      // 0 ~ 1. 클수록 흔들림이 빨리 줄어듦
+    float hitRadius = 0.02f;     // 본 끝의 충돌 반지름 (m)
+    std::vector<int> roots;      // 흔들림이 시작되는 본
+    std::vector<int> colliders;  // Model::springColliders 인덱스
+};
+
 // 같은 머티리얼로 그리는 인덱스 구간
 struct Primitive {
     std::uint32_t firstIndex = 0;
@@ -110,6 +128,8 @@ struct Model {
     std::vector<Texture> textures;
     std::vector<Bone> bones;
     std::array<Morph, static_cast<std::size_t>(Expression::Count)> expressions;
+    std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM 0.x만 읽음)
+    std::vector<SpringCollider> springColliders;
     Bounds bounds;
 
     [[nodiscard]] const Morph& expression(Expression e) const noexcept {

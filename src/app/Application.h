@@ -106,6 +106,9 @@ private:
     std::optional<anim::ProceduralAnimator> animator_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용
     model::Bounds displayBounds_;  // 카메라·클릭 영역 기준 (애니메이션 자세 포함)
+    float metersPerPixel_ = 0.0f;  // 발 평면(z = 0)에서 창 1px = 모델 공간 몇 m (흔들림 관성용)
+    core::Vec2 lastFeet_;  // 직전에 흔들림에 넘긴 발 위치 (화면 px)
+    bool hasLastFeet_ = false;
     float turnRadians_ = 0.0f;  // 걷는 방향으로 돌린 몸 각도 (목표 각도로 서서히 돎)
     core::Mat4 camera_ = core::Mat4::identity();  // model_의 뷰×투영
     std::unique_ptr<platform::IWindow> window_;

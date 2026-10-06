@@ -44,6 +44,9 @@ void setSkinWeights(Vertex&, std::span<const std::pair<int, float>> influences);
 enum class Expression : std::uint8_t { Blink, Happy, Surprised, Count };
 struct Morph { std::vector<std::uint32_t> vertices; std::vector<core::Vec3> deltas; };  // 희소 정점 오프셋
 enum class AlphaMode : std::uint8_t { Opaque, Mask, Blend };
+struct SpringCollider { int bone; core::Vec3 offset; float radius; };
+struct SpringGroup { float stiffness, gravityPower; core::Vec3 gravityDir; float dragForce, hitRadius;
+                     std::vector<int> roots, colliders; };
 struct Material { std::string name; core::Vec4 baseColor; int baseColorTexture;  // -1 = 없음
                   AlphaMode alphaMode; float alphaCutoff; bool doubleSided;
                   float outlineWidth /* m, 0 = 없음 */; core::Vec4 outlineColor; };
@@ -195,6 +198,17 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | 그릴 메시 없음 / 인덱스 범위 초과 / 정점 2³²개 초과 | 〃 |
 | 텍스처 파일 없음·디코딩 실패 | 모델은 성공, 해당 텍스처만 흰색 |
 
+### 흔들림 정보 (SpringBone)
+
+VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_springBone`, PMX 강체는 TODO).
+
+| 데이터 | 출처 | 변환 |
+|---|---|---|
+| `SpringCollider{bone, offset, radius}` | `colliderGroups[{node, colliders[{offset, radius}]}]` (그룹별 구를 펼쳐 저장) | VRM 0.x 노드는 회전 없는 T포즈라 offset을 모델 공간으로 쓰고 x·z 부호만 반전 |
+| `SpringGroup{stiffness, gravityPower, gravityDir, dragForce, hitRadius, roots, colliders}` | `boneGroups[{stiffiness(원문 철자), gravityPower, gravityDir, dragForce, hitRadius, bones, colliderGroups}]` | gravityDir도 x·z 반전. colliderGroups 번호 → 구 인덱스 목록 |
+
+`secondaryAnimation` 안에는 `colliderGroups`가 두 단계(최상위, `boneGroups[]` 안)에 있어서, 처음 나온 키를 찾는 스캐너로는 엉뚱한 배열을 읽습니다. 바로 아래 단계만 찾는 `childSpan`을 씁니다.
+
 ### 외곽선 정보 (반전 헐용)
 
 | 형식 | 출처 | 변환 |
@@ -230,4 +244,4 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
 | `TODO(M4)` | 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 |
-| `TODO(M5)` | MToon 파라미터 (`VRMC_materials_mtoon`), SpringBone, MMD 툰·스피어 텍스처 |
+| `TODO(M5)` | MToon 파라미터 (`VRMC_materials_mtoon`), VRM 1.0 SpringBone, MMD 툰·스피어 텍스처 |

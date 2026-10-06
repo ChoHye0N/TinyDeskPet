@@ -361,3 +361,51 @@ TEST(ModelLoader, PlainGltfMaterial_HasNoOutline) {
     ASSERT_TRUE(result.model.has_value()) << result.error;
     EXPECT_FLOAT_EQ(result.model->materials[0].outlineWidth, 0.0f);
 }
+
+// ---------------------------------------------------------------------------
+// SpringBone (VRM 0.x secondaryAnimation)
+// ---------------------------------------------------------------------------
+
+TEST(ModelLoader, Vrm0SpringBone_ReadsGroupsAndCollidersInModelSpace) {
+    // VRM 0.x 좌표는 정면 -Z라 오프셋·중력 방향도 Y축 180° 회전 (x, z 부호 반전)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0,"children":[1]},{"name":"hair","translation":[0,1,0],"children":[2]},)"
+        R"({"name":"hair_end","translation":[0,-0.1,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("extensionsUsed":["VRM"],"extensions":{"VRM":{"secondaryAnimation":{)"
+        R"("boneGroups":[{"stiffiness":2,"gravityPower":0.5,"gravityDir":{"x":1,"y":-1,"z":0},)"
+        R"("dragForce":0.3,"hitRadius":0.02,"bones":[1],"colliderGroups":[0]}],)"
+        R"("colliderGroups":[{"node":1,"colliders":[{"offset":{"x":0.1,"y":0,"z":0.2},"radius":0.05},)"
+        R"({"offset":{"x":0,"y":0.1,"z":0},"radius":0.03}]}]}}})";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& model = *result.model;
+    ASSERT_EQ(model.springGroups.size(), 1U);
+    const auto& group = model.springGroups[0];
+    EXPECT_FLOAT_EQ(group.stiffness, 2.0f);
+    EXPECT_FLOAT_EQ(group.gravityPower, 0.5f);
+    EXPECT_FLOAT_EQ(group.gravityDir.x, -1.0f);
+    EXPECT_FLOAT_EQ(group.gravityDir.y, -1.0f);
+    EXPECT_FLOAT_EQ(group.dragForce, 0.3f);
+    EXPECT_FLOAT_EQ(group.hitRadius, 0.02f);
+    EXPECT_EQ(group.roots, (std::vector<int>{1}));
+    EXPECT_EQ(group.colliders, (std::vector<int>{0, 1}));  // 충돌체 그룹 0의 구 2개
+
+    ASSERT_EQ(model.springColliders.size(), 2U);
+    EXPECT_EQ(model.springColliders[0].bone, 1);
+    EXPECT_FLOAT_EQ(model.springColliders[0].offset.x, -0.1f);
+    EXPECT_FLOAT_EQ(model.springColliders[0].offset.z, -0.2f);
+    EXPECT_FLOAT_EQ(model.springColliders[0].radius, 0.05f);
+}
+
+TEST(ModelLoader, PlainGltf_HasNoSpringBones) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(b.build(meshJson(t) + "," + kSingleNodeScene));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_TRUE(result.model->springGroups.empty());
+    EXPECT_TRUE(result.model->springColliders.empty());
+}

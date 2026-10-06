@@ -112,7 +112,7 @@ flowchart LR
 | MSAA (멀티샘플 텍스처 → resolve) ✅ | 컴포지션 스왑체인 제약, 샘플 평균 |
 | MToon 셰이더 (쉐이드 색, 림 라이트, MatCap) + 선형 색공간(sRGB) | 툰 셰이딩, 감마 |
 | 아웃라인 (반전 헐) ✅ | 멀티 패스, 앞면 컬링, MToon·PMX 에지 굵기 |
-| SpringBone (머리카락·옷) | Verlet 적분, 충돌체 |
+| SpringBone (머리카락·옷) ✅ VRM 0.x | Verlet 적분, 길이 구속, 구 충돌, 화면 이동 → 관성 |
 | 알파 기반 클릭 통과 (FR-04 고도화) | GPU → CPU 읽기(스테이징 텍스처) 비용 관리 |
 
 ## M6 — 고급 상호작용 (v1.0.0)

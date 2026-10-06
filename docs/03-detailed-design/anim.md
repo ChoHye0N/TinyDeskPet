@@ -20,6 +20,7 @@
 |---|---|
 | `src/anim/Skeleton.h/.cpp` | 본 계층 정리(부모 먼저 순서), FK, 스킨 행렬 |
 | `src/anim/ProceduralAnimator.h/.cpp` | `Motion` → 본 회전·표정, 표시용 경계 상자 |
+| `src/anim/SpringBone.h/.cpp` | 머리카락·옷 흔들림 (VRM SpringBone, §4.4) |
 | `src/core/Math3D.h` | `Quat` (해밀턴 곱, `axisAngle`, `fromTo`, `toMat4`) |
 
 ## 3. 공개 인터페이스
@@ -99,6 +100,22 @@ public:
 - 스킨 가중치가 있는 정점이 하나도 없으면 원래 `Model::bounds`(돌릴 각도가 있으면 그 꼭짓점 8개를 돌려서)를 씁니다.
 - 걷기 중 바뀌는 회전은 모든 동작에 적용합니다 (걷다가 들리면 돌아오는 도중에도 회전이 남아 있음).
 
+### 4.4 흔들림 (`SpringBoneSimulator`)
+
+UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `springGroups`·`springColliders`(VRM 0.x `secondaryAnimation`)를 그대로 써서, 모델마다 제작자가 정한 대로 흔들립니다.
+
+- **관절**: 그룹의 루트 본부터 자손 전체(전위 순회 → 부모가 먼저). 본의 끝(tail)은 첫 자식 위치, 자식이 없으면 부모 → 본 방향으로 7cm.
+- **한 단계** (`dt` = 1/60초, 프레임이 밀리면 최대 4단계로 나눔):
+  1. 몸 자세(절차적 동작 + 착지 반동)로 FK → 부모 회전 `A부모`, 머리 위치 `head`
+  2. 원래 방향 `rest = (Δⱼ·A부모)(축)`
+  3. `next = cur + (cur − prev)(1 − drag) + rest·stiffness·dt + 중력방향·gravityPower·dt`
+  4. 본 길이로 되돌림 → 그룹의 구 충돌체(`P본 + A본(offset)`, 반지름 + hitRadius) 안이면 표면으로 밀고 다시 길이 유지
+  5. `Δⱼ ← fromTo(rest, next − head) · Δⱼ`, 이 본의 `A`·`P`를 갱신해 자식 계산에 사용
+- **관성 (`AnimationInput::movement`)**: 캐릭터가 화면에서 움직인 거리(m). 모델 공간에서 계산하므로 이전 끝 위치들을 `−movement`만큼 옮겨 관성을 만듭니다. 앱이 창 이동 px × (m/px)를 걸을 때 돌린 몸의 반대로 돌려서 넘깁니다 → 앞으로 걸으면 머리카락이 뒤로 날림.
+- **순간 이동**: 한 프레임에 0.5m 넘게 움직이면(위치 초기화, 다른 모니터) 관성 없이 현재 자세에서 다시 시작.
+- **정지**: 끝이 한 단계에 0.01mm 미만으로 움직이면 그대로 둠. 미세한 오차로 매 프레임 자세가 바뀌면 Present 생략(DEBT-02)이 안 되기 때문.
+- `animate`에서만 계산합니다 (`evaluate`·`displayBounds`는 상태가 없어 흔들림 없음). 자세 전환 보간 대상도 아닙니다 (스스로 연속적).
+
 ## 5. 테스트 항목
 
 `tests/anim/` — `AnimTestModels.h`의 최소 휴머노이드(본 13개, 자식이 부모보다 앞에 오도록 섞음, T/A포즈 선택)로 검증합니다.
@@ -124,10 +141,14 @@ public:
 | `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
 | `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
 
+`tests/anim/SpringBoneTests.cpp` — 몸통 + 사슬 3개짜리 모델: 힘이 없으면 바인드 포즈 유지, 중력으로 처지되 본 길이 유지, 캐릭터가 움직이면 끝이 뒤처졌다가 돌아옴, 구 충돌체 안으로 들어가지 않음(구가 없을 때와 대조), 순간 이동은 초기화, 멈춘 뒤 회전이 정확히 같음.
+
 ## 6. 확장 지점
 
 | TODO | 내용 |
 |---|---|
 | `TODO(M4)` | 모션 파일 재생 (VRMA, VMD, FBX) — 같은 휴머노이드 본으로 리타기팅 |
 | `TODO(M4)` | 손가락 |
-| `TODO(M5)` | SpringBone(머리카락·옷 흔들림), 시선(LookAt) |
+| ~~`TODO(M5)`~~ | ✅ SpringBone (VRM 0.x, §4.4) |
+| `TODO(M5)` | VRM 1.0 SpringBone(`VRMC_springBone`, 캡슐 충돌체), PMX 강체 → 흔들림 근사 |
+| `TODO(M6)` | 시선(LookAt) |
