@@ -37,7 +37,7 @@ Model makeChainModel(Vec3 step, deskpet::model::SpringGroup group = {}) {
 }
 
 struct Rig {
-    explicit Rig(const Model& model) : model(model), skeleton(model), springs(model) {}
+    explicit Rig(const Model& source) : model(source), skeleton(source), springs(source) {}
 
     // n 프레임 진행 후 본별 자세 위치
     std::vector<Vec3> run(int frames, Vec3 movementPerFrame = {}) {
