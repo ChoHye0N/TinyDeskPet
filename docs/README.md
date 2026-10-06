@@ -10,8 +10,9 @@ flowchart LR
     A["01 요구사항<br/>무엇을 만드는가"] --> B["02 아키텍처<br/>어떤 구조로 만드는가"]
     B --> C["03 상세 설계<br/>각 모듈은 어떻게 동작하는가"]
     C --> D["04 코딩 규칙<br/>어떻게 작성하는가"]
-    D --> E["05 DevOps<br/>어떻게 빌드·검증·배포하는가"]
+    D --> E["05 CI/CD<br/>어떻게 검증·배포하는가"]
     E --> F["06 로드맵<br/>다음에 무엇을 구현하는가"]
+    F --> G["07 학습 노트<br/>무엇을 배웠는가"]
 ```
 
 ## 문서 목록
@@ -21,9 +22,10 @@ flowchart LR
 | 요구사항 | [SRS.md](01-requirements/SRS.md) | 소프트웨어 요구사항 명세서. 기능/비기능 요구사항, 범위, 추적표 |
 | 아키텍처 | [SAD.md](02-architecture/SAD.md) | 소프트웨어 아키텍처 설계서. 레이어, 컴포넌트, 런타임 흐름, 배포 구조 |
 | 아키텍처 | [adr/](02-architecture/adr/README.md) | 아키텍처 의사결정 기록(ADR). "왜 이렇게 했는가"의 근거 |
-| 상세 설계 | [03-detailed-design/](03-detailed-design/README.md) | 모듈별(core, platform, renderer, character, app) 인터페이스와 동작 명세 |
+| 상세 설계 | [03-detailed-design/](03-detailed-design/README.md) | 모듈별(core, model, anim, character, platform, renderer, app) 인터페이스와 동작 명세 |
 | 코딩 규칙 | [coding-style.md](04-conventions/coding-style.md) | 명명 규칙, 소유권, 오류 처리, 포맷팅 규칙 |
-| DevOps | [05-devops/](05-devops/README.md) | CI/CD 구현 설명, 사용 가이드, 브랜치·릴리스 전략, 로컬 개발 환경 |
+| CI/CD | [ci-cd-implementation.md](05-devops/ci-cd-implementation.md) | 파이프라인 구조와 각 잡이 잡아내는 것 |
+| 작업 방법 | [CONTRIBUTING.md](../CONTRIBUTING.md) | 빌드, 브랜치·커밋·PR, 릴리스, 문제 해결 |
 | 로드맵 | [ROADMAP.md](06-roadmap/ROADMAP.md) | 마일스톤별 구현 과제와 완료 기준 |
 | 학습 노트 | [LEARNING-NOTES.md](07-learning/LEARNING-NOTES.md) | 구조, 사용한 기술·알고리즘, 버그와 해결을 요약한 학습용 기록 |
 

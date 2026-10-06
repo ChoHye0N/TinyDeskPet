@@ -145,7 +145,7 @@ flowchart TD
   - 알파 컷아웃(`discard`) 경계는 MSAA로 부드러워지지 않습니다. 필요하면 alpha-to-coverage(§6).
 - `Present(1, 0)`은 다음 VSync까지 스레드를 재우므로 별도의 `Sleep` 없이 CPU 사용률이 낮게 유지됩니다.
 - **Present 생략 (DEBT-02)**: `RenderScene`은 `operator==`를 가지며, 직전에 Present한 장면과 같으면 아무것도 하지 않고 `Skipped`를 반환합니다. DirectComposition은 마지막으로 Present된 버퍼를 계속 합성하므로 화면은 그대로이고, 창 이동(드래그)은 장면이 아니라 창 위치만 바뀌므로 역시 생략됩니다. 디바이스 재생성·`resize` 뒤에는 `needsPresent_`로 반드시 한 번 그립니다. VSync 대기가 없어지므로 앱이 `waitForEvents(16ms)`로 쉽니다.
-- 슬라임과 대기 동작(숨쉬기)을 켠 모델은 매 프레임 장면이 바뀌어 생략되지 않습니다. `[animation] idle_motion = false`면 대기 중 장면이 같아져 생략됩니다. 측정(Seed-san, Release): GPU 3D 1.6% → 0%, CPU 0.17% → 0.04%.
+- 슬라임과 대기 동작(숨쉬기)을 켠 모델은 매 프레임 장면이 바뀌어 생략되지 않습니다. `[animation] idle_motion = false`면 대기 중 장면이 같아져 생략됩니다.
 
 ### 4.3 렌더 패스
 
@@ -244,7 +244,7 @@ namespace deskpet::renderer::d3d11 {
 | ~~`TODO(M2)`~~ | ✅ M1a: HLSL 빌드 시 컴파일 (`fxc /Fh` → 헤더 내장) |
 | ~~`TODO(M2)`~~ | ✅ M1a: `MeshPass` (정점/인덱스 버퍼, 상수 버퍼, 깊이, premultiplied alpha) |
 | ~~`TODO(M3)`~~ | ✅ M1a: WIC 텍스처 로딩 + 밉맵. sRGB(선형 색공간) 처리는 M5로 이동 |
-| `TODO(M2)` | (선택) WARP 오프스크린 스냅샷 테스트 |
+| `TODO(M6)` | (선택) WARP 오프스크린 스냅샷 테스트 |
 | ~~`TODO(M4)`~~ | ✅ 구조화 버퍼 GPU 스키닝, 표정 모프 스트림 (ADR-0010) |
 | ~~`TODO(M5)`~~ | ✅ MSAA (멀티샘플 텍스처 → resolve, §4.2) |
 | `TODO` | (선택) alpha-to-coverage로 컷아웃 경계 안티앨리어싱 |

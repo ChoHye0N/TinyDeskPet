@@ -219,14 +219,14 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
 | `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑 |
 
-수동 확인: Seed-san(VRM 1.0), ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
+수동 확인: VRM 0.x 모델, ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
 
 ## 6. 확장 지점
 
 | TODO | 내용 |
 |---|---|
 | ~~`TODO(M3)`~~ | ✅ 휴머노이드 본 매핑 (VRM, PMX, FBX — ADR-0009) |
-| `TODO(M3)` | VRM 메타(이름, 작가, 라이선스) 파싱과 표시 |
+| `TODO(M6)` | VRM 메타(이름, 작가, 라이선스) 파싱과 표시 |
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
 | `TODO(M4)` | 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 |
