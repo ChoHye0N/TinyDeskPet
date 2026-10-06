@@ -81,7 +81,7 @@ flowchart TD
     Fall -->|바닥 도착| Land[착지 반동] --> Idle
     Idle -->|더블클릭| Jump[점프] --> Fall
     Idle -->|우클릭| Menu{컨텍스트 메뉴}
-    Menu -->|점프| Jump
+    Menu -->|크게·작게| Idle
     Menu -->|위치 초기화| Appear
     Menu -->|종료| End([종료])
     Idle -->|캐릭터 밖 클릭| Pass[아래 창이 클릭을 받음]

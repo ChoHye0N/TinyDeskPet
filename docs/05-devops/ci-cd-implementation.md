@@ -6,7 +6,7 @@
 | 관련 ADR | [ADR-0006 빌드](../02-architecture/adr/0006-cmake-presets-ninja.md), [ADR-0007 CI/CD](../02-architecture/adr/0007-github-actions-ci.md) |
 | 관련 요구사항 | FR-32, NFR-PORT-01, NFR-MAINT-02, NFR-MAINT-03, NFR-SEC-02 |
 
-이 문서는 파이프라인이 **어떻게 만들어져 있는지**를 설명합니다. 사용 방법은 [ci-cd-usage.md](ci-cd-usage.md)를 보세요.
+이 문서는 파이프라인이 **어떻게 만들어져 있는지**를 설명합니다. 빌드 방법·작업 흐름·릴리스 절차·문제 해결은 [CONTRIBUTING.md](../../CONTRIBUTING.md)를 보세요.
 
 ---
 

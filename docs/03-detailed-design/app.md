@@ -29,7 +29,10 @@
 ```cpp
 namespace deskpet::app {
 
-enum class MenuCommand : std::uint8_t { About = 1, Jump = 2, ResetPosition = 3, Quit = 4 };
+enum class MenuCommand : std::uint8_t {
+    About = 1, /* 2: 예전 Jump */ ResetPosition = 3, Quit = 4, ToggleVisible = 5,
+    ScaleInfo = 6, ScaleUp = 7, ScaleDown = 8,
+};
 
 enum class ExitCode : std::uint8_t {
     Ok = 0, InitializationFailed = 1, RendererFailed = 2,
@@ -245,4 +248,4 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | ~~`TODO(M1)`~~ | ✅ 마지막 위치 저장/복원 |
 | ~~`TODO(M1)`~~ | ✅ 고 DPI 배율 반영 |
 | `TODO(M6)` | 픽셀 알파 기반 히트 테스트 (T포즈의 빈 공간 클릭 통과) |
-| `TODO(M3)` | 모델 로딩 메뉴 (파일 열기 대화상자는 platform에 추가) |
+| `TODO(M6)` | 모델 로딩 메뉴 (파일 열기 대화상자는 platform에 추가) |
