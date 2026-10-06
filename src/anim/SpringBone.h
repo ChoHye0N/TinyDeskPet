@@ -25,8 +25,9 @@ public:
 
     // rotations: 자세 델타 (입력). 흔들리는 본의 델타를 덧붙여 돌려줌.
     // movement: 이번 프레임에 캐릭터가 화면에서 움직인 거리 (모델 공간 m)
+    // rootOffset: 몸 전체를 옮긴 거리 (Skeleton::computePose와 같음). 바뀌면 그만큼 관성이 생김
     void update(const Skeleton& skeleton, std::vector<core::Quat>& rotations, core::Vec3 movement,
-                float dt);
+                float dt, core::Vec3 rootOffset = {});
 
     // 다음 update에서 현재 자세 그대로 다시 시작 (순간 이동, 모델 교체 등)
     void reset() noexcept { initialized_ = false; }
@@ -44,7 +45,8 @@ private:
 
     void addChain(int root, int group, const std::vector<std::vector<int>>& children,
                   std::vector<bool>& used);
-    void step(const Skeleton& skeleton, std::vector<core::Quat>& rotations, float dt);
+    void step(const Skeleton& skeleton, std::vector<core::Quat>& rotations, float dt,
+              core::Vec3 rootOffset);
 
     const model::Model& model_;
     std::vector<Joint> joints_;  // 부모가 먼저 오는 순서

@@ -37,7 +37,8 @@ public:
 };
 
 enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
-struct AnimationInput { Motion motion; float time; float squash; bool blink; bool idleMotion = true; };
+struct AnimationInput { Motion motion; float time; float squash; bool blink; bool idleMotion = true;
+                        core::Vec3 movement; /* 화면 이동 (m), 흔들림 관성 */ };
 struct AnimationOutput { std::vector<core::Mat4> skin; std::array<float, Expression::Count> expressions; };
 
 class ProceduralAnimator {
@@ -74,7 +75,7 @@ public:
 | Walk (0.6초 주기) | 10° / ∓18° (같은 쪽 다리와 반대) / 20° | ±25° 교차 / 앞으로 넘어올 때 최대 30° | 몸통 ±4° 비틀기 | 기쁨 0.6 |
 | Dragged (0.9초 주기) | 35° / ±10° 교차 | ±12° 교차 / 15° | 머리 ±6° | 놀람 1 |
 | Airborne | 45° / 0 | 15° 앞 / 35° | — | 놀람 1 |
-| 착지 반동 | — | 허벅지 +60°×squash / 무릎 +150°×squash | — | — |
+| 착지 웅크림 (§4.2b) | 바깥으로 +12°×c | 무릎 +50°×c, 허벅지 앞으로 그 절반 | 가슴 +15°×c 숙임, 머리 −7.5°×c | — |
 
 - **팔 내리기**: 목표 방향 = `(side·sin벌림, −cos벌림, 0)`을 X축으로 흔들기만큼 회전. 위팔 회전 = `fromTo(바인드 방향, 목표)`. `side`는 바인드 방향의 x 부호(캐릭터 왼쪽 = +X).
 - 회전 방향: 허벅지 `X축 −각도` = 발이 앞(+Z), 무릎 `X축 +각도` = 발이 뒤, 팔꿈치 `X축 −각도` = 손이 앞.
@@ -87,9 +88,15 @@ public:
 - 동작(`Motion`)이 바뀌면 **직전 프레임에 그린 자세**를 저장하고, `kTransitionSeconds`(0.2초) 동안 본마다 `slerp(이전, 새 자세, w)`로 섞습니다. `w = smoothstep(경과/0.2)` — 시작·끝에서 속도 0.
 - 표정(기쁨·놀람)도 같은 `w`로 선형 보간합니다.
 - 전환 도중 다시 바뀌어도 섞인 자세에서 출발하므로 튀지 않습니다. 이전 자세는 멈춘 상태로 쓰는데(걷던 다리가 그 자리에서 사라짐), 0.2초라 눈에 띄지 않습니다.
-- **착지 반동은 보간 뒤에 더합니다.** 반동은 Airborne→Idle 전환과 같은 프레임에 시작하므로, 함께 섞으면 약해집니다. 다리 회전은 모두 X축이라 뒤에 곱해도 각도를 더한 것과 같습니다. 저장하는 자세에는 반동을 빼서 두 번 더해지지 않게 합니다.
+- **착지 웅크림은 보간 뒤에 더합니다.** Airborne→Idle 전환과 같은 프레임에 시작하므로, 함께 섞으면 약해집니다. 보간 출발점으로 저장하는 자세에는 웅크림을 빼서 두 번 더해지지 않게 합니다.
 - 첫 프레임은 넘어올 자세가 없어 그대로 그립니다. 전환이 끝나면 보간을 건너뛰므로 대기 자세가 정지하면 다시 Present 생략이 됩니다.
 - `dt`는 앱이 이번 프레임에 진행한 고정 스텝 시간(`steps × 1/60`)을 넘깁니다. `evaluate`(상태 없음)는 `displayBounds`와 테스트에서 씁니다.
+
+### 4.2b 착지와 발 고정
+
+- **웅크림 곡선**: 캐릭터의 `squash`(착지 순간 0.18에서 0.18초 동안 직선 감소)는 사람 동작에는 짧고 갑작스러워서, **커지는 순간을 시작 신호로만** 씁니다. `animate`가 착지 후 시간을 재어 `c = 0.07초 동안 smoothstep으로 0→1, 이후 0.38초 동안 1→0` (세기 = squash/0.18). `evaluate`(상태 없음)는 `c = squash/0.18`.
+- **관절로 웅크림** (`applyCrouch`): 무릎을 굽히고 허벅지를 그 절반만큼 앞으로 → 정강이가 반대로 같은 각도만큼 기울어 발이 엉덩이 바로 아래(허벅지·정강이 길이가 비슷할 때). 예전처럼 몸 전체를 납작하게 늘이면(슬라임 방식) 사람 모델은 비율이 깨지고, 엉덩이를 고정한 채 무릎만 굽히면 발이 뒤로 들립니다.
+- **발 고정** (`groundOffset`): Idle·Walk에서는 FK로 발 위치를 구해 **낮은 쪽 발이 바인드 포즈 발 높이**에 오도록 루트를 내립니다(`Skeleton::computePose`의 `rootOffset`, 올리지는 않음). 그래서 웅크리면 몸이 내려가고, 걸을 때는 다리 흔들림에 맞춰 몸이 오르내립니다. 같은 `rootOffset`을 SpringBone에도 넘겨 몸이 내려가면 머리카락이 관성으로 반응합니다.
 
 ### 4.3 표시용 경계 상자 (`displayBounds`)
 
@@ -137,7 +144,10 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `ProceduralAnimatorTransition.FirstFrame_MatchesTargetPose` | 첫 프레임은 보간 없음 |
 | `MotionChange_BlendsFromPreviousPose` | 바뀐 직후엔 이전 자세 가까이, 0.2초 뒤 목표 자세 |
 | `InterruptedTransition_DoesNotJump` | 전환 도중 다시 바뀌어도 튀지 않음 |
-| `LandingSquash_IsNotDelayed` | 착지 반동이 전환으로 약해지지 않음 |
+| `ProceduralAnimatorLanding.Crouch_LowersHipsKeepingFeetOnGround` | 착지 후 엉덩이가 내려가고 발은 바닥 높이 |
+| `NoWholeBodyStretch_FeetStayUnderHips` | 발이 엉덩이 아래 (뒤로 들리지 않음) |
+| `RecoversToStandingPose` | 0.8초 뒤 대기 자세와 정확히 같음 |
+| `WalkKeepsLowerFootOnGround` | 걷는 동안 낮은 쪽 발이 바닥 |
 | `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
 | `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
 

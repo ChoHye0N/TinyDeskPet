@@ -30,13 +30,14 @@ public:
     // 부모가 자식보다 먼저 오는 본 순서
     [[nodiscard]] std::span<const int> order() const noexcept { return order_; }
 
-    // FK만 계산: accumulated[본] = 누적 회전 Aⱼ, posed[본] = 자세를 적용한 관절 위치 Pⱼ
+    // FK만 계산: accumulated[본] = 누적 회전 Aⱼ, posed[본] = 자세를 적용한 관절 위치 Pⱼ.
+    // rootOffset: 루트 본(부모 없음)을 옮길 거리 → 몸 전체가 이동 (착지 때 몸 낮추기)
     void computePose(std::span<const core::Quat> rotations, std::vector<core::Quat>& accumulated,
-                     std::vector<core::Vec3>& posed) const;
+                     std::vector<core::Vec3>& posed, core::Vec3 rootOffset = {}) const;
 
     // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐
-    void computeSkinMatrices(std::span<const core::Quat> rotations,
-                             std::vector<core::Mat4>& out) const;
+    void computeSkinMatrices(std::span<const core::Quat> rotations, std::vector<core::Mat4>& out,
+                             core::Vec3 rootOffset = {}) const;
 
 private:
     std::vector<core::Vec3> positions_;

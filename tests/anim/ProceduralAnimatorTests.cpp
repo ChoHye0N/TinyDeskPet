@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 
 using deskpet::anim::AnimationInput;
@@ -179,23 +180,62 @@ TEST(ProceduralAnimatorTransition, InterruptedTransition_DoesNotJump) {
     EXPECT_LT(distance(posed(model, out, 3), before), 0.05f);
 }
 
-TEST(ProceduralAnimatorTransition, LandingSquash_IsNotDelayed) {
-    // 착지 반동은 전환과 같은 프레임에 시작하므로 보간으로 약해지면 안 됨
+// ---------------------------------------------------------------------------
+// 착지: 무릎을 굽혀 몸을 낮추되 발은 바닥에 붙어 있음
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 공중 → 착지(squash 0.18, 이후 캐릭터처럼 0.18초 동안 줄어듦)를 seconds 동안 진행
+AnimationOutput landAndRun(ProceduralAnimator& animator, float seconds) {
+    AnimationOutput out;
+    animator.animate(staticInput(Motion::Airborne), kDt, out);
+    for (float t = 0.0f; t < seconds; t += kDt) {
+        AnimationInput input = staticInput(Motion::Idle);
+        input.squash = std::max(0.0f, 0.18f * (1.0f - t / 0.18f));
+        animator.animate(input, kDt, out);
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorLanding, Crouch_LowersHipsKeepingFeetOnGround) {
     const auto model = deskpet::test::makeSkeletonModel();
-    const auto footAfterLanding = [&](float squash) {
-        ProceduralAnimator animator(model);
-        AnimationOutput out;
-        animator.animate(staticInput(Motion::Airborne), kDt, out);
-        AnimationInput landed = staticInput(Motion::Idle);
-        landed.squash = squash;
-        animator.animate(landed, kDt, out);
-        return posed(model, out, 8);
-    };
-    AnimationInput squashed = staticInput(Motion::Idle);
-    squashed.squash = 0.18f;
-    const float expected = distance(posed(model, evaluate(model, squashed), 8),
-                                    posed(model, evaluate(model, staticInput(Motion::Idle)), 8));
-    EXPECT_GT(distance(footAfterLanding(0.18f), footAfterLanding(0.0f)), expected * 0.8f);
+    ProceduralAnimator animator(model);
+    const AnimationOutput out = landAndRun(animator, 0.1f);
+
+    EXPECT_LT(posed(model, out, 1).y, 1.0f - 0.03f);  // 엉덩이(바인드 1.0)가 내려감
+    const float lowestFoot = std::min(posed(model, out, 8).y, posed(model, out, 11).y);
+    EXPECT_NEAR(lowestFoot, 0.08f, 2e-3f);  // 발은 바닥 높이 그대로 (뜨지도 박히지도 않음)
+}
+
+TEST(ProceduralAnimatorLanding, NoWholeBodyStretch_FeetStayUnderHips) {
+    // 발이 엉덩이 아래에 있어야 웅크린 모양 (무릎만 굽히면 발이 뒤로 들림)
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    const AnimationOutput out = landAndRun(animator, 0.1f);
+    EXPECT_NEAR(posed(model, out, 8).z, posed(model, out, 6).z, 0.03f);
+}
+
+TEST(ProceduralAnimatorLanding, RecoversToStandingPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    const AnimationOutput out = landAndRun(animator, 0.8f);
+    EXPECT_EQ(out.skin, evaluate(model, staticInput(Motion::Idle)).skin);
+}
+
+TEST(ProceduralAnimatorLanding, WalkKeepsLowerFootOnGround) {
+    // 다리를 앞뒤로 흔들어도 낮은 쪽 발이 바닥에 닿도록 몸이 오르내림
+    const auto model = deskpet::test::makeSkeletonModel();
+    for (const float time : {0.0f, 0.15f, 0.3f, 0.45f}) {
+        AnimationInput input;
+        input.motion = Motion::Walk;
+        input.time = time;
+        const AnimationOutput out = evaluate(model, input);
+        const float lowestFoot = std::min(posed(model, out, 8).y, posed(model, out, 11).y);
+        EXPECT_NEAR(lowestFoot, 0.08f, 2e-3f) << time;
+    }
 }
 
 TEST(ProceduralAnimatorTransition, Expressions_FadeWithPose) {
