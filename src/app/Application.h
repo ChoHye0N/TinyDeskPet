@@ -102,6 +102,7 @@ private:
     [[nodiscard]] core::Mat4 boxToOverlay() const;  // 상자 기준 클립 좌표 → 오버레이 클립 좌표
     [[nodiscard]] core::RectI modelVisibleRect() const;
     void updateClickThrough();
+    [[nodiscard]] core::RectI sceneRegionFor(const core::Mat4& viewProjection) const;
     [[nodiscard]] renderer::RenderScene buildScene() const;
 
     core::AppConfig config_;

@@ -148,6 +148,8 @@ flowchart TD
 - 슬라임과 대기 동작(숨쉬기)을 켠 모델은 매 프레임 장면이 바뀌어 생략되지 않습니다. `[animation] idle_motion = false`면 대기 중 장면이 같아져 생략됩니다.
 
 - **3D 영역 (`RenderScene::sceneRegion`)**: 3D는 앱이 준 영역 크기의 텍스처(`regionTexture_`, MSAA면 `msaaTarget_`)에만 그립니다. 투영 뒤에 "오버레이 → 영역" 클립 변환(`D3D11Context::clipTransform`, `x' = x·Ow/Rw + w·((Ow − 2L)/Rw − 1)`)을 곱하고, 뷰포트는 영역 크기. MSAA면 resolve한 뒤 `CopySubresourceRegion`으로 프레임 텍스처의 영역 자리에 복사. 텍스처는 커질 때만 다시 만들고(로그 `3D 영역 텍스처 WxH`), 모델이 없으면 이 단계를 건너뜀. 화면 전체 크기 MSAA는 지우기·resolve 비용이 넓이에 비례해 비쌈 (ADR-0011 측정)
+- **영역 텍스처 크기**: 15% 여유를 두고 만들고, 커질 때는 바로, 2초(120프레임) 넘게 용량의 60% 미만으로만 쓰이면 다시 작게 만듦 (지우기·resolve 비용이 텍스처 크기에 비례)
+- **바뀐 곳만 처리**: 3D만 있는 프레임은 프레임 텍스처에서 지난 3D 영역만 지움(`ID3D11DeviceContext1::ClearView`, 없으면 전체). 바뀐 곳 = 지난 영역 ∪ 이번 영역. 플립 모델 백버퍼가 2개라 받은 백버퍼에는 2프레임 전 내용이 있어, **직전·이번에 바뀐 곳**을 백버퍼로 복사하고 `Present1`의 dirty rect로 이번에 바뀐 곳만 알림 → DWM이 그 부분만 다시 합성. 첫 프레임·크기 변경·디바이스 재생성·슬라임(Direct2D)은 전체 처리
 - **프레임 텍스처**: 백버퍼 대신 우리 소유의 `frameTexture_`(백버퍼와 같은 크기·형식)에 그립니다. 3D(MSAA면 resolve) → Direct2D → `CopyResource(백버퍼, frameTexture_)` → Present. 스왑체인 버퍼는 Present 뒤 내용이 정해지지 않지만 이 텍스처는 남아 있어, **Present를 생략한 동안에도** 커서 아래 알파를 읽을 수 있습니다.
 - **알파 읽기 (`sampleAlpha`, FR-04)**: 1×1 스테이징 텍스처 3개를 돌려 씁니다. 이번 위치의 1픽셀을 `CopySubresourceRegion`으로 요청하고, 앞서 요청한 것 중 끝난 것을 `Map(D3D11_MAP_FLAG_DO_NOT_WAIT)`로 읽습니다. 아직이면 `DXGI_ERROR_WAS_STILL_DRAWING`을 받고 기다리지 않습니다 (그냥 `Map`하면 CPU가 GPU를 기다려 프레임이 멈춤). 결과는 2~3프레임 늦습니다.
 

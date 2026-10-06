@@ -563,6 +563,41 @@ core::RectI Application::modelVisibleRect() const {
     return rect;
 }
 
+// 3D가 그려질 영역 (오버레이 px): 몸 자세 범위(모든 동작의 경계 상자 투영) ∪ 지금 본 위치
+// (흔들리는 머리카락 포함)의 투영 범위, 메시 두께·외곽선 여유를 더함. 렌더러가 3D·MSAA를 이
+// 크기로만 그림 → 대기 중에는 상자 크기 정도라 화면 전체·고정 여유보다 훨씬 쌈 (ADR-0011)
+core::RectI Application::sceneRegionFor(const core::Mat4& viewProjection) const {
+    const core::PointI offset = boxOffset();
+    const core::RectI body = visibleRect();
+    float left = static_cast<float>(offset.x + body.left);
+    float top = static_cast<float>(offset.y + body.top);
+    float right = static_cast<float>(offset.x + body.right);
+    float bottom = static_cast<float>(offset.y + body.bottom);
+    const auto width = static_cast<float>(overlay_.width());
+    const auto height = static_cast<float>(overlay_.height());
+    if (animation_.skin.size() == model_->bones.size()) {
+        for (std::size_t j = 0; j < model_->bones.size(); ++j) {
+            const core::Vec3 posed =
+                core::transformPoint(model_->bones[j].position, animation_.skin[j]);
+            const core::Vec4 clip = core::transform(posed, viewProjection);
+            if (clip.w <= 0.0f) {
+                continue;
+            }
+            const float x = (clip.x / clip.w + 1.0f) * 0.5f * width;
+            const float y = (1.0f - clip.y / clip.w) * 0.5f * height;
+            left = std::min(left, x);
+            right = std::max(right, x);
+            top = std::min(top, y);
+            bottom = std::max(bottom, y);
+        }
+    }
+    // 본은 관절 중심이라 메시(머리카락 다발 폭, 치마 천)가 그보다 바깥에 있음
+    const float pad = std::max(8.0f, 0.08f * static_cast<float>(boxSize_.width));
+    return {std::max(roundToInt(left - pad), 0), std::max(roundToInt(top - pad), 0),
+            std::min(roundToInt(right + pad), overlay_.width()),
+            std::min(roundToInt(bottom + pad), overlay_.height())};
+}
+
 renderer::RenderScene Application::buildScene() const {
     const auto width = static_cast<float>(boxSize_.width);
     const auto height = static_cast<float>(boxSize_.height);
@@ -571,15 +606,6 @@ renderer::RenderScene Application::buildScene() const {
 
     renderer::RenderScene scene;
     scene.viewport = {overlay_.width(), overlay_.height()};
-    // 3D가 그려질 수 있는 영역: 상자에서 좌우로 0.75배, 위로 상자 높이만큼 (흔들리는 머리카락·
-    // 벌린 팔 여유). 렌더러가 3D·MSAA를 이 크기로만 그려 화면 전체 MSAA 비용을 피함
-    const int marginX = boxSize_.width * 3 / 4;
-    scene.sceneRegion = {
-        std::max(offset.x - marginX, 0),
-        std::max(offset.y - boxSize_.height, 0),
-        std::min(offset.x + boxSize_.width + marginX, overlay_.width()),
-        std::min(offset.y + boxSize_.height + boxSize_.height / 10, overlay_.height()),
-    };
 
     // 착지 반동: 세로로 눌리고 가로로 퍼짐 (발 위치는 고정)
     const float unit = std::min(width, height);  // 상자가 세로로 길어도 슬라임 비율 유지
@@ -607,6 +633,7 @@ renderer::RenderScene Application::buildScene() const {
         scene.character.viewProjection = turn * camera_ * boxToOverlay();
         scene.character.skinMatrices = animation_.skin;
         scene.character.expressionWeights = animation_.expressions;
+        scene.sceneRegion = sceneRegionFor(scene.character.viewProjection);
     }
 
     return scene;

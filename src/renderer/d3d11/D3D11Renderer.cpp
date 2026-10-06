@@ -12,6 +12,18 @@
 
 namespace deskpet::renderer::d3d11 {
 
+// 두 사각형을 모두 덮는 사각형 (빈 사각형은 무시)
+static core::RectI unite(const core::RectI& a, const core::RectI& b) {
+    if (a.width() <= 0 || a.height() <= 0) {
+        return b;
+    }
+    if (b.width() <= 0 || b.height() <= 0) {
+        return a;
+    }
+    return {std::min(a.left, b.left), std::min(a.top, b.top), std::max(a.right, b.right),
+            std::max(a.bottom, b.bottom)};
+}
+
 D3D11Renderer::D3D11Renderer() = default;
 
 D3D11Renderer::~D3D11Renderer() {
@@ -59,16 +71,29 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
         return FrameResult::Skipped;
     }
 
-    // 1) 프레임 텍스처를 완전 투명(premultiplied alpha이므로 RGB도 0)으로 지움
+    // 1) 프레임 텍스처 지우기. 3D만 있는 프레임은 지난번 3D를 복사한 곳만 지우면 충분 (나머지는
+    //    이미 투명). 슬라임(Direct2D)·첫 프레임·크기 변경 뒤에는 전체를 지움
+    const bool has3D = scene.character.model != nullptr;
+    const bool partial = has3D && partialReady_ && !needsPresent_ && context1_;
     ID3D11RenderTargetView* renderTarget = renderTarget_.Get();
-    context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    context_->ClearRenderTargetView(renderTarget, kTransparent);
+    if (partial) {
+        const D3D11_RECT rect{lastRegion_.left, lastRegion_.top, lastRegion_.right,
+                              lastRegion_.bottom};
+        context1_->ClearView(renderTarget, kTransparent, &rect, 1);
+    } else {
+        context_->ClearRenderTargetView(renderTarget, kTransparent);
+    }
 
     // 2) 3D는 장면 영역 크기의 텍스처에 그려(MSAA면 resolve) 프레임 텍스처의 그 자리에 복사.
     //    화면 전체 크기 MSAA는 지우기·resolve 비용이 화면 넓이에 비례해 비쌈 (ADR-0011 측정)
-    if (scene.character.model != nullptr && !drawSceneRegion(scene)) {
-        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
+    core::RectI region{};
+    if (has3D) {
+        const std::optional<core::RectI> drawn = drawSceneRegion(scene);
+        if (!drawn) {
+            return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
+        }
+        region = *drawn;
     }
 
     // 3) 2D(Direct2D) 패스는 프레임 텍스처에 직접 그림 → 3D 복사보다 뒤여야 덮어쓰이지 않음
@@ -80,16 +105,18 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
 
-    // 4) 완성된 프레임을 백버퍼로 복사(GPU 안에서)하고 출력.
-    //    VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
-    context_->CopyResource(backBuffer_.Get(), frameTexture_.Get());
-    const HRESULT hr = swapChain_->Present(options_.vsync ? 1U : 0U, 0U);
+    // 4) 이번 프레임에 바뀐 곳 = 지난 3D 자리 ∪ 이번 3D 자리. 부분 처리가 아니면 화면 전체
+    const core::RectI full{0, 0, size_.width, size_.height};
+    const core::RectI changed = partial ? unite(lastRegion_, region) : full;
+    const HRESULT hr = present(changed);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
     if (!check(hr, "Present")) {
         return FrameResult::Fatal;
     }
+    lastRegion_ = has3D ? region : full;
+    partialReady_ = has3D;
     lastScene_ = scene;
     needsPresent_ = false;
     return FrameResult::Ok;
@@ -230,6 +257,9 @@ bool D3D11Renderer::createDevice() {
     }
 #endif
 
+    if (FAILED(context_.As(&context1_))) {
+        context1_.Reset();  // D3D11.1이 없으면 부분 지우기 대신 전체 지우기
+    }
     return check(device_.As(&dxgiDevice_), "IDXGIDevice 조회");
 }
 
@@ -397,12 +427,29 @@ std::optional<AlphaSample> D3D11Renderer::sampleAlpha(core::PointI local) {
 }
 
 bool D3D11Renderer::ensureRegionTargets(core::SizeI needed) {
-    if (regionTexture_ && needed.width <= regionCapacity_.width &&
-        needed.height <= regionCapacity_.height) {
-        return true;  // 영역이 줄거나 같으면 그대로 씀 (매 프레임 다시 만들지 않음)
+    // 영역은 자세(흔들림)에 따라 매 프레임 조금씩 바뀌므로 텍스처는 여유를 두고 만들고,
+    // 커질 때는 바로, 작아졌을 때는 한동안(2초) 작게만 쓰인 뒤에 다시 만듦 (지우기·resolve
+    // 비용이 텍스처 크기에 비례하므로 큰 채로 두면 손해)
+    constexpr float kHeadroom = 1.15f;
+    constexpr int kShrinkAfterFrames = 120;
+    const bool fits = regionTexture_ && needed.width <= regionCapacity_.width &&
+                      needed.height <= regionCapacity_.height;
+    if (fits) {
+        const bool mostlyUnused =
+            static_cast<float>(needed.width) * static_cast<float>(needed.height) <
+            0.6f * static_cast<float>(regionCapacity_.width) *
+                static_cast<float>(regionCapacity_.height);
+        regionSmallFrames_ = mostlyUnused ? regionSmallFrames_ + 1 : 0;
+        if (regionSmallFrames_ < kShrinkAfterFrames) {
+            return true;
+        }
     }
-    regionCapacity_ = {std::max(needed.width, regionCapacity_.width),
-                       std::max(needed.height, regionCapacity_.height)};
+    regionSmallFrames_ = 0;
+    regionCapacity_ = {
+        std::min(static_cast<int>(static_cast<float>(needed.width) * kHeadroom), size_.width),
+        std::min(static_cast<int>(static_cast<float>(needed.height) * kHeadroom), size_.height)};
+    regionCapacity_ = {std::max(regionCapacity_.width, needed.width),
+                       std::max(regionCapacity_.height, needed.height)};
     core::logging::info("3D 영역 텍스처 {}x{} (MSAA {}x)", regionCapacity_.width,
                         regionCapacity_.height, sampleCount_);
     D3D11_TEXTURE2D_DESC desc{};
@@ -448,7 +495,32 @@ static core::Mat4 overlayToRegion(core::SizeI overlay, const core::RectI& region
     return m;
 }
 
-bool D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
+// 완성된 프레임을 백버퍼로 복사하고 출력. 받은 백버퍼에는 2프레임 전 내용이 있으므로 직전·이번에
+// 바뀐 곳을 복사하고, Present1에 이번에 바뀐 곳(dirty rect)만 알려 DWM이 그 부분만 다시 합성.
+// VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉼
+HRESULT D3D11Renderer::present(const core::RectI& changed) {
+    const core::RectI full{0, 0, size_.width, size_.height};
+    const core::RectI copy = changed == full ? full : unite(changed, lastChanged_);
+    if (copy == full) {
+        context_->CopyResource(backBuffer_.Get(), frameTexture_.Get());
+    } else if (copy.width() > 0 && copy.height() > 0) {
+        const D3D11_BOX box{static_cast<UINT>(copy.left),  static_cast<UINT>(copy.top),    0,
+                            static_cast<UINT>(copy.right), static_cast<UINT>(copy.bottom), 1};
+        context_->CopySubresourceRegion(backBuffer_.Get(), 0, box.left, box.top, 0,
+                                        frameTexture_.Get(), 0, &box);
+    }
+    lastChanged_ = changed;
+
+    RECT dirty{changed.left, changed.top, changed.right, changed.bottom};
+    DXGI_PRESENT_PARAMETERS params{};
+    if (changed != full && changed.width() > 0 && changed.height() > 0) {
+        params.DirtyRectsCount = 1;
+        params.pDirtyRects = &dirty;
+    }
+    return swapChain_->Present1(options_.vsync ? 1U : 0U, 0U, &params);
+}
+
+std::optional<core::RectI> D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
     // 영역: 앱이 준 sceneRegion을 화면 안으로 자름. 비었으면 화면 전체
     core::RectI region = scene.sceneRegion;
     region.left = std::clamp(region.left, 0, size_.width);
@@ -459,7 +531,7 @@ bool D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
         region = {0, 0, size_.width, size_.height};
     }
     if (!ensureRegionTargets({region.width(), region.height()})) {
-        return false;
+        return std::nullopt;
     }
 
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -476,7 +548,7 @@ bool D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
     ctx.viewport = regionCapacity_;  // 깊이 버퍼 크기
     ctx.clipTransform = overlayToRegion(size_, region);
     if (!runPasses(scenePasses_, scene, ctx)) {
-        return false;
+        return std::nullopt;
     }
     if (msaaTarget_) {
         // premultiplied alpha라 샘플을 단순 평균해도 가장자리 반투명이 올바름
@@ -488,7 +560,7 @@ bool D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
     context_->CopySubresourceRegion(frameTexture_.Get(), 0, static_cast<UINT>(region.left),
                                     static_cast<UINT>(region.top), 0, regionTexture_.Get(), 0,
                                     &box);
-    return true;
+    return region;
 }
 
 unsigned D3D11Renderer::chooseSupportedSampleCount() const {
@@ -533,6 +605,10 @@ void D3D11Renderer::releaseRenderTargets() {
     regionView_.Reset();
     regionTexture_.Reset();
     regionCapacity_ = {};
+    regionSmallFrames_ = 0;
+    partialReady_ = false;
+    lastRegion_ = {};
+    lastChanged_ = {};
     frameTexture_.Reset();
     for (AlphaSlot& slot : alphaSlots_) {
         slot.staging.Reset();

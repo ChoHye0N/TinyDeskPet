@@ -8,6 +8,7 @@
 
 #include <d2d1_1.h>
 #include <d3d11.h>
+#include <d3d11_1.h>
 #include <dcomp.h>
 #include <dxgi1_2.h>
 #include <wrl/client.h>
@@ -51,7 +52,9 @@ private:
     [[nodiscard]] unsigned chooseSupportedSampleCount() const;
     [[nodiscard]] bool runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
                                  const RenderScene& scene, const D3D11Context& ctx);
-    [[nodiscard]] bool drawSceneRegion(const RenderScene& scene);
+    // 3D를 영역에 그려 프레임 텍스처에 복사하고, 실제로 쓴 영역(화면 좌표)을 돌려줌
+    [[nodiscard]] std::optional<core::RectI> drawSceneRegion(const RenderScene& scene);
+    [[nodiscard]] HRESULT present(const core::RectI& changed);
 
     [[nodiscard]] bool handleDeviceLost();
     [[nodiscard]] D3D11Context makeContext() const;
@@ -71,6 +74,7 @@ private:
     // 디바이스 종속
     ComPtr<ID3D11Device> device_;
     ComPtr<ID3D11DeviceContext> context_;
+    ComPtr<ID3D11DeviceContext1> context1_;  // ClearView(부분 지우기). 없으면 전체 지우기
     ComPtr<IDXGIDevice> dxgiDevice_;
     ComPtr<IDXGISwapChain1> swapChain_;
     ComPtr<ID3D11Texture2D> backBuffer_;  // 완성된 프레임을 복사해 Present
@@ -92,6 +96,13 @@ private:
     unsigned sampleCount_ = 1;  // 실제로 쓰는 MSAA 샘플 수 (1 = 끔)
     // 3D 영역 텍스처 (용량 = regionCapacity_). MSAA면 msaaTarget_에 그리고 regionTexture_로 resolve
     core::SizeI regionCapacity_;
+    int regionSmallFrames_ = 0;
+    // 바뀐 부분만 지우기·복사·합성 (Present1 dirty rect). 플립 모델 백버퍼 2개라 이번에 받은
+    // 백버퍼는 2프레임 전 내용 → 직전·이번 프레임에 바뀐 곳을 모두 다시 복사해야 함
+    core::RectI lastRegion_;  // 프레임 텍스처에 지난번 3D를 복사한 곳 (이번에 지울 곳)
+    core::RectI lastChanged_;  // 직전 Present에서 바뀐 곳
+    bool partialReady_ = false;  // false면 전체 지우기·복사 (첫 프레임, 크기 변경, 슬라임)  //
+                                 // 용량보다 많이 작은 영역만 연속으로 쓴 프레임 수
     ComPtr<ID3D11Texture2D> regionTexture_;
     ComPtr<ID3D11RenderTargetView> regionView_;
     ComPtr<ID3D11Texture2D> msaaTarget_;  // sampleCount_ > 1일 때만

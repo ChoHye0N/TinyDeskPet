@@ -58,6 +58,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 | 클릭 통과 | 처음엔 `SetWindowRgn`(도형) → 그리기까지 잘려서 교체. 지금은 `WS_EX_LAYERED | WS_EX_TRANSPARENT`를 커서 아래 픽셀 알파로 켜고 끔. 알파는 우리 소유 프레임 텍스처에서 1픽셀을 스테이징 링으로 복사해 `DO_NOT_WAIT`로 읽음 (GPU를 기다리지 않음). 통과 중엔 마우스 메시지가 없어 `GetCursorPos`로 직접 확인 |
 | 화면 전체 오버레이 | 창을 작업 영역 전체로 두고 캐릭터는 창 안에서 이동 (ADR-0011). 카메라는 캐릭터 상자에 맞춘 그대로 두고 투영 뒤 클립 좌표에 "상자 → 오버레이" 2D 변환을 곱함 (`x' = x·sx + w·cx`) → 뷰포트를 줄이지 않아 상자 밖도 그려짐. 측정: 화면 크기 MSAA가 GPU 비용의 대부분 |
 | 영역 렌더링 | 측정으로 원인(화면 크기 MSAA)을 찾고, 3D를 캐릭터 주변 영역 텍스처에만 그린 뒤 프레임에 복사. 투영 뒤 클립 변환 하나로 뷰포트 이동을 표현 → GPU 18.4% → 14.5%, 메모리 201 → 160MB. 메모리는 실행마다 겹친 측정이 섞일 수 있어 1초 단위로 다시 확인 |
+| 바뀐 곳만 합성 | 영역을 매 프레임 본 위치로 줄이고, 지난 영역만 `ClearView`, 플립 모델(백버퍼 2개)이라 직전·이번 변경 영역을 백버퍼에 복사, `Present1` dirty rect로 DWM 합성 범위를 줄임 → GPU 14.3% → 10.8% (작은 창 9.0%). 잔상이 없는지 연속 캡처로 확인 |
 | 직접 드래그 | `SetCapture` + `GetMessagePos`(메시지 발생 시점 화면 좌표) (ADR-0003) |
 | 트레이 | `Shell_NotifyIconW` + `NOTIFYICON_VERSION_4`, 탐색기 재시작(`TaskbarCreated`) 시 재등록 |
 | 단일 인스턴스 | 이름 있는 뮤텍스 `Local\DeskPet.SingleInstance`, `ERROR_ALREADY_EXISTS`면 종료 |
