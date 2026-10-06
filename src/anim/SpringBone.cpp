@@ -94,7 +94,7 @@ void SpringBoneSimulator::addChain(int root, int group,
 }
 
 void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
-                                 core::Vec3 movement, float dt) {
+                                 core::Vec3 movement, float dt, core::Vec3 rootOffset) {
     if (joints_.empty() || dt <= 0.0f) {
         return;
     }
@@ -118,13 +118,13 @@ void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Qua
                 joint.prevTail = joint.prevTail - stepMove;
             }
         }
-        step(skeleton, rotations, stepDt);
+        step(skeleton, rotations, stepDt, rootOffset);
     }
 }
 
 void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
-                               float dt) {
-    skeleton.computePose(rotations, accumulated_, posed_);
+                               float dt, core::Vec3 rootOffset) {
+    skeleton.computePose(rotations, accumulated_, posed_, rootOffset);
 
     colliderCenters_.clear();
     for (const model::SpringCollider& c : model_.springColliders) {

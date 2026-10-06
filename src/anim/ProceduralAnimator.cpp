@@ -28,6 +28,24 @@ constexpr float kHeadSwayPeriod = 5.0f;
 constexpr float kWalkCycle = 0.6f;  // 왼발·오른발 한 번씩
 constexpr float kDangleCycle = 0.9f;
 
+// 착지 동작: 가장 깊이 웅크렸을 때의 각도(도)와 시간(초)
+constexpr float kFullSquash = 0.18f;   // 캐릭터의 착지 squash 최댓값 (= 웅크림 1)
+constexpr float kCrouchKnee = 50.0f;   // 무릎 굽힘 (허벅지는 그 절반만큼 앞으로)
+constexpr float kCrouchLean = 15.0f;   // 상체 숙임
+constexpr float kCrouchArms = 12.0f;   // 팔 벌림
+constexpr float kLandingDown = 0.07f;  // 내려가는 시간
+constexpr float kLandingUp = 0.38f;    // 일어나는 시간
+
+// 착지 후 시간 → 웅크림 정도 (0 ~ 1). 빠르게 내려갔다가 천천히 일어남, 양 끝 속도 0
+float landingCurve(float t) {
+    const auto smooth = [](float x) {
+        x = std::clamp(x, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    };
+    return t < kLandingDown ? smooth(t / kLandingDown)
+                            : 1.0f - smooth((t - kLandingDown) / kLandingUp);
+}
+
 struct PoseParams {
     float armOutward = 10.0f;   // 팔이 몸에서 벌어지는 각도 (0 = 수직으로 내림)
     float leftArmSwing = 0.0f;  // + = 앞으로
@@ -86,7 +104,7 @@ PoseParams paramsFor(const AnimationInput& in) {
             p.leftKnee = p.rightKnee = 35.0f;
             break;
     }
-    return p;  // 착지 반동은 전환 보간 뒤에 더함 (applySquash)
+    return p;  // 착지 웅크림은 전환 보간 뒤에 더함 (applyCrouch)
 }
 
 // 표정 (깜빡임 제외): 들려 있거나 공중이면 놀람, 걸을 때는 살짝 웃음
@@ -171,31 +189,68 @@ void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     }
 }
 
-// 착지 반동: 무릎을 굽히고 허벅지를 앞으로 (squash 최대 약 0.18 → 무릎 약 27°).
-// 다리 회전은 모두 X축이라 뒤에 곱해도 각도를 더한 것과 같음
-void ProceduralAnimator::applySquash(float squash) const {
-    if (squash == 0.0f) {
+// 착지 웅크림 (amount 0 ~ 1). 슬라임처럼 몸 전체를 납작하게 늘이면 사람 모델은 비율이 깨지므로
+// 관절로 표현: 무릎을 굽히고 허벅지를 그 절반만큼 앞으로 → 정강이가 반대로 같은 각도만큼 기울어
+// 발이 엉덩이 바로 아래에 옴 (허벅지·정강이 길이가 비슷할 때). 몸이 내려가는 높이는 groundOffset이
+// 발을 바닥에 맞추며 정함. 상체는 숙이고, 고개는 반쯤 되돌려 시선을 유지, 팔은 균형 잡듯 벌림
+void ProceduralAnimator::applyCrouch(float amount) const {
+    if (amount <= 0.0f) {
         return;
     }
-    const core::Quat thigh = core::Quat::axisAngle(kAxisX, -radians(60.0f * squash));
-    const core::Quat knee = core::Quat::axisAngle(kAxisX, radians(150.0f * squash));
+    const float knee = kCrouchKnee * amount;
+    const auto addDelta = [this](int bone, const core::Quat& delta) {
+        if (bone >= 0) {
+            // 모델 축 기준 델타를 기존 자세 위에 덧붙임 (같은 X축 회전끼리는 각도가 더해짐)
+            setRotation(bone, delta * rotations_[static_cast<std::size_t>(bone)]);
+        }
+    };
     for (const auto& [upper, lower] :
          {std::pair{HumanBone::LeftUpperLeg, HumanBone::LeftLowerLeg},
           std::pair{HumanBone::RightUpperLeg, HumanBone::RightLowerLeg}}) {
-        const int u = skeleton_.find(upper);
-        const int l = skeleton_.find(lower);
-        if (u >= 0) {
-            setRotation(u, rotations_[static_cast<std::size_t>(u)] * thigh);
-        }
-        if (l >= 0) {
-            setRotation(l, rotations_[static_cast<std::size_t>(l)] * knee);
+        addDelta(skeleton_.find(upper), core::Quat::axisAngle(kAxisX, -radians(knee * 0.5f)));
+        addDelta(skeleton_.find(lower), core::Quat::axisAngle(kAxisX, radians(knee)));
+    }
+    int chest = skeleton_.find(HumanBone::Chest);
+    if (chest < 0) {
+        chest = skeleton_.find(HumanBone::Spine);
+    }
+    addDelta(chest, core::Quat::axisAngle(kAxisX, radians(kCrouchLean * amount)));
+    addDelta(skeleton_.find(HumanBone::Head),
+             core::Quat::axisAngle(kAxisX, -radians(kCrouchLean * 0.5f * amount)));
+    for (const Limb* arm : {&leftArm_, &rightArm_}) {
+        if (arm->upper >= 0) {
+            addDelta(arm->upper,
+                     core::Quat::axisAngle(kAxisZ, arm->side * radians(kCrouchArms * amount)));
         }
     }
 }
 
+// 서 있거나 걷는 동안 낮은 쪽 발이 바닥(바인드 포즈 발 높이)에 닿도록 몸 전체를 내릴 거리.
+// 엉덩이를 고정한 채 다리를 굽히거나 흔들면 발이 바닥에서 뜨기 때문 (걸을 때 몸이 오르내림)
+core::Vec3 ProceduralAnimator::groundOffset(Motion motion) const {
+    if (motion != Motion::Idle && motion != Motion::Walk) {
+        return {};
+    }
+    const std::array<int, 2> feet = {skeleton_.find(HumanBone::LeftFoot),
+                                     skeleton_.find(HumanBone::RightFoot)};
+    skeleton_.computePose(rotations_, poseRotations_, posePositions_);
+    float bindLowest = std::numeric_limits<float>::max();
+    float posedLowest = std::numeric_limits<float>::max();
+    for (const int foot : feet) {
+        if (foot >= 0) {
+            bindLowest = std::min(bindLowest, skeleton_.bindPosition(foot).y);
+            posedLowest = std::min(posedLowest, posePositions_[static_cast<std::size_t>(foot)].y);
+        }
+    }
+    if (bindLowest == std::numeric_limits<float>::max()) {
+        return {};  // 발 본이 없는 모델
+    }
+    return {0.0f, std::min(bindLowest - posedLowest, 0.0f), 0.0f};  // 내리기만 함
+}
+
 void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressions& base,
-                                     AnimationOutput& out) const {
-    skeleton_.computeSkinMatrices(rotations_, out.skin);
+                                     AnimationOutput& out, core::Vec3 rootOffset) const {
+    skeleton_.computeSkinMatrices(rotations_, out.skin, rootOffset);
     out.expressions = base;
     // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];
@@ -205,8 +260,9 @@ void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressi
 
 void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& out) const {
     computeRotations(input);
-    applySquash(input.squash);
-    writeOutput(input, expressionsFor(input.motion), out);
+    // 상태가 없으므로 squash 값을 그대로 웅크림 정도로 씀
+    applyCrouch(std::clamp(input.squash / kFullSquash, 0.0f, 1.0f));
+    writeOutput(input, expressionsFor(input.motion), out, groundOffset(input.motion));
 }
 
 void ProceduralAnimator::animate(const AnimationInput& input, float dt, AnimationOutput& out) {
@@ -238,10 +294,28 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
 
     lastRotations_ = rotations_;
     lastExpressions_ = expressions;
-    applySquash(input.squash);
+
+    // 착지: squash가 커지는 순간 시작. 캐릭터의 squash(0.18초 직선 감소)는 사람 동작엔 짧고
+    // 갑작스러워서, 시작 신호로만 쓰고 곡선은 따로 만듦 (빠르게 내려갔다 천천히 일어남)
+    if (input.squash > lastSquash_ + 1e-4f) {
+        landingTime_ = 0.0f;
+        landingStrength_ = std::clamp(input.squash / kFullSquash, 0.0f, 1.0f);
+    }
+    lastSquash_ = input.squash;
+    float crouch = 0.0f;
+    if (landingTime_ >= 0.0f) {
+        landingTime_ += dt;
+        crouch = landingStrength_ * landingCurve(landingTime_);
+        if (landingTime_ >= kLandingDown + kLandingUp) {
+            landingTime_ = -1.0f;
+        }
+    }
+    applyCrouch(crouch);
+
+    const core::Vec3 rootOffset = groundOffset(input.motion);
     // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)
-    springs_.update(skeleton_, rotations_, input.movement, dt);
-    writeOutput(input, expressions, out);
+    springs_.update(skeleton_, rotations_, input.movement, dt, rootOffset);
+    writeOutput(input, expressions, out, rootOffset);
 }
 
 namespace {

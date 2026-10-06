@@ -20,7 +20,7 @@ enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
 struct AnimationInput {
     Motion motion = Motion::Idle;
     float time = 0.0f;    // 누적 시간 (s). 주기 동작의 위상
-    float squash = 0.0f;  // 착지 반동 (0 ~ 약 0.2) → 무릎 굽힘
+    float squash = 0.0f;  // 착지 반동 (0 ~ 약 0.18). 커지는 순간 착지 동작 시작
     bool blink = false;   // 눈 감는 순간
     bool idleMotion = true;  // false면 대기 중 숨쉬기 동작을 끔 → 화면이 멈춰 Present 생략 가능
     core::Vec3 movement;  // 이번 프레임에 캐릭터가 화면에서 움직인 거리 (모델 공간 m) → 흔들림 관성
@@ -66,9 +66,10 @@ private:
     void poseArm(const Limb& arm, float outward, float swing, float elbow) const;
     void poseLeg(int upper, int lower, float swing, float knee) const;
     void computeRotations(const AnimationInput& input) const;  // 착지 반동 제외 → rotations_
-    void applySquash(float squash) const;
-    void writeOutput(const AnimationInput& input, const Expressions& base,
-                     AnimationOutput& out) const;
+    void applyCrouch(float amount) const;                      // 착지 웅크림 (0 ~ 1)
+    [[nodiscard]] core::Vec3 groundOffset(Motion motion) const;
+    void writeOutput(const AnimationInput& input, const Expressions& base, AnimationOutput& out,
+                     core::Vec3 rootOffset) const;
     void includePosedVertices(const std::vector<core::Mat4>& skin, float maxTurnRadians,
                               model::Bounds& bounds) const;
 
@@ -77,7 +78,9 @@ private:
     SpringBoneSimulator springs_;  // animate 전용 (머리카락·옷 흔들림)
     Limb leftArm_;
     Limb rightArm_;
-    mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
+    mutable std::vector<core::Quat> rotations_;      // evaluate 중간 결과 (할당 재사용)
+    mutable std::vector<core::Quat> poseRotations_;  // groundOffset 중간 결과
+    mutable std::vector<core::Vec3> posePositions_;
 
     // 전환 상태 (animate 전용). 자세는 착지 반동을 빼고 저장해 반동이 두 번 더해지지 않게 함
     bool hasPose_ = false;
@@ -87,6 +90,11 @@ private:
     std::vector<core::Quat> lastRotations_;
     Expressions fromExpressions_{};
     Expressions lastExpressions_{};
+
+    // 착지 동작 (animate 전용): squash가 커지는 순간부터 시간을 잼. 음수 = 착지 중 아님
+    float landingTime_ = -1.0f;
+    float landingStrength_ = 0.0f;
+    float lastSquash_ = 0.0f;
 };
 
 }  // namespace deskpet::anim

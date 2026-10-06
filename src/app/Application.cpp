@@ -543,14 +543,11 @@ renderer::RenderScene Application::buildScene() const {
         // 되어 렌더러가 Present를 생략하지 못함 (DEBT-02)
         body = {};
         body.visible = false;
-        // 착지 반동을 모델에도 적용: 발(y=0) 기준으로 세로 압축·가로 확장
-        core::Mat4 squash = core::Mat4::identity();
-        squash.m[0][0] = squash.m[2][2] = 1.0f + 0.5f * pose.squash;
-        squash.m[1][1] = 1.0f - pose.squash;
         // 걷는 방향으로 몸을 돌림 (정면 +Z → +X 쪽이 +각도)
         const core::Mat4 turn = core::Mat4::rotationY(turnRadians_);
         scene.character.model = model_.get();
-        scene.character.viewProjection = turn * squash * camera_;
+        // 착지 반동은 슬라임처럼 늘이지 않고 관절로 웅크림 (anim의 applyCrouch)
+        scene.character.viewProjection = turn * camera_;
         scene.character.skinMatrices = animation_.skin;
         scene.character.expressionWeights = animation_.expressions;
     }

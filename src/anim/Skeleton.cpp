@@ -57,8 +57,8 @@ int Skeleton::parent(int bone) const noexcept {
 }
 
 void Skeleton::computePose(std::span<const core::Quat> rotations,
-                           std::vector<core::Quat>& accumulated,
-                           std::vector<core::Vec3>& posed) const {
+                           std::vector<core::Quat>& accumulated, std::vector<core::Vec3>& posed,
+                           core::Vec3 rootOffset) const {
     const std::size_t count = positions_.size();
     accumulated.assign(count, core::Quat{});
     posed.assign(count, core::Vec3{});
@@ -68,7 +68,7 @@ void Skeleton::computePose(std::span<const core::Quat> rotations,
         const int parent = parents_[j];
         if (parent < 0) {
             accumulated[j] = delta;
-            posed[j] = positions_[j];  // 루트는 제자리에서 회전
+            posed[j] = positions_[j] + rootOffset;  // 루트는 (옮긴) 제자리에서 회전
         } else {
             const auto p = static_cast<std::size_t>(parent);
             // 부모 자세가 먼저, 그 위에 이 본의 델타 (해밀턴 곱은 오른쪽이 먼저 적용)
@@ -79,8 +79,8 @@ void Skeleton::computePose(std::span<const core::Quat> rotations,
 }
 
 void Skeleton::computeSkinMatrices(std::span<const core::Quat> rotations,
-                                   std::vector<core::Mat4>& out) const {
-    computePose(rotations, accumulated_, posed_);
+                                   std::vector<core::Mat4>& out, core::Vec3 rootOffset) const {
+    computePose(rotations, accumulated_, posed_, rootOffset);
     out.resize(positions_.size());
     for (std::size_t j = 0; j < positions_.size(); ++j) {
         // v' = A(v - p) + P  →  T(-p) · R(A) · T(P)

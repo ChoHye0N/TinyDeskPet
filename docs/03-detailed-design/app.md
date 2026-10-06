@@ -139,7 +139,7 @@ if result == Fatal: exitCode = RendererFailed; break
 | 값 | 공식 |
 |---|---|
 | 기본 반지름 | `U = min(W, H)`일 때 `rx = 0.32 × U`, `ry = 0.27 × U` (세로로 긴 창에서도 비율 유지) |
-| 착지 반동 반영 | `ry' = ry × (1 − squash)`, `rx' = rx × (1 + 0.5 × squash)` |
+| 착지 반동 반영 (슬라임만) | `ry' = ry × (1 − squash)`, `rx' = rx × (1 + 0.5 × squash)`. 모델은 늘이지 않고 anim이 관절로 웅크림 |
 | 중심 | `(W/2, H − footMargin − ry' + breathOffset)`, `footMargin = 4px` |
 | 클릭 영역 | 기본 타원을 숨쉬기 진폭 + 2px만큼 키운 사각형 |
 
@@ -169,7 +169,7 @@ flowchart LR
 | 애니메이션 (ADR-0010) | 상태 매핑 Idle/Walk/Dragged/Airborne → `anim::Motion`, `time`·`squash`·`blink`(= 눈 감음)·`idleMotion`(설정)을 넘겨 `ProceduralAnimator::evaluate`. 결과 스킨 행렬·표정 가중치를 `scene.character`에 복사 |
 | 카메라·클릭 영역 기준 | `displayBounds()` — 대기·매달림·공중 자세를 합친 경계 상자 (T포즈 폭 대신) |
 | 숨긴 슬라임 | 모델이 있으면 `placeholder`를 기본값으로 고정 — 숨쉬기 값이 바뀌면 장면 비교가 항상 "다름"이 되어 Present 생략이 안 됨 |
-| 뷰×투영 | `rotationY(turn) × squash × camera`. `turn`은 목표 `facing × 50°`로 **일정한 속도(50° / 0.2초)로 돌아감** (`core::moveTowards`, 즉시 바꾸면 튀어 보임. 방향을 바꾸면 정면을 지나 0.4초). 경계 상자는 `displayBounds(50°)`로 돌린 몸까지 포함. squash = 발(y=0) 기준 `scale(1 + 0.5s, 1 − s, 1 + 0.5s)`. 걷는 방향으로 몸을 돌리되 얼굴이 보이도록 50°만 |
+| 뷰×투영 | `rotationY(turn) × camera` (착지 반동으로 늘이지 않음). `turn`은 목표 `facing × 50°`로 **일정한 속도(50° / 0.2초)로 돌아감** (`core::moveTowards`, 즉시 바꾸면 튀어 보임. 방향을 바꾸면 정면을 지나 0.4초). 경계 상자는 `displayBounds(50°)`로 돌린 몸까지 포함. 걷는 방향으로 몸을 돌리되 얼굴이 보이도록 50°만 |
 | 흔들림 관성 | `AnimationInput::movement` = (발 위치 변화 px × m/px)를 `rotationY(−turn)`으로 모델 축에 맞춘 값. y는 부호 반전(화면 아래 +). m/px는 `refitCamera`에서 발 평면의 (0,0,0)·(0,1,0)을 투영해 구함. 고정 스텝이 없던 프레임의 이동은 다음 프레임으로 넘김 |
 | 클릭 영역 | 경계 상자 8개 꼭짓점을 화면에 투영한 사각형(창 안으로 자름)에 내접하는 타원 |
 
