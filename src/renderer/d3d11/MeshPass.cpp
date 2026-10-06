@@ -384,7 +384,7 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
 
     ID3D11DeviceContext* context = ctx.context;
     FrameConstants frame;
-    frame.viewProjection = scene.character.viewProjection;
+    frame.viewProjection = scene.character.viewProjection * ctx.clipTransform;
     frame.lightDirection = scene.character.lightDirection;
     frame.boneCount = scene.character.skinMatrices.empty() ? 0U : skinCapacity_;
     if (!writeConstants(context, frameConstants_.Get(), frame)) {

@@ -44,12 +44,14 @@ private:
     [[nodiscard]] bool createDirect2D();
     [[nodiscard]] bool createComposition();
     [[nodiscard]] bool createRenderTargets();
-    [[nodiscard]] bool createMsaaTarget();
+    // 3D 영역 텍스처(일반 + MSAA)를 needed 이상 크기로 준비. 커질 때만 다시 만듦
+    [[nodiscard]] bool ensureRegionTargets(core::SizeI needed);
     [[nodiscard]] bool createFrameTexture();
     void releaseRenderTargets();
     [[nodiscard]] unsigned chooseSupportedSampleCount() const;
     [[nodiscard]] bool runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
-                                 const RenderScene& scene);
+                                 const RenderScene& scene, const D3D11Context& ctx);
+    [[nodiscard]] bool drawSceneRegion(const RenderScene& scene);
 
     [[nodiscard]] bool handleDeviceLost();
     [[nodiscard]] D3D11Context makeContext() const;
@@ -87,7 +89,11 @@ private:
     std::array<AlphaSlot, kAlphaSlots> alphaSlots_;
     std::size_t nextAlphaSlot_ = 0;
     std::optional<AlphaSample> lastAlpha_;
-    unsigned sampleCount_ = 1;            // 실제로 쓰는 MSAA 샘플 수 (1 = 끔)
+    unsigned sampleCount_ = 1;  // 실제로 쓰는 MSAA 샘플 수 (1 = 끔)
+    // 3D 영역 텍스처 (용량 = regionCapacity_). MSAA면 msaaTarget_에 그리고 regionTexture_로 resolve
+    core::SizeI regionCapacity_;
+    ComPtr<ID3D11Texture2D> regionTexture_;
+    ComPtr<ID3D11RenderTargetView> regionView_;
     ComPtr<ID3D11Texture2D> msaaTarget_;  // sampleCount_ > 1일 때만
     ComPtr<ID3D11RenderTargetView> msaaView_;
 

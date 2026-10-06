@@ -6,6 +6,7 @@
 #include "renderer/d3d11/MeshPass.h"
 #include "renderer/d3d11/PlaceholderPass.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <iterator>
 
@@ -63,30 +64,23 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
     context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     context_->ClearRenderTargetView(renderTarget, kTransparent);
-    if (msaaView_) {
-        context_->ClearRenderTargetView(msaaView_.Get(), kTransparent);
+
+    // 2) 3D는 장면 영역 크기의 텍스처에 그려(MSAA면 resolve) 프레임 텍스처의 그 자리에 복사.
+    //    화면 전체 크기 MSAA는 지우기·resolve 비용이 화면 넓이에 비례해 비쌈 (ADR-0011 측정)
+    if (scene.character.model != nullptr && !drawSceneRegion(scene)) {
+        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
 
+    // 3) 2D(Direct2D) 패스는 프레임 텍스처에 직접 그림 → 3D 복사보다 뒤여야 덮어쓰이지 않음
+    context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     const D3D11_VIEWPORT viewport{
         0.0f, 0.0f, static_cast<float>(size_.width), static_cast<float>(size_.height), 0.0f, 1.0f};
     context_->RSSetViewports(1, &viewport);
-
-    // 2) 3D 패스 → MSAA면 샘플 평균을 프레임 텍스처로 resolve → 2D(Direct2D) 패스.
-    //    D2D는 프레임 텍스처에 직접 그리므로 resolve보다 뒤여야 덮어쓰이지 않음
-    if (!runPasses(scenePasses_, scene)) {
-        return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
-    }
-    if (msaaTarget_) {
-        // premultiplied alpha라 샘플을 단순 평균해도 가장자리 반투명이 올바름
-        context_->ResolveSubresource(frameTexture_.Get(), 0, msaaTarget_.Get(), 0,
-                                     DXGI_FORMAT_B8G8R8A8_UNORM);
-        context_->OMSetRenderTargets(1, &renderTarget, nullptr);
-    }
-    if (!runPasses(overlayPasses_, scene)) {
+    if (!runPasses(overlayPasses_, scene, makeContext())) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
 
-    // 3) 완성된 프레임을 백버퍼로 복사(GPU 안에서)하고 출력.
+    // 4) 완성된 프레임을 백버퍼로 복사(GPU 안에서)하고 출력.
     //    VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
     context_->CopyResource(backBuffer_.Get(), frameTexture_.Get());
     const HRESULT hr = swapChain_->Present(options_.vsync ? 1U : 0U, 0U);
@@ -302,7 +296,7 @@ bool D3D11Renderer::createRenderTargets() {
     // flip 모델 + D3D11에서는 0번 버퍼가 항상 "현재 백버퍼"를 가리킵니다.
     if (!check(swapChain_->GetBuffer(0, IID_PPV_ARGS(backBuffer_.ReleaseAndGetAddressOf())),
                "GetBuffer") ||
-        !createFrameTexture() || !createMsaaTarget()) {
+        !createFrameTexture()) {
         return false;
     }
 
@@ -402,24 +396,99 @@ std::optional<AlphaSample> D3D11Renderer::sampleAlpha(core::PointI local) {
     return lastAlpha_;
 }
 
-bool D3D11Renderer::createMsaaTarget() {
+bool D3D11Renderer::ensureRegionTargets(core::SizeI needed) {
+    if (regionTexture_ && needed.width <= regionCapacity_.width &&
+        needed.height <= regionCapacity_.height) {
+        return true;  // 영역이 줄거나 같으면 그대로 씀 (매 프레임 다시 만들지 않음)
+    }
+    regionCapacity_ = {std::max(needed.width, regionCapacity_.width),
+                       std::max(needed.height, regionCapacity_.height)};
+    core::logging::info("3D 영역 텍스처 {}x{} (MSAA {}x)", regionCapacity_.width,
+                        regionCapacity_.height, sampleCount_);
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = static_cast<UINT>(regionCapacity_.width);
+    desc.Height = static_cast<UINT>(regionCapacity_.height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format =
+        DXGI_FORMAT_B8G8R8A8_UNORM;  // 프레임 텍스처로 복사·resolve하려면 형식이 같아야 함
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    if (!check(device_->CreateTexture2D(&desc, nullptr, regionTexture_.ReleaseAndGetAddressOf()),
+               "3D 영역 텍스처") ||
+        !check(device_->CreateRenderTargetView(regionTexture_.Get(), nullptr,
+                                               regionView_.ReleaseAndGetAddressOf()),
+               "3D 영역 RTV")) {
+        return false;
+    }
     if (sampleCount_ <= 1) {
         return true;
     }
-    D3D11_TEXTURE2D_DESC desc{};
-    desc.Width = static_cast<UINT>(size_.width);
-    desc.Height = static_cast<UINT>(size_.height);
-    desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;  // resolve하려면 백버퍼와 형식이 같아야 함
     desc.SampleDesc.Count = sampleCount_;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
     return check(device_->CreateTexture2D(&desc, nullptr, msaaTarget_.ReleaseAndGetAddressOf()),
                  "MSAA 텍스처") &&
            check(device_->CreateRenderTargetView(msaaTarget_.Get(), nullptr,
                                                  msaaView_.ReleaseAndGetAddressOf()),
                  "MSAA 렌더 타깃 뷰");
+}
+
+// 오버레이 클립 좌표 → 영역 클립 좌표 (x' = x·Ow/Rw + w·((Ow − 2L)/Rw − 1), y도 같은 방식, y는 위가
+// +)
+static core::Mat4 overlayToRegion(core::SizeI overlay, const core::RectI& region) {
+    const auto ow = static_cast<float>(overlay.width);
+    const auto oh = static_cast<float>(overlay.height);
+    const auto rw = static_cast<float>(region.width());
+    const auto rh = static_cast<float>(region.height());
+    core::Mat4 m = core::Mat4::identity();
+    m.m[0][0] = ow / rw;
+    m.m[1][1] = oh / rh;
+    m.m[3][0] = (ow - 2.0f * static_cast<float>(region.left)) / rw - 1.0f;
+    m.m[3][1] = 1.0f - (oh - 2.0f * static_cast<float>(region.top)) / rh;
+    return m;
+}
+
+bool D3D11Renderer::drawSceneRegion(const RenderScene& scene) {
+    // 영역: 앱이 준 sceneRegion을 화면 안으로 자름. 비었으면 화면 전체
+    core::RectI region = scene.sceneRegion;
+    region.left = std::clamp(region.left, 0, size_.width);
+    region.top = std::clamp(region.top, 0, size_.height);
+    region.right = std::clamp(region.right, region.left, size_.width);
+    region.bottom = std::clamp(region.bottom, region.top, size_.height);
+    if (region.width() <= 0 || region.height() <= 0) {
+        region = {0, 0, size_.width, size_.height};
+    }
+    if (!ensureRegionTargets({region.width(), region.height()})) {
+        return false;
+    }
+
+    constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    ID3D11RenderTargetView* target = msaaView_ ? msaaView_.Get() : regionView_.Get();
+    context_->ClearRenderTargetView(target, kTransparent);
+    // 영역 텍스처의 왼쪽 위 (영역 크기)만 씀. 용량이 더 커도 나머지는 복사하지 않음
+    const D3D11_VIEWPORT viewport{
+        0.0f, 0.0f, static_cast<float>(region.width()), static_cast<float>(region.height()),
+        0.0f, 1.0f};
+    context_->RSSetViewports(1, &viewport);
+
+    D3D11Context ctx = makeContext();
+    ctx.sceneTarget = target;
+    ctx.viewport = regionCapacity_;  // 깊이 버퍼 크기
+    ctx.clipTransform = overlayToRegion(size_, region);
+    if (!runPasses(scenePasses_, scene, ctx)) {
+        return false;
+    }
+    if (msaaTarget_) {
+        // premultiplied alpha라 샘플을 단순 평균해도 가장자리 반투명이 올바름
+        context_->ResolveSubresource(regionTexture_.Get(), 0, msaaTarget_.Get(), 0,
+                                     DXGI_FORMAT_B8G8R8A8_UNORM);
+    }
+    const D3D11_BOX box{
+        0, 0, 0, static_cast<UINT>(region.width()), static_cast<UINT>(region.height()), 1};
+    context_->CopySubresourceRegion(frameTexture_.Get(), 0, static_cast<UINT>(region.left),
+                                    static_cast<UINT>(region.top), 0, regionTexture_.Get(), 0,
+                                    &box);
+    return true;
 }
 
 unsigned D3D11Renderer::chooseSupportedSampleCount() const {
@@ -439,8 +508,7 @@ unsigned D3D11Renderer::chooseSupportedSampleCount() const {
 }
 
 bool D3D11Renderer::runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
-                              const RenderScene& scene) {
-    const D3D11Context ctx = makeContext();
+                              const RenderScene& scene, const D3D11Context& ctx) {
     for (const auto& pass : passes) {
         if (!pass->execute(ctx, scene)) {
             core::logging::warn("{} 실행 실패 → 디바이스 리소스를 다시 만듭니다", pass->name());
@@ -462,6 +530,9 @@ void D3D11Renderer::releaseRenderTargets() {
     renderTarget_.Reset();
     msaaView_.Reset();
     msaaTarget_.Reset();
+    regionView_.Reset();
+    regionTexture_.Reset();
+    regionCapacity_ = {};
     frameTexture_.Reset();
     for (AlphaSlot& slot : alphaSlots_) {
         slot.staging.Reset();
@@ -497,7 +568,7 @@ D3D11Context D3D11Renderer::makeContext() const {
     ctx.device = device_.Get();
     ctx.context = context_.Get();
     ctx.renderTarget = renderTarget_.Get();
-    ctx.sceneTarget = msaaView_ ? msaaView_.Get() : renderTarget_.Get();
+    ctx.sceneTarget = msaaView_ ? msaaView_.Get() : regionView_.Get();
     ctx.sampleCount = sampleCount_;
     ctx.d2d = d2dContext_.Get();
     ctx.viewport = size_;

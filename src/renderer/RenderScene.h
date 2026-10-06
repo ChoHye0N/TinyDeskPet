@@ -37,6 +37,9 @@ struct MeshCharacter {
 
 struct RenderScene {
     core::SizeI viewport;
+    // 3D 캐릭터가 그려질 수 있는 영역 (뷰포트 px). 렌더러는 3D·MSAA를 이 영역 크기로만 그리고
+    // 화면 전체 프레임의 그 자리에 복사함 (화면 전체 MSAA는 비쌈, ADR-0011). 비면 화면 전체
+    core::RectI sceneRegion;
     PlaceholderCharacter placeholder;
     MeshCharacter character;
 

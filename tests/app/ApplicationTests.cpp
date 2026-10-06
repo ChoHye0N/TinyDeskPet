@@ -747,3 +747,23 @@ TEST_F(ApplicationTest, Overlay_StartsOnMonitorOfSavedPosition) {
     EXPECT_EQ(window_.position, (PointI{1920, 0}));
     EXPECT_TRUE(window_.positionHistory.empty());  // 처음부터 그 모니터에 만들어짐
 }
+
+TEST_F(ApplicationTest, SceneRegion_CoversCharacterBoxWithMarginInsideOverlay) {
+    // 렌더러는 3D를 이 영역만 그림 → 상자 전체와 위·옆 여유를 포함하고 화면 밖으로 나가지 않아야 함
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{900.0f, 700.0f}}});
+    window_.pollsBeforeQuit = 4;
+    auto app = makeApp();
+    app->setModel(makeHumanoidModel());
+    (void)app->run();
+
+    const core::RectI region = renderer_.lastScene.sceneRegion;
+    const core::RectI box = app->characterRect();  // 오버레이 원점이 (0, 0)이라 좌표가 같음
+    EXPECT_LE(region.left, box.left - 100);        // 옆 여유 (상자 폭 200의 0.75배 = 150)
+    EXPECT_GE(region.right, box.right + 100);
+    EXPECT_LE(region.top, box.top - 150);  // 위 여유 (상자 높이)
+    EXPECT_GE(region.bottom, box.bottom);
+    EXPECT_GE(region.left, 0);
+    EXPECT_LE(region.right, 1920);
+    EXPECT_LE(region.bottom, 1040);
+}
