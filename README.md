@@ -11,7 +11,7 @@
 
 ## 특징
 
-- **투명 배경 + 항상 위 + 클릭 통과** — DirectComposition으로 GPU 안에서 합성해 프레임마다 CPU 복사가 없음 ([ADR-0001](docs/02-architecture/adr/0001-directcomposition-for-transparency.md))
+- **투명 배경 + 항상 위 + 픽셀 단위 클릭 통과** — DirectComposition으로 GPU 안에서 합성 ([ADR-0001](docs/02-architecture/adr/0001-directcomposition-for-transparency.md)). 작업 영역 전체를 덮는 오버레이 안에서 캐릭터가 움직이고, 캐릭터가 아닌 픽셀은 클릭이 아래 창으로 감 ([ADR-0011](docs/02-architecture/adr/0011-fullscreen-overlay.md))
 - **VRM · PMX · FBX 모델** — 형식별 로더를 하나의 모델 표현으로 통일 ([ADR-0009](docs/02-architecture/adr/0009-multiple-model-formats.md))
 - **코드로 만든 애니메이션** — 대기·걷기·매달림·공중·착지 자세, GPU 스키닝, 표정, 상태 전환 slerp 보간 ([ADR-0010](docs/02-architecture/adr/0010-procedural-animation.md))
 - **렌더링** — 2단 툰 셰이딩, MSAA, 반전 헐 외곽선 (모델의 MToon·PMX 에지 설정 사용)

@@ -54,7 +54,7 @@ public:
     [[nodiscard]] virtual core::PointI position() const = 0;
     virtual void setSize(core::SizeI size) = 0;
     [[nodiscard]] virtual core::SizeI size() const = 0;
-    [[nodiscard]] virtual core::RectI workArea() const = 0;          // 창이 있는 모니터의 작업 영역
+    [[nodiscard]] virtual core::RectI workAreaAt(core::PointI screen) const = 0;  // 그 점(없으면 가장 가까운) 모니터의 작업 영역
     [[nodiscard]] virtual core::RectI desktopBounds() const = 0;     // 가상 데스크톱 (모든 모니터)
     [[nodiscard]] virtual float dpiScale() const = 0;                // 1.0 = 96 DPI
     virtual bool showTrayIcon(const std::string& tooltip) = 0;      // 클릭 → TrayMenuRequestedEvent
@@ -124,7 +124,7 @@ flowchart TD
 | 함수 | 구현 |
 |---|---|
 | `setPosition` | 이전 위치와 같으면 아무것도 하지 않음. 다르면 `SetWindowPos(SWP_NOSIZE \| SWP_NOZORDER \| SWP_NOACTIVATE)` |
-| `workArea` | 창이 있으면 `MonitorFromWindow`, 없으면 주 모니터 → `GetMonitorInfoW().rcWork` |
+| `workAreaAt` | `MonitorFromPoint(MONITOR_DEFAULTTONEAREST)` → `GetMonitorInfoW().rcWork`. 창 생성 전에도 사용 (오버레이를 처음 놓을 모니터) |
 | `desktopBounds` | `GetSystemMetrics(SM_X/YVIRTUALSCREEN, SM_CX/CYVIRTUALSCREEN)`. 주 모니터 왼쪽·위에 모니터가 있으면 음수 좌표 |
 | `dpiScale` | `GetDpiForWindow / 96`. 매니페스트가 PerMonitorV2라 창이 있는 모니터 기준 |
 | `setSize` | `SetWindowPos(SWP_NOMOVE \| SWP_NOZORDER \| SWP_NOACTIVATE)` |

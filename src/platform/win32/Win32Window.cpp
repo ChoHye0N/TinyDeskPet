@@ -179,17 +179,13 @@ void Win32Window::setPosition(core::PointI topLeft) {
     position_ = topLeft;
 }
 
-core::RectI Win32Window::workArea() const {
-    const HMONITOR monitor = hwnd_ != nullptr
-                                 ? MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY)
-                                 : MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
-
+core::RectI Win32Window::workAreaAt(core::PointI screen) const {
+    const HMONITOR monitor = MonitorFromPoint(POINT{screen.x, screen.y}, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{};
     info.cbSize = sizeof(info);
     if (GetMonitorInfoW(monitor, &info) != FALSE) {
         return toRect(info.rcWork);
     }
-
     RECT fallback{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &fallback, 0);
     return toRect(fallback);

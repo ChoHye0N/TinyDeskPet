@@ -56,8 +56,10 @@ public:
     virtual void setSize(core::SizeI size) = 0;
     [[nodiscard]] virtual core::SizeI size() const = 0;
 
-    // 창이 있는 모니터의 작업 영역 (작업 표시줄 제외, 화면 좌표)
-    [[nodiscard]] virtual core::RectI workArea() const = 0;
+    // screen 점이 있는 모니터(없으면 가장 가까운 모니터)의 작업 영역 (작업 표시줄 제외, 화면 좌표).
+    // 창 생성 전에도 쓸 수 있음. 오버레이 창은 캐릭터 발이 있는 모니터의 작업 영역을 덮음
+    // (ADR-0011)
+    [[nodiscard]] virtual core::RectI workAreaAt(core::PointI screen) const = 0;
 
     // 모든 모니터를 합친 가상 데스크톱 영역 (화면 좌표, FR-17)
     [[nodiscard]] virtual core::RectI desktopBounds() const = 0;
