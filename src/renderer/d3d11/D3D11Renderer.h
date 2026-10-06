@@ -12,7 +12,9 @@
 #include <dxgi1_2.h>
 #include <wrl/client.h>
 
+#include <array>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace deskpet::renderer::d3d11 {
@@ -26,6 +28,7 @@ public:
                                   const RendererOptions& options) override;
     [[nodiscard]] FrameResult render(const RenderScene& scene) override;
     void resize(core::SizeI size) override;
+    [[nodiscard]] std::optional<AlphaSample> sampleAlpha(core::PointI local) override;
     void shutdown() override;
 
 private:
@@ -42,6 +45,7 @@ private:
     [[nodiscard]] bool createComposition();
     [[nodiscard]] bool createRenderTargets();
     [[nodiscard]] bool createMsaaTarget();
+    [[nodiscard]] bool createFrameTexture();
     void releaseRenderTargets();
     [[nodiscard]] unsigned chooseSupportedSampleCount() const;
     [[nodiscard]] bool runPasses(const std::vector<std::unique_ptr<IRenderPass>>& passes,
@@ -67,8 +71,22 @@ private:
     ComPtr<ID3D11DeviceContext> context_;
     ComPtr<IDXGIDevice> dxgiDevice_;
     ComPtr<IDXGISwapChain1> swapChain_;
-    ComPtr<ID3D11Texture2D> backBuffer_;  // resolve 대상
-    ComPtr<ID3D11RenderTargetView> renderTarget_;
+    ComPtr<ID3D11Texture2D> backBuffer_;  // 완성된 프레임을 복사해 Present
+    // 프레임을 먼저 그리는 우리 소유 텍스처. 스왑체인 버퍼는 Present 뒤 내용이 정해지지 않지만
+    // 이 텍스처는 남아 있어, Present를 생략한 동안에도 커서 아래 알파를 읽을 수 있음 (FR-04)
+    ComPtr<ID3D11Texture2D> frameTexture_;
+    ComPtr<ID3D11RenderTargetView> renderTarget_;  // frameTexture_의 RTV
+
+    // 커서 아래 1픽셀 알파를 GPU를 기다리지 않고 읽는 스테이징 링 (복사 요청 → 2~3프레임 뒤 Map)
+    static constexpr std::size_t kAlphaSlots = 3;
+    struct AlphaSlot {
+        ComPtr<ID3D11Texture2D> staging;
+        core::PointI at;
+        bool pending = false;
+    };
+    std::array<AlphaSlot, kAlphaSlots> alphaSlots_;
+    std::size_t nextAlphaSlot_ = 0;
+    std::optional<AlphaSample> lastAlpha_;
     unsigned sampleCount_ = 1;            // 실제로 쓰는 MSAA 샘플 수 (1 = 끔)
     ComPtr<ID3D11Texture2D> msaaTarget_;  // sampleCount_ > 1일 때만
     ComPtr<ID3D11RenderTargetView> msaaView_;

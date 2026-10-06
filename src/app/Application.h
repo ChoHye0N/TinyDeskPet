@@ -69,6 +69,10 @@ public:
     // 현재 캐릭터 크기 (%). 종료할 때 [state] scale로 저장
     [[nodiscard]] int scalePercent() const noexcept { return scalePercent_; }
 
+    // 창 안에서 캐릭터가 그려질 수 있는 영역 (창 내부 px). 벽(FR-17) 계산에 씀.
+    // 슬라임은 몸 타원을 감싸는 사각형, 모델은 모든 자세의 경계 상자를 투영한 사각형
+    [[nodiscard]] core::RectI visibleRect() const;
+
 private:
     [[nodiscard]] bool initialize();
     void shutdown();
@@ -92,9 +96,8 @@ private:
     void syncWindowToCharacter();
 
     [[nodiscard]] core::PointI windowTopLeftFor(core::Vec2 feet) const;
-    [[nodiscard]] core::RectI hitRegion() const;
-    void applyHitRegion();
-    [[nodiscard]] core::RectI modelHitRegion() const;
+    [[nodiscard]] core::RectI modelVisibleRect() const;
+    void updateClickThrough();
     [[nodiscard]] renderer::RenderScene buildScene() const;
 
     core::AppConfig config_;
@@ -102,6 +105,7 @@ private:
     int scalePercent_ = 100;  // 사용자 크기 배율 (%)
     core::SizeI windowSize_;  // 설정 크기 × DPI 배율 × 사용자 배율 (물리 px)
     bool hidden_ = false;
+    bool pointerDown_ = false;  // 왼쪽 버튼을 누르고 있는 동안은 항상 클릭을 받음 (끌기)
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용

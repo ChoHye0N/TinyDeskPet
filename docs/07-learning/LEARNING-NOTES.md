@@ -55,7 +55,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 |---|---|
 | 투명 창 | `WS_EX_NOREDIRECTIONBITMAP` + DirectComposition 스왑체인(`CreateSwapChainForComposition`, flip 모델) (ADR-0001) |
 | premultiplied alpha | 스왑체인 알파 모드가 premultiplied → 셰이더가 `rgb *= a`로 출력, 블렌드는 `ONE, INV_SRC_ALPHA` |
-| 클릭 통과 | `SetWindowRgn`으로 캐릭터 모양 바깥을 창 영역에서 제외 |
+| 클릭 통과 | 처음엔 `SetWindowRgn`(도형) → 그리기까지 잘려서 교체. 지금은 `WS_EX_LAYERED | WS_EX_TRANSPARENT`를 커서 아래 픽셀 알파로 켜고 끔. 알파는 우리 소유 프레임 텍스처에서 1픽셀을 스테이징 링으로 복사해 `DO_NOT_WAIT`로 읽음 (GPU를 기다리지 않음). 통과 중엔 마우스 메시지가 없어 `GetCursorPos`로 직접 확인 |
 | 직접 드래그 | `SetCapture` + `GetMessagePos`(메시지 발생 시점 화면 좌표) (ADR-0003) |
 | 트레이 | `Shell_NotifyIconW` + `NOTIFYICON_VERSION_4`, 탐색기 재시작(`TaskbarCreated`) 시 재등록 |
 | 단일 인스턴스 | 이름 있는 뮤텍스 `Local\DeskPet.SingleInstance`, `ERROR_ALREADY_EXISTS`면 종료 |

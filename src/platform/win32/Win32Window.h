@@ -31,7 +31,8 @@ public:
     [[nodiscard]] float dpiScale() const override;
     bool showTrayIcon(const std::string& tooltip) override;
 
-    void setHitRegion(const core::RectI& local, HitShape shape) override;
+    void setClickThrough(bool enabled) override;
+    [[nodiscard]] core::PointI cursorPosition() const override;
     [[nodiscard]] int showContextMenu(const std::vector<MenuItem>& items,
                                       core::PointI screen) override;
 
@@ -46,6 +47,7 @@ private:
 
     HINSTANCE instance_;
     HWND hwnd_ = nullptr;
+    bool clickThrough_ = true;  // 만들 때 WS_EX_TRANSPARENT로 시작
     ATOM classAtom_ = 0;
 
     core::SizeI size_;

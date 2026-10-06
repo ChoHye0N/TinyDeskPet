@@ -6,6 +6,7 @@
 #include "renderer/d3d11/MeshPass.h"
 #include "renderer/d3d11/PlaceholderPass.h"
 
+#include <cstdint>
 #include <iterator>
 
 namespace deskpet::renderer::d3d11 {
@@ -57,7 +58,7 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
         return FrameResult::Skipped;
     }
 
-    // 1) 백버퍼를 완전 투명(premultiplied alpha이므로 RGB도 0)으로 지움
+    // 1) 프레임 텍스처를 완전 투명(premultiplied alpha이므로 RGB도 0)으로 지움
     ID3D11RenderTargetView* renderTarget = renderTarget_.Get();
     context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -70,14 +71,14 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
         0.0f, 0.0f, static_cast<float>(size_.width), static_cast<float>(size_.height), 0.0f, 1.0f};
     context_->RSSetViewports(1, &viewport);
 
-    // 2) 3D 패스 → MSAA면 샘플 평균을 백버퍼로 resolve → 2D(Direct2D) 패스.
-    //    D2D는 백버퍼에 직접 그리므로 resolve보다 뒤여야 덮어쓰이지 않음
+    // 2) 3D 패스 → MSAA면 샘플 평균을 프레임 텍스처로 resolve → 2D(Direct2D) 패스.
+    //    D2D는 프레임 텍스처에 직접 그리므로 resolve보다 뒤여야 덮어쓰이지 않음
     if (!runPasses(scenePasses_, scene)) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
     if (msaaTarget_) {
         // premultiplied alpha라 샘플을 단순 평균해도 가장자리 반투명이 올바름
-        context_->ResolveSubresource(backBuffer_.Get(), 0, msaaTarget_.Get(), 0,
+        context_->ResolveSubresource(frameTexture_.Get(), 0, msaaTarget_.Get(), 0,
                                      DXGI_FORMAT_B8G8R8A8_UNORM);
         context_->OMSetRenderTargets(1, &renderTarget, nullptr);
     }
@@ -85,7 +86,9 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
     }
 
-    // 3) 출력. VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
+    // 3) 완성된 프레임을 백버퍼로 복사(GPU 안에서)하고 출력.
+    //    VSync(1)면 다음 수직 동기화까지 대기하므로 CPU가 쉽니다.
+    context_->CopyResource(backBuffer_.Get(), frameTexture_.Get());
     const HRESULT hr = swapChain_->Present(options_.vsync ? 1U : 0U, 0U);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
         return handleDeviceLost() ? FrameResult::DeviceRecovered : FrameResult::Fatal;
@@ -299,15 +302,12 @@ bool D3D11Renderer::createRenderTargets() {
     // flip 모델 + D3D11에서는 0번 버퍼가 항상 "현재 백버퍼"를 가리킵니다.
     if (!check(swapChain_->GetBuffer(0, IID_PPV_ARGS(backBuffer_.ReleaseAndGetAddressOf())),
                "GetBuffer") ||
-        !check(device_->CreateRenderTargetView(backBuffer_.Get(), nullptr,
-                                               renderTarget_.ReleaseAndGetAddressOf()),
-               "CreateRenderTargetView") ||
-        !createMsaaTarget()) {
+        !createFrameTexture() || !createMsaaTarget()) {
         return false;
     }
 
     ComPtr<IDXGISurface> surface;
-    if (!check(backBuffer_.As(&surface), "IDXGISurface 조회")) {
+    if (!check(frameTexture_.As(&surface), "IDXGISurface 조회")) {
         return false;
     }
 
@@ -321,6 +321,85 @@ bool D3D11Renderer::createRenderTargets() {
     }
     d2dContext_->SetTarget(d2dTarget_.Get());
     return true;
+}
+
+bool D3D11Renderer::createFrameTexture() {
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = static_cast<UINT>(size_.width);
+    desc.Height = static_cast<UINT>(size_.height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;  // CopyResource하려면 백버퍼와 형식·크기가 같아야 함
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;  // Direct2D 타깃으로도 씀
+    if (!check(device_->CreateTexture2D(&desc, nullptr, frameTexture_.ReleaseAndGetAddressOf()),
+               "프레임 텍스처") ||
+        !check(device_->CreateRenderTargetView(frameTexture_.Get(), nullptr,
+                                               renderTarget_.ReleaseAndGetAddressOf()),
+               "프레임 텍스처 RTV")) {
+        return false;
+    }
+
+    // 알파 읽기용 1×1 스테이징 (CPU가 Map으로 읽을 수 있는 유일한 종류)
+    D3D11_TEXTURE2D_DESC staging = desc;
+    staging.Width = staging.Height = 1;
+    staging.Usage = D3D11_USAGE_STAGING;
+    staging.BindFlags = 0;
+    staging.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    for (AlphaSlot& slot : alphaSlots_) {
+        slot.pending = false;
+        if (!check(
+                device_->CreateTexture2D(&staging, nullptr, slot.staging.ReleaseAndGetAddressOf()),
+                "알파 스테이징 텍스처")) {
+            return false;
+        }
+    }
+    lastAlpha_.reset();
+    return true;
+}
+
+std::optional<AlphaSample> D3D11Renderer::sampleAlpha(core::PointI local) {
+    if (!initialized_ || !frameTexture_) {
+        return std::nullopt;
+    }
+    // 1) 앞서 요청한 복사 중 끝난 것을 오래된 순서로 읽음. DO_NOT_WAIT: 아직이면 기다리지 않고
+    //    DXGI_ERROR_WAS_STILL_DRAWING을 돌려받음 (Map이 GPU를 기다리면 프레임이 멈춤)
+    for (std::size_t i = 0; i < kAlphaSlots; ++i) {
+        AlphaSlot& slot = alphaSlots_[(nextAlphaSlot_ + i) % kAlphaSlots];
+        if (!slot.pending) {
+            continue;
+        }
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        const HRESULT hr = context_->Map(slot.staging.Get(), 0, D3D11_MAP_READ,
+                                         D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) {
+            break;  // 뒤의 것은 더 늦게 요청했으므로 역시 아직
+        }
+        slot.pending = false;
+        if (SUCCEEDED(hr)) {
+            const auto* bgra = static_cast<const std::uint8_t*>(mapped.pData);
+            lastAlpha_ = AlphaSample{slot.at, static_cast<float>(bgra[3]) / 255.0f};
+            context_->Unmap(slot.staging.Get(), 0);
+        }
+    }
+
+    // 2) 이번 위치의 1픽셀 복사를 요청 (창 밖이면 요청하지 않음)
+    if (local.x < 0 || local.y < 0 || local.x >= size_.width || local.y >= size_.height) {
+        return std::nullopt;
+    }
+    AlphaSlot& slot = alphaSlots_[nextAlphaSlot_];
+    if (!slot.pending) {
+        const auto x = static_cast<UINT>(local.x);
+        const auto y = static_cast<UINT>(local.y);
+        const D3D11_BOX box{x, y, 0, x + 1, y + 1, 1};
+        context_->CopySubresourceRegion(slot.staging.Get(), 0, 0, 0, 0, frameTexture_.Get(), 0,
+                                        &box);
+        slot.at = local;
+        slot.pending = true;
+        nextAlphaSlot_ = (nextAlphaSlot_ + 1) % kAlphaSlots;
+    }
+    return lastAlpha_;
 }
 
 bool D3D11Renderer::createMsaaTarget() {
@@ -383,6 +462,12 @@ void D3D11Renderer::releaseRenderTargets() {
     renderTarget_.Reset();
     msaaView_.Reset();
     msaaTarget_.Reset();
+    frameTexture_.Reset();
+    for (AlphaSlot& slot : alphaSlots_) {
+        slot.staging.Reset();
+        slot.pending = false;
+    }
+    lastAlpha_.reset();
     backBuffer_.Reset();  // 백버퍼 참조가 남아 있으면 ResizeBuffers 실패
 
     if (context_) {

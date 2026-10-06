@@ -189,7 +189,6 @@ bool Application::initialize() {
     if (!restoreSavedPosition()) {
         resetCharacterPosition();
     }
-    applyHitRegion();
     window_->show();
     if (!window_->showTrayIcon("DeskPet")) {
         core::logging::warn("트레이 아이콘을 만들 수 없습니다");
@@ -241,7 +240,9 @@ bool Application::tick() {
     syncWindowToCharacter();
     updateAnimation(static_cast<float>(steps) * dt);  // 이번 프레임에 진행한 시뮬레이션 시간
 
-    switch (renderer_->render(buildScene())) {
+    const renderer::FrameResult frame = renderer_->render(buildScene());
+    updateClickThrough();
+    switch (frame) {
         case renderer::FrameResult::Ok:
         case renderer::FrameResult::DeviceRecovered: break;
         case renderer::FrameResult::Skipped:
@@ -262,12 +263,14 @@ void Application::handleEvent(const core::Event& event) {
     std::visit(Overloaded{
                    [this](const core::PointerDownEvent& e) {
                        if (e.button == MouseButton::Left) {
+                           pointerDown_ = true;
                            character_.onPointerDown(e.screen);
                        }
                    },
                    [this](const core::PointerMoveEvent& e) { character_.onPointerMove(e.screen); },
                    [this](const core::PointerUpEvent& e) {
                        if (e.button == MouseButton::Left) {
+                           pointerDown_ = false;
                            // 다른 모니터로 옮겼을 수 있으므로 놓기 전에 바닥을 다시 계산
                            refreshGround();
                            character_.onPointerUp(e.screen);
@@ -371,11 +374,11 @@ void Application::refreshGround() {
 }
 
 void Application::refreshBounds() {
-    // 그려지는 영역(hitRegion)이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
+    // 그려지는 영역(visibleRect)이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
     // 창 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로,
     // 창의 투명한 부분은 화면 밖으로 나가도 됨. 발은 창 가로 중앙
     const core::RectI desktop = window_->desktopBounds();
-    const core::RectI visible = hitRegion();
+    const core::RectI visible = visibleRect();
     const float center = static_cast<float>(windowSize_.width) / 2.0f;
     character_.setHorizontalBounds(
         static_cast<float>(desktop.left) + (center - static_cast<float>(visible.left)),
@@ -418,7 +421,6 @@ void Application::resizeWindow() {
     refitCamera();
     refreshBounds();
     syncWindowToCharacter();
-    applyHitRegion();
 }
 
 void Application::setVisible(bool visible) {
@@ -440,11 +442,11 @@ core::PointI Application::windowTopLeftFor(core::Vec2 feet) const {
     return {roundToInt(feet.x - width / 2.0f), roundToInt(feet.y - height)};
 }
 
-core::RectI Application::hitRegion() const {
+core::RectI Application::visibleRect() const {
     const auto width = static_cast<float>(windowSize_.width);
     const auto height = static_cast<float>(windowSize_.height);
     if (model_) {
-        return modelHitRegion();
+        return modelVisibleRect();
     }
     const character::Params& params = character_.params();
 
@@ -469,25 +471,31 @@ core::RectI Application::hitRegion() const {
     return rect;
 }
 
-// 창의 클릭 영역(= 그려지는 영역). 슬라임은 몸 모양 타원. 모델은 사각형: 윈도 리전이
-// 그리기도 잘라내므로 타원이면 걸을 때 다리·꼬리가 있는 아래 모서리가 원 모양으로 잘림.
-// 외곽선이 정점보다 몇 px 바깥에 그려지므로 그만큼 여유를 둠
-void Application::applyHitRegion() {
-    if (!model_) {
-        window_->setHitRegion(hitRegion(), platform::HitShape::Ellipse);
+// 커서 아래 픽셀이 캐릭터면 클릭을 받고, 투명하면 아래 창으로 넘김 (FR-04).
+// 클릭 통과 중에는 마우스 메시지가 오지 않으므로 커서 위치를 매 프레임 직접 확인.
+// 알파는 몇 프레임 늦게 오지만, 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없음
+void Application::updateClickThrough() {
+    constexpr float kHitAlpha = 0.1f;  // 외곽선·안티에일리어싱으로 반투명한 가장자리도 캐릭터로
+    if (pointerDown_) {
+        window_->setClickThrough(false);  // 끄는 중에는 커서가 투명한 곳으로 가도 계속 받음
         return;
     }
-    constexpr int kOutlinePaddingPx = 3;
-    core::RectI rect = hitRegion();
-    rect.left = std::max(rect.left - kOutlinePaddingPx, 0);
-    rect.top = std::max(rect.top - kOutlinePaddingPx, 0);
-    rect.right = std::min(rect.right + kOutlinePaddingPx, windowSize_.width);
-    rect.bottom = std::min(rect.bottom + kOutlinePaddingPx, windowSize_.height);
-    window_->setHitRegion(rect, platform::HitShape::Rectangle);
+    const core::PointI cursor = window_->cursorPosition();
+    const core::PointI windowPos = window_->position();
+    const core::PointI local{cursor.x - windowPos.x, cursor.y - windowPos.y};
+    const bool insideWindow =
+        local.x >= 0 && local.y >= 0 && local.x < windowSize_.width && local.y < windowSize_.height;
+    if (!insideWindow) {
+        window_->setClickThrough(true);
+        return;
+    }
+    const std::optional<renderer::AlphaSample> sample = renderer_->sampleAlpha(local);
+    const bool overCharacter = sample && sample->alpha > kHitAlpha;
+    window_->setClickThrough(!overCharacter);
 }
 
-// 모델 경계 상자 8개 꼭짓점을 화면에 투영한 사각형 (TODO(M6): 픽셀 알파 기반 히트 테스트)
-core::RectI Application::modelHitRegion() const {
+// 모델 경계 상자 8개 꼭짓점을 화면에 투영한 사각형
+core::RectI Application::modelVisibleRect() const {
     const auto width = static_cast<float>(windowSize_.width);
     const auto height = static_cast<float>(windowSize_.height);
     const model::Bounds& b = displayBounds_;

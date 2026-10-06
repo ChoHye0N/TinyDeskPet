@@ -86,8 +86,7 @@ TEST_F(ApplicationTest, Startup_SetsHitRegionInsideWindow) {
     auto app = makeApp();
     (void)app->run();
 
-    const core::RectI& hit = window_.hitRegion;
-    EXPECT_EQ(window_.hitShape, deskpet::platform::HitShape::Ellipse);  // 슬라임은 타원
+    const core::RectI hit = app->visibleRect();
     EXPECT_GT(hit.width(), 0);
     EXPECT_GT(hit.height(), 0);
     EXPECT_GE(hit.left, 0);
@@ -378,11 +377,8 @@ TEST_F(ApplicationTest, WithModel_HitRegionCoversProjectedModel) {
     app->setModel(makeHumanoidModel());
     (void)app->run();
 
-    // 모델은 사각형: 윈도 리전은 그리기도 잘라내므로, 타원이면 걸을 때 발·꼬리가 있는
-    // 아래 모서리가 원 모양으로 잘림
-    EXPECT_EQ(window_.hitShape, deskpet::platform::HitShape::Rectangle);
     // T포즈(폭 1.5 > 키 1.6 × 창 비율 1)라 거의 창 전체 폭을 차지
-    const core::RectI& hit = window_.hitRegion;
+    const core::RectI hit = app->visibleRect();
     EXPECT_GE(hit.left, 0);
     EXPECT_LE(hit.right, 200);
     EXPECT_GT(hit.width(), 180);
@@ -470,10 +466,10 @@ TEST_F(ApplicationTest, DpiChanged_ResizesWindowAndRendererKeepingFeet) {
     // 발 높이는 그대로. 커진 슬라임이 오른쪽 화면 끝(1920)을 넘지 않을 만큼만 안쪽으로 밀림
     // (FR-17). 창의 투명한 여백은 화면 밖으로 나가도 됨
     EXPECT_EQ(window_.position.y, 1040 - 400);
-    EXPECT_LE(window_.position.x + window_.hitRegion.right, 1920);
+    EXPECT_LE(window_.position.x + app->visibleRect().right, 1920);
     EXPECT_LT(window_.position.x, 1780 - 200);  // 발(1780)이 그대로면 넘치므로 안쪽으로 밀림
-    EXPECT_LE(window_.hitRegion.right, 400);
-    EXPECT_GT(window_.hitRegion.width(), 200);
+    EXPECT_LE(app->visibleRect().right, 400);
+    EXPECT_GT(app->visibleRect().width(), 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +489,7 @@ TEST_F(ApplicationTest, DraggedPastDesktopEdge_StaysInsideAfterRelease) {
 
     // 막는 기준은 창이 아니라 그려지는 영역: 그 오른쪽 끝이 모니터 끝에 맞음.
     // 창의 투명한 여백은 화면 밖으로 나가도 됨 (창 반폭으로 막으면 끝에서 멈춰 보임)
-    const int visibleRight = window_.position.x + window_.hitRegion.right;
+    const int visibleRight = window_.position.x + app->visibleRect().right;
     EXPECT_LE(visibleRight, 1920);
     EXPECT_GE(visibleRight, 1918);
     EXPECT_GT(window_.position.x + 200, 1920);
@@ -511,8 +507,7 @@ TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
     app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
     (void)app->run();
 
-    // 모델 클릭 영역은 외곽선 여유(3px)만큼 경계 상자보다 넓음 → 그 안쪽이 모니터 끝
-    const int visibleLeft = window_.position.x + window_.hitRegion.left + 3;
+    const int visibleLeft = window_.position.x + app->visibleRect().left;
     EXPECT_GE(visibleLeft, 0);
     EXPECT_LE(visibleLeft, 2);
 }
@@ -606,4 +601,73 @@ TEST_F(ApplicationTest, IdleMotion_AnimatesUnlessDisabled) {
     (void)still->run();
     // 대기 중 변화가 없어야 렌더러가 Present를 생략할 수 있음 (DEBT-02)
     EXPECT_EQ(renderer_.previousScene, renderer_.lastScene);
+}
+
+// ---------------------------------------------------------------------------
+// 픽셀 단위 클릭 통과 (FR-04): 커서 아래 픽셀이 투명하면 클릭을 아래 창으로 넘김
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 창 내부 (100~200, 100~200)만 불투명한 캐릭터
+float squareCharacter(core::PointI p) {
+    return p.x >= 100 && p.x < 200 && p.y >= 100 && p.y < 200 ? 1.0f : 0.0f;
+}
+
+// 매 poll마다 커서를 창 좌상단 + offset에 둠
+std::function<void(int, deskpet::testing::FakeWindowState&)> cursorAt(core::PointI offset) {
+    return [offset](int, deskpet::testing::FakeWindowState& w) {
+        w.cursor = {w.position.x + offset.x, w.position.y + offset.y};
+    };
+}
+
+}  // namespace
+
+TEST_F(ApplicationTest, CursorOverOpaquePixel_MakesWindowClickable) {
+    renderer_.alphaAt = squareCharacter;
+    window_.onPoll = cursorAt({150, 150});
+    window_.pollsBeforeQuit = 5;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_FALSE(window_.clickThrough);
+}
+
+TEST_F(ApplicationTest, CursorOverTransparentPixel_PassesClicksThrough) {
+    renderer_.alphaAt = squareCharacter;
+    window_.onPoll = cursorAt({20, 20});
+    window_.pollsBeforeQuit = 5;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_TRUE(window_.clickThrough);
+}
+
+TEST_F(ApplicationTest, CursorOutsideWindow_PassesClicksThrough) {
+    renderer_.alphaAt = [](core::PointI) { return 1.0f; };  // 창 안이 전부 불투명이어도
+    window_.onPoll = cursorAt({-50, 150});
+    window_.pollsBeforeQuit = 5;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_TRUE(window_.clickThrough);
+}
+
+TEST_F(ApplicationTest, WhileDragging_StaysClickableOverTransparentPixels) {
+    // 끄는 동안 커서가 투명한 곳(캐릭터 가장자리 바깥)으로 가도 계속 이벤트를 받아야 함
+    renderer_.alphaAt = squareCharacter;
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{1700.0f, 900.0f}}});
+    window_.onPoll = cursorAt({20, 20});
+    window_.pollsBeforeQuit = 5;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_FALSE(window_.clickThrough);
+}
+
+TEST_F(ApplicationTest, ClickThroughState_ChangesOnlyWhenNeeded) {
+    // 매 프레임 창 스타일을 바꾸지 않음 (같은 상태면 그대로)
+    renderer_.alphaAt = squareCharacter;
+    window_.onPoll = cursorAt({20, 20});
+    window_.pollsBeforeQuit = 20;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_LE(window_.clickThroughChanges, 1);
 }

@@ -11,7 +11,7 @@
 
 운영체제의 창과 입력을 **플랫폼 독립 인터페이스** 뒤로 숨깁니다.
 
-- 하는 일: 창 생성·표시·이동, OS 메시지를 `core::Event`로 변환, 클릭 영역 설정, 컨텍스트 메뉴 표시, 모니터 작업 영역 조회
+- 하는 일: 창 생성·표시·이동, OS 메시지를 `core::Event`로 변환, 클릭 통과 전환, 커서 위치 조회, 컨텍스트 메뉴 표시, 모니터 작업 영역 조회
 - 하지 않는 일: 드래그 판정(→ character), 메뉴 항목 결정(→ app), 그리기(→ renderer)
 
 ## 2. 파일 구성
@@ -58,7 +58,8 @@ public:
     [[nodiscard]] virtual core::RectI desktopBounds() const = 0;     // 가상 데스크톱 (모든 모니터)
     [[nodiscard]] virtual float dpiScale() const = 0;                // 1.0 = 96 DPI
     virtual bool showTrayIcon(const std::string& tooltip) = 0;      // 클릭 → TrayMenuRequestedEvent
-    virtual void setHitRegion(const core::RectI& local, HitShape shape) = 0;  // 창 내부 좌표, Ellipse | Rectangle
+    virtual void setClickThrough(bool enabled) = 0;        // true면 클릭이 아래 창으로 (FR-04)
+    virtual core::PointI cursorPosition() const = 0;       // 화면 좌표 (클릭 통과 중엔 마우스 메시지가 없음)
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0; // 선택한 id, 취소 시 0
     [[nodiscard]] virtual void* nativeHandle() const = 0;            // Win32에서는 HWND
@@ -129,7 +130,9 @@ flowchart TD
 | `setSize` | `SetWindowPos(SWP_NOMOVE \| SWP_NOZORDER \| SWP_NOACTIVATE)` |
 | `hide` / `show` | `ShowWindow(SW_HIDE / SW_SHOWNOACTIVATE)` |
 | `showTrayIcon` | `Shell_NotifyIconW(NIM_ADD)` + `NIM_SETVERSION(4)`. 아이콘은 시스템 기본(`IDI_APPLICATION`). 소멸자에서 `NIM_DELETE` (없으면 "유령 아이콘"이 남음) |
-| `setHitRegion` | `CreateEllipticRgn`(슬라임) / `CreateRectRgn`(모델) → `SetWindowRgn`. 성공하면 리전 소유권이 OS로 넘어가므로 직접 삭제하지 않음. **윈도 리전은 그리기도 잘라내므로** 그려질 수 있는 모든 픽셀을 포함해야 함 |
+| 창 스타일 | `WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT` (+ 항상 위). LAYERED + TRANSPARENT = 클릭이 아래 창으로 통과. DirectComposition 창에 LAYERED를 함께 걸어도 그리기는 그대로임을 실험으로 확인 (`WindowFromPoint`·화면 캡처). LAYERED 창은 `SetLayeredWindowAttributes(255)`를 한 번 불러야 보임 |
+| `setClickThrough` | `GWL_EXSTYLE`의 `WS_EX_TRANSPARENT`만 켜고 끔. 같은 상태면 건드리지 않음. 예전의 `SetWindowRgn`(도형 영역)은 클릭뿐 아니라 **그리기도 잘라내서**(학습 노트 #17) 없앰 |
+| `cursorPosition` | `GetCursorPos` |
 | `showContextMenu` | `CreatePopupMenu` → 항목 추가(UTF-8→UTF-16) → `SetForegroundWindow` → `TrackPopupMenu(TPM_RETURNCMD)` → `PostMessage(WM_NULL)` (메뉴가 바로 닫히지 않는 알려진 문제 회피) |
 
 ### 4.5 창 프로시저와 `this` 연결
@@ -160,5 +163,5 @@ Win32 구현은 단위 테스트 대신 **수동 테스트 체크리스트**로 
 | ~~`TODO(M1)`~~ | ✅ 단일 인스턴스 — 이름 있는 뮤텍스는 진입점(`main_win32.cpp`)에서 처리 |
 | ~~`TODO(M1)`~~ | ✅ `WM_DPICHANGED` → `DpiChangedEvent` |
 | `TODO(M6)` | 전용 트레이 아이콘 리소스 (.ico) |
-| `TODO(M5)` | 알파 기반 클릭 통과: 커서 아래 픽셀 알파를 검사해 `WS_EX_TRANSPARENT` 토글 |
+| ~~`TODO(M5)`~~ | ✅ 알파 기반 클릭 통과 (`setClickThrough` + 렌더러 `sampleAlpha`) |
 | `TODO(M6)` | 다른 창 목록 조회 (`EnumWindows`, `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)`) |
