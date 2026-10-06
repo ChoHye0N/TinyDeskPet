@@ -42,6 +42,8 @@ private:
         core::Vec3 prevTail;
     };
 
+    void addChain(int root, int group, const std::vector<std::vector<int>>& children,
+                  std::vector<bool>& used);
     void step(const Skeleton& skeleton, std::vector<core::Quat>& rotations, float dt);
 
     const model::Model& model_;

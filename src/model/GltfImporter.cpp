@@ -240,6 +240,16 @@ std::optional<std::string_view> childSpan(std::string_view object, std::string_v
     return std::nullopt;
 }
 
+// {"x":…, "y":…, "z":…} 객체 멤버. 없으면 fallback
+core::Vec3 vec3Member(std::string_view object, std::string_view key, core::Vec3 fallback) {
+    const auto span = valueSpan(object, key);
+    if (!span) {
+        return fallback;
+    }
+    return {floatMember(*span, "x").value_or(0.0f), floatMember(*span, "y").value_or(0.0f),
+            floatMember(*span, "z").value_or(0.0f)};
+}
+
 // "[0.1, 0.2, ...]" 배열의 숫자들. 숫자가 아닌 값을 만나면 거기서 멈춤
 std::vector<float> floatArray(std::string_view array) {
     std::vector<float> values;
@@ -483,71 +493,73 @@ private:
         if (!secondary) {
             return;
         }
-        const auto flip = [this](Vec3 v) {
-            return model_.version == VrmVersion::V0 ? Vec3{-v.x, v.y, -v.z} : v;
-        };
-        const auto vec3 = [](std::string_view object, std::string_view key, Vec3 fallback) {
-            const auto span = valueSpan(object, key);
-            if (!span) {
-                return fallback;
-            }
-            return Vec3{floatMember(*span, "x").value_or(0.0f),
-                        floatMember(*span, "y").value_or(0.0f),
-                        floatMember(*span, "z").value_or(0.0f)};
-        };
-        const auto validBone = [this](std::optional<int> node) {
-            return node && *node >= 0 && static_cast<std::size_t>(*node) < model_.bones.size();
-        };
-
-        // 충돌체 그룹 → 구 목록. 그룹 번호별로 구 인덱스를 기억해 두었다가 본 그룹에 연결
-        std::vector<std::vector<int>> groupSpheres;
-        if (const auto groups = childSpan(*secondary, "colliderGroups")) {
-            forEachObject(*groups, [&](std::string_view group) {
-                std::vector<int>& spheres = groupSpheres.emplace_back();
-                const auto node = intMember(group, "node");
-                const auto colliders = valueSpan(group, "colliders");
-                if (!validBone(node) || !colliders) {
-                    return;
-                }
-                forEachObject(*colliders, [&](std::string_view collider) {
-                    spheres.push_back(static_cast<int>(model_.springColliders.size()));
-                    model_.springColliders.push_back(
-                        {*node, flip(vec3(collider, "offset", {})),
-                         floatMember(collider, "radius").value_or(0.0f)});
-                });
-            });
-        }
-
+        const std::vector<std::vector<int>> groupSpheres = readSpringColliderGroups(*secondary);
         if (const auto groups = childSpan(*secondary, "boneGroups")) {
             forEachObject(*groups, [&](std::string_view object) {
-                SpringGroup group;
-                group.stiffness = floatMember(object, "stiffiness").value_or(group.stiffness);
-                group.gravityPower = floatMember(object, "gravityPower").value_or(0.0f);
-                group.gravityDir = flip(vec3(object, "gravityDir", {0.0f, -1.0f, 0.0f}));
-                group.dragForce = floatMember(object, "dragForce").value_or(group.dragForce);
-                group.hitRadius = floatMember(object, "hitRadius").value_or(group.hitRadius);
-                if (const auto bones = valueSpan(object, "bones")) {
-                    for (const float node : floatArray(*bones)) {
-                        if (validBone(static_cast<int>(node))) {
-                            group.roots.push_back(static_cast<int>(node));
-                        }
-                    }
-                }
-                if (const auto refs = valueSpan(object, "colliderGroups")) {
-                    for (const float ref : floatArray(*refs)) {
-                        const auto index = static_cast<std::size_t>(ref);
-                        if (ref >= 0.0f && index < groupSpheres.size()) {
-                            group.colliders.insert(group.colliders.end(),
-                                                   groupSpheres[index].begin(),
-                                                   groupSpheres[index].end());
-                        }
-                    }
-                }
+                SpringGroup group = readSpringGroup(object, groupSpheres);
                 if (!group.roots.empty()) {
                     model_.springGroups.push_back(std::move(group));
                 }
             });
         }
+    }
+
+    [[nodiscard]] Vec3 flipV0(Vec3 v) const {
+        return model_.version == VrmVersion::V0 ? Vec3{-v.x, v.y, -v.z} : v;
+    }
+
+    [[nodiscard]] bool validBone(std::optional<int> node) const {
+        return node && *node >= 0 && static_cast<std::size_t>(*node) < model_.bones.size();
+    }
+
+    // 충돌체 그룹 → 구 목록. 반환값[그룹 번호] = 그 그룹의 구 인덱스들 (본 그룹이 번호로 참조)
+    std::vector<std::vector<int>> readSpringColliderGroups(std::string_view secondary) {
+        std::vector<std::vector<int>> groupSpheres;
+        const auto groups = childSpan(secondary, "colliderGroups");
+        if (!groups) {
+            return groupSpheres;
+        }
+        forEachObject(*groups, [&](std::string_view group) {
+            std::vector<int>& spheres = groupSpheres.emplace_back();
+            const auto node = intMember(group, "node");
+            const auto colliders = valueSpan(group, "colliders");
+            if (!validBone(node) || !colliders) {
+                return;
+            }
+            forEachObject(*colliders, [&](std::string_view collider) {
+                spheres.push_back(static_cast<int>(model_.springColliders.size()));
+                model_.springColliders.push_back({*node, flipV0(vec3Member(collider, "offset", {})),
+                                                  floatMember(collider, "radius").value_or(0.0f)});
+            });
+        });
+        return groupSpheres;
+    }
+
+    SpringGroup readSpringGroup(std::string_view object,
+                                const std::vector<std::vector<int>>& groupSpheres) const {
+        SpringGroup group;
+        group.stiffness = floatMember(object, "stiffiness").value_or(group.stiffness);
+        group.gravityPower = floatMember(object, "gravityPower").value_or(0.0f);
+        group.gravityDir = flipV0(vec3Member(object, "gravityDir", {0.0f, -1.0f, 0.0f}));
+        group.dragForce = floatMember(object, "dragForce").value_or(group.dragForce);
+        group.hitRadius = floatMember(object, "hitRadius").value_or(group.hitRadius);
+        if (const auto bones = valueSpan(object, "bones")) {
+            for (const float node : floatArray(*bones)) {
+                if (validBone(static_cast<int>(node))) {
+                    group.roots.push_back(static_cast<int>(node));
+                }
+            }
+        }
+        if (const auto refs = valueSpan(object, "colliderGroups")) {
+            for (const float ref : floatArray(*refs)) {
+                const auto index = static_cast<std::size_t>(ref);
+                if (ref >= 0.0f && index < groupSpheres.size()) {
+                    group.colliders.insert(group.colliders.end(), groupSpheres[index].begin(),
+                                           groupSpheres[index].end());
+                }
+            }
+        }
+        return group;
     }
 
     // VRM 0.x: extensions.VRM.materialProperties[{name, floatProperties, vectorProperties}]

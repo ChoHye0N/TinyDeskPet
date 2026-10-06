@@ -305,11 +305,14 @@ model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
     constexpr int kWalkSamples = 8;
     std::vector<AnimationInput> inputs;
     for (const Motion motion : {Motion::Idle, Motion::Dragged, Motion::Airborne}) {
-        inputs.push_back({.motion = motion, .idleMotion = false});
+        AnimationInput& input = inputs.emplace_back();
+        input.motion = motion;
+        input.idleMotion = false;
     }
     for (int i = 0; i < kWalkSamples; ++i) {
-        inputs.push_back(
-            {.motion = Motion::Walk, .time = kWalkCycle * static_cast<float>(i) / kWalkSamples});
+        AnimationInput& input = inputs.emplace_back();
+        input.motion = Motion::Walk;
+        input.time = kWalkCycle * static_cast<float>(i) / kWalkSamples;
     }
 
     AnimationOutput out;

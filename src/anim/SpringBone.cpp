@@ -20,9 +20,8 @@ float length(core::Vec3 v) {
     return std::sqrt(core::dot(v, v));
 }
 
-}  // namespace
-
-SpringBoneSimulator::SpringBoneSimulator(const model::Model& model) : model_(model) {
+// 본별 자식 목록 (본 배열 순서)
+std::vector<std::vector<int>> childrenOf(const model::Model& model) {
     const std::size_t count = model.bones.size();
     std::vector<std::vector<int>> children(count);
     for (std::size_t i = 0; i < count; ++i) {
@@ -31,48 +30,65 @@ SpringBoneSimulator::SpringBoneSimulator(const model::Model& model) : model_(mod
             children[static_cast<std::size_t>(parent)].push_back(static_cast<int>(i));
         }
     }
+    return children;
+}
 
-    std::vector<bool> used(count, false);  // 여러 그룹에 같은 본이 있으면 처음 그룹만
-    for (std::size_t g = 0; g < model.springGroups.size(); ++g) {
-        for (const int root : model.springGroups[g].roots) {
-            // 전위 순회: 부모가 자식보다 먼저 joints_에 들어감
-            std::vector<int> stack{root};
-            while (!stack.empty()) {
-                const int bone = stack.back();
-                stack.pop_back();
-                if (bone < 0 || static_cast<std::size_t>(bone) >= count ||
-                    used[static_cast<std::size_t>(bone)]) {
-                    continue;
-                }
-                used[static_cast<std::size_t>(bone)] = true;
-                const auto& kids = children[static_cast<std::size_t>(bone)];
-                for (auto it = kids.rbegin(); it != kids.rend(); ++it) {
-                    stack.push_back(*it);
-                }
+// 본의 끝: 첫 자식 위치. 자식이 없으면 부모 → 본 방향으로 7cm (UniVRM과 같음)
+core::Vec3 tailOf(const model::Model& model, int bone, const std::vector<int>& kids) {
+    const model::Bone& b = model.bones[static_cast<std::size_t>(bone)];
+    if (!kids.empty()) {
+        return model.bones[static_cast<std::size_t>(kids.front())].position;
+    }
+    if (b.parent >= 0) {
+        const core::Vec3 dir =
+            b.position - model.bones[static_cast<std::size_t>(b.parent)].position;
+        const float len = length(dir);
+        if (len > 1e-6f) {
+            return b.position + dir * (kLeafTailLength / len);
+        }
+    }
+    return b.position + core::Vec3{0.0f, -kLeafTailLength, 0.0f};
+}
 
-                const model::Bone& b = model.bones[static_cast<std::size_t>(bone)];
-                core::Vec3 tail;
-                if (!kids.empty()) {
-                    tail = model.bones[static_cast<std::size_t>(kids.front())].position;
-                } else if (b.parent >= 0) {
-                    const core::Vec3 dir =
-                        b.position - model.bones[static_cast<std::size_t>(b.parent)].position;
-                    const float len = length(dir);
-                    tail = b.position + (len > 1e-6f ? dir * (kLeafTailLength / len)
-                                                     : core::Vec3{0.0f, -kLeafTailLength, 0.0f});
-                } else {
-                    tail = b.position + core::Vec3{0.0f, -kLeafTailLength, 0.0f};
-                }
-                Joint joint;
-                joint.bone = bone;
-                joint.parent = b.parent;
-                joint.axis = tail - b.position;
-                joint.length = length(joint.axis);
-                joint.group = static_cast<int>(g);
-                if (joint.length > 1e-6f) {
-                    joints_.push_back(joint);
-                }
-            }
+}  // namespace
+
+SpringBoneSimulator::SpringBoneSimulator(const model::Model& model) : model_(model) {
+    const std::vector<std::vector<int>> children = childrenOf(model);
+    std::vector<bool> used(model.bones.size(), false);  // 여러 그룹에 같은 본이 있으면 처음 그룹만
+    int group = 0;
+    for (const model::SpringGroup& spring : model.springGroups) {
+        for (const int root : spring.roots) {
+            addChain(root, group, children, used);
+        }
+        ++group;
+    }
+}
+
+// root와 자손 전체를 전위 순회로 추가: 부모가 자식보다 먼저 joints_에 들어감
+void SpringBoneSimulator::addChain(int root, int group,
+                                   const std::vector<std::vector<int>>& children,
+                                   std::vector<bool>& used) {
+    std::vector<int> stack{root};
+    while (!stack.empty()) {
+        const int bone = stack.back();
+        stack.pop_back();
+        if (bone < 0 || static_cast<std::size_t>(bone) >= used.size() ||
+            used[static_cast<std::size_t>(bone)]) {
+            continue;
+        }
+        used[static_cast<std::size_t>(bone)] = true;
+        const auto& kids = children[static_cast<std::size_t>(bone)];
+        stack.insert(stack.end(), kids.rbegin(), kids.rend());
+
+        const model::Bone& b = model_.bones[static_cast<std::size_t>(bone)];
+        Joint joint;
+        joint.bone = bone;
+        joint.parent = b.parent;
+        joint.axis = tailOf(model_, bone, kids) - b.position;
+        joint.length = length(joint.axis);
+        joint.group = group;
+        if (joint.length > 1e-6f) {
+            joints_.push_back(joint);
         }
     }
 }
