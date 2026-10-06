@@ -571,6 +571,15 @@ renderer::RenderScene Application::buildScene() const {
 
     renderer::RenderScene scene;
     scene.viewport = {overlay_.width(), overlay_.height()};
+    // 3D가 그려질 수 있는 영역: 상자에서 좌우로 0.75배, 위로 상자 높이만큼 (흔들리는 머리카락·
+    // 벌린 팔 여유). 렌더러가 3D·MSAA를 이 크기로만 그려 화면 전체 MSAA 비용을 피함
+    const int marginX = boxSize_.width * 3 / 4;
+    scene.sceneRegion = {
+        std::max(offset.x - marginX, 0),
+        std::max(offset.y - boxSize_.height, 0),
+        std::min(offset.x + boxSize_.width + marginX, overlay_.width()),
+        std::min(offset.y + boxSize_.height + boxSize_.height / 10, overlay_.height()),
+    };
 
     // 착지 반동: 세로로 눌리고 가로로 퍼짐 (발 위치는 고정)
     const float unit = std::min(width, height);  // 상자가 세로로 길어도 슬라임 비율 유지
