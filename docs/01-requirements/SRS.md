@@ -190,7 +190,7 @@ flowchart TD
 | 요구사항 | 설계 문서 | 구현 위치 | 검증 |
 |---|---|---|---|
 | FR-01, FR-02, FR-03 | [platform.md](../03-detailed-design/platform.md), [renderer.md](../03-detailed-design/renderer.md) | `src/platform/win32/Win32Window.cpp`, `src/renderer/d3d11/D3D11Renderer.cpp` | 수동 |
-| FR-04 | [platform.md](../03-detailed-design/platform.md) | `Win32Window::setHitRegion` | 수동 |
+| FR-04 | [platform.md](../03-detailed-design/platform.md), [renderer.md](../03-detailed-design/renderer.md) | `Win32Window::setClickThrough`, `D3D11Renderer::sampleAlpha`, `Application::updateClickThrough` | `tests/app/ApplicationTests.cpp` + 수동 |
 | FR-05, FR-15 | [app.md](../03-detailed-design/app.md) | `Application::resetCharacterPosition` | `tests/app/ApplicationTests.cpp` |
 | FR-06 | [app.md](../03-detailed-design/app.md) | `Application::setScalePercent` | `tests/app/ApplicationTests.cpp` |
 | FR-10 ~ FR-13 | [character.md](../03-detailed-design/character.md) | `CharacterController` | `tests/character/CharacterControllerTests.cpp` |

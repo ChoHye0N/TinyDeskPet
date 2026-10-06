@@ -122,6 +122,8 @@ if result == Fatal: exitCode = RendererFailed; break
 
 **크기 조절 (FR-06)**: 50% ~ 200%, 10% 단위. 바뀌면 `resizeWindow()`가 DPI 변경과 같은 경로로 창·렌더러·카메라·벽·클릭 영역을 갱신하고, 발 위치를 기준으로 창을 다시 놓아 캐릭터가 같은 자리에 서 있습니다. 종료할 때 `[state] scale`로 저장하고, 시작할 때 10% 단위·범위로 맞춰 복원합니다.
 
+**클릭 통과 (FR-04, `updateClickThrough`)**: 매 프레임 렌더 뒤 `cursorPosition()`을 창 내부 좌표로 바꿔, 창 밖이면 통과. 창 안이면 `renderer->sampleAlpha(local)`의 알파가 0.1보다 크면(외곽선·안티에일리어싱 가장자리 포함) 클릭을 받고 아니면 통과. 왼쪽 버튼을 누르고 있는 동안(끌기)은 항상 받음. 알파는 2~3프레임 늦게 오지만 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없습니다.
+
 ### 4.5 좌표 변환
 
 창 크기를 `W × H`, 캐릭터 발 위치를 `F`라 할 때
@@ -141,7 +143,7 @@ if result == Fatal: exitCode = RendererFailed; break
 | 기본 반지름 | `U = min(W, H)`일 때 `rx = 0.32 × U`, `ry = 0.27 × U` (세로로 긴 창에서도 비율 유지) |
 | 착지 반동 반영 (슬라임만) | `ry' = ry × (1 − squash)`, `rx' = rx × (1 + 0.5 × squash)`. 모델은 늘이지 않고 anim이 관절로 웅크림 |
 | 중심 | `(W/2, H − footMargin − ry' + breathOffset)`, `footMargin = 4px` |
-| 클릭 영역 | 기본 타원을 숨쉬기 진폭 + 2px만큼 키운 사각형 |
+| 보이는 영역 (`visibleRect`, 벽 계산) | 기본 타원을 숨쉬기 진폭 + 2px만큼 키운 사각형 |
 
 ```mermaid
 flowchart LR
@@ -167,11 +169,11 @@ flowchart LR
 |---|---|
 | 슬라임 | `placeholder.visible = false` |
 | 애니메이션 (ADR-0010) | 상태 매핑 Idle/Walk/Dragged/Airborne → `anim::Motion`, `time`·`squash`·`blink`(= 눈 감음)·`idleMotion`(설정)을 넘겨 `ProceduralAnimator::evaluate`. 결과 스킨 행렬·표정 가중치를 `scene.character`에 복사 |
-| 카메라·클릭 영역 기준 | `displayBounds()` — 대기·매달림·공중 자세를 합친 경계 상자 (T포즈 폭 대신) |
+| 카메라·보이는 영역 기준 | `displayBounds()` — 대기·매달림·공중 자세를 합친 경계 상자 (T포즈 폭 대신) |
 | 숨긴 슬라임 | 모델이 있으면 `placeholder`를 기본값으로 고정 — 숨쉬기 값이 바뀌면 장면 비교가 항상 "다름"이 되어 Present 생략이 안 됨 |
 | 뷰×투영 | `rotationY(turn) × camera` (착지 반동으로 늘이지 않음). `turn`은 목표 `facing × 50°`로 **일정한 속도(50° / 0.2초)로 돌아감** (`core::moveTowards`, 즉시 바꾸면 튀어 보임. 방향을 바꾸면 정면을 지나 0.4초). 경계 상자는 `displayBounds(50°)`로 돌린 몸까지 포함. 걷는 방향으로 몸을 돌리되 얼굴이 보이도록 50°만 |
 | 흔들림 관성 | `AnimationInput::movement` = (발 위치 변화 px × m/px)를 `rotationY(−turn)`으로 모델 축에 맞춘 값. y는 부호 반전(화면 아래 +). m/px는 `refitCamera`에서 발 평면의 (0,0,0)·(0,1,0)을 투영해 구함. 고정 스텝이 없던 프레임의 이동은 다음 프레임으로 넘김 |
-| 클릭 영역 | 경계 상자 8개 꼭짓점을 화면에 투영한 사각형(창 안으로 자름)에 내접하는 타원 |
+| 보이는 영역 (`visibleRect`) | 경계 상자 8개 꼭짓점을 화면에 투영한 사각형(창 안으로 자름). 벽 계산에만 쓰고 클릭 판정에는 쓰지 않음 |
 
 ### 4.6 Windows 진입점 (`main_win32.cpp`)
 
@@ -233,7 +235,8 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | 렌더러가 `Fatal` 반환 시 `RendererFailed` | FR-33 |
 | 작업 영역 변경 이벤트 후 캐릭터가 새 바닥으로 이동 | FR-15 |
 | 모델 없음 → 슬라임만, 모델 있음 → 슬라임 숨김·모델 포인터 전달·발이 화면 아래 가운데 | ADR-0008 |
-| 모델 있음 → 클릭 영역이 투영된 모델을 덮음 | ADR-0008 |
+| 모델 있음 → 보이는 영역이 투영된 모델을 덮음 | ADR-0008 |
+| 커서가 불투명 픽셀 위면 클릭을 받고, 투명 픽셀·창 밖이면 통과, 끄는 중에는 항상 받음, 같은 상태면 스타일을 바꾸지 않음 | FR-04 |
 | `CameraFitTests`: 꼭짓점이 화면·깊이 범위 안(앞쪽 바닥 모서리 제외), 제한 축이 꽉 참, 깊은·치우친 모델도 발이 화면 맨 아래 가로 가운데 | ADR-0008 |
 | 시작 시 트레이 아이콘, 트레이 메뉴가 캐릭터 메뉴와 같은 항목, 숨기기 중 렌더링 없음·대기, 다시 보이기 | FR-18 |
 | 시작 DPI 배율로 창·렌더러 크기 확대, DPI 변경 시 크기·렌더러·히트 영역 갱신(화면 끝이면 안쪽으로) | DEBT-01 |

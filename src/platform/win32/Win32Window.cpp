@@ -59,7 +59,11 @@ bool Win32Window::create(const WindowDesc& desc) {
     }
 
     // 스타일별 목적: docs/03-detailed-design/platform.md §4.1
-    DWORD exStyle = WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW;
+    // WS_EX_LAYERED | WS_EX_TRANSPARENT: 클릭이 이 창을 지나 아래 창으로 감 (클릭 통과).
+    // 앱이 커서 아래 픽셀이 캐릭터일 때만 TRANSPARENT를 끔. DirectComposition 창
+    // (NOREDIRECTIONBITMAP)에 LAYERED를 함께 걸어도 그리기는 그대로임을 실험으로 확인 (ADR-0011)
+    DWORD exStyle =
+        WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT;
     if (desc.alwaysOnTop) {
         exStyle |= WS_EX_TOPMOST;
     }
@@ -74,6 +78,8 @@ bool Win32Window::create(const WindowDesc& desc) {
         return false;
     }
 
+    // LAYERED 창은 불투명도를 한 번 지정해야 화면에 나타남 (255 = 그대로, 투명도는 DComp가 처리)
+    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
     size_ = desc.size;
     position_ = desc.position;
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
@@ -189,24 +195,23 @@ core::RectI Win32Window::workArea() const {
     return toRect(fallback);
 }
 
-void Win32Window::setHitRegion(const core::RectI& local, HitShape shape) {
-    if (hwnd_ == nullptr) {
-        return;
+void Win32Window::setClickThrough(bool enabled) {
+    if (hwnd_ == nullptr || enabled == clickThrough_) {
+        return;  // 같은 상태면 창 스타일을 건드리지 않음
     }
-    // 윈도 리전은 클릭뿐 아니라 그리기(DirectComposition 출력 포함)도 잘라냄
-    const HRGN region = shape == HitShape::Ellipse
-                            ? CreateEllipticRgn(local.left, local.top, local.right, local.bottom)
-                            : CreateRectRgn(local.left, local.top, local.right, local.bottom);
-    if (region == nullptr) {
-        core::logging::warn("윈도 리전 생성 실패");
-        return;
+    auto style = static_cast<DWORD>(GetWindowLongPtrW(hwnd_, GWL_EXSTYLE));
+    style =
+        enabled ? (style | WS_EX_TRANSPARENT) : (style & ~static_cast<DWORD>(WS_EX_TRANSPARENT));
+    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, static_cast<LONG_PTR>(style));
+    clickThrough_ = enabled;
+}
+
+core::PointI Win32Window::cursorPosition() const {
+    POINT point{};
+    if (GetCursorPos(&point) == FALSE) {
+        return {-100000, -100000};
     }
-    // 성공하면 리전 소유권이 OS로 넘어갑니다. 실패했을 때만 직접 삭제합니다.
-    if (SetWindowRgn(hwnd_, region, TRUE) == 0) {
-        DeleteObject(region);
-        core::logging::warn("SetWindowRgn 실패");
-    }
-    // TODO(M5): 알파 기반 클릭 통과로 교체 (커서 아래 픽셀 알파 검사 + WS_EX_TRANSPARENT 토글)
+    return {point.x, point.y};
 }
 
 int Win32Window::showContextMenu(const std::vector<MenuItem>& items, core::PointI screen) {
@@ -263,7 +268,7 @@ LRESULT CALLBACK Win32Window::windowProc(HWND hwnd, UINT message, WPARAM wParam,
 LRESULT Win32Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     // 메시지 → 이벤트 변환표: docs/03-detailed-design/platform.md §4.2
     switch (message) {
-        case WM_NCHITTEST: return HTCLIENT;  // 모양은 SetWindowRgn이 결정합니다.
+        case WM_NCHITTEST: return HTCLIENT;  // 클릭 통과 여부는 WS_EX_TRANSPARENT가 결정
 
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;  // 클릭해도 사용 중인 창의 포커스를 빼앗지 않음

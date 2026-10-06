@@ -12,7 +12,7 @@ namespace deskpet::renderer::d3d11 {
 struct D3D11Context {
     ID3D11Device* device = nullptr;
     ID3D11DeviceContext* context = nullptr;
-    ID3D11RenderTargetView* renderTarget = nullptr;  // 스왑체인 백버퍼
+    ID3D11RenderTargetView* renderTarget = nullptr;  // 프레임 텍스처 (끝나면 백버퍼로 복사)
     // 3D 패스가 그리는 곳. MSAA를 켜면 멀티샘플 텍스처(나중에 백버퍼로 resolve), 끄면 백버퍼
     ID3D11RenderTargetView* sceneTarget = nullptr;
     unsigned sampleCount = 1;           // sceneTarget의 샘플 수. 깊이 버퍼도 같아야 함

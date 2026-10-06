@@ -151,7 +151,8 @@ classDiagram
         +pollEvents(vector~Event~) void
         +setPosition(PointI) void
         +workArea() RectI
-        +setHitRegion(RectI, HitShape) void
+        +setClickThrough(bool) void
+        +cursorPosition() PointI
         +showContextMenu(items, PointI) int
         +nativeHandle() void*
     }
@@ -228,7 +229,7 @@ sequenceDiagram
     Rnd-->>App: true
     App->>Win: workArea()
     App->>App: resetCharacterPosition()<br/>(오른쪽 아래, 바닥 위)
-    App->>Win: setHitRegion(...)
+    App->>Win: setClickThrough(커서 아래 알파 기준)
     App->>Win: show()
     App->>App: 메인 루프 진입
 ```
@@ -473,7 +474,7 @@ DeskPet-0.1.0-win64.zip
 | ID | 위험 / 부채 | 영향 | 대응 |
 |---|---|---|---|
 | RISK-01 | GPU 드라이버 리셋 시 DComp 창이 사라짐 | 펫이 조용히 사라짐 | 디바이스 손실 복구 구현 (FR-33) |
-| RISK-02 | `SetWindowRgn`의 도형 영역은 캐릭터 실루엣과 정확히 일치하지 않음 | 모서리 클릭이 통과/차단 오차 | M5에서 알파 기반 히트 테스트로 교체 |
+| RISK-02 | ~~`SetWindowRgn`의 도형 영역은 캐릭터 실루엣과 정확히 일치하지 않음~~ | 해결: 커서 아래 픽셀 알파로 `WS_EX_TRANSPARENT`를 켜고 끔 (FR-04) |
 | RISK-03 | 단일 스레드에서 큰 VRM 로딩 시 프레임 멈춤 | 시작 시 잠깐 멈춤 | M3에서 작업 스레드 로딩 |
 | RISK-04 | Direct3D 디버그 레이어는 "그래픽 도구" 선택적 기능이 설치되어야 동작 | Debug 빌드 디바이스 생성 실패 | 디버그 플래그 실패 시 플래그 없이 재시도 |
 | ~~DEBT-01~~ | ✅ 해소 (M1): 창 크기 × DPI 배율, `WM_DPICHANGED` 처리 | 사용성 | — |

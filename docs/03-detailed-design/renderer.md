@@ -147,6 +147,9 @@ flowchart TD
 - **Present 생략 (DEBT-02)**: `RenderScene`은 `operator==`를 가지며, 직전에 Present한 장면과 같으면 아무것도 하지 않고 `Skipped`를 반환합니다. DirectComposition은 마지막으로 Present된 버퍼를 계속 합성하므로 화면은 그대로이고, 창 이동(드래그)은 장면이 아니라 창 위치만 바뀌므로 역시 생략됩니다. 디바이스 재생성·`resize` 뒤에는 `needsPresent_`로 반드시 한 번 그립니다. VSync 대기가 없어지므로 앱이 `waitForEvents(16ms)`로 쉽니다.
 - 슬라임과 대기 동작(숨쉬기)을 켠 모델은 매 프레임 장면이 바뀌어 생략되지 않습니다. `[animation] idle_motion = false`면 대기 중 장면이 같아져 생략됩니다.
 
+- **프레임 텍스처**: 백버퍼 대신 우리 소유의 `frameTexture_`(백버퍼와 같은 크기·형식)에 그립니다. 3D(MSAA면 resolve) → Direct2D → `CopyResource(백버퍼, frameTexture_)` → Present. 스왑체인 버퍼는 Present 뒤 내용이 정해지지 않지만 이 텍스처는 남아 있어, **Present를 생략한 동안에도** 커서 아래 알파를 읽을 수 있습니다.
+- **알파 읽기 (`sampleAlpha`, FR-04)**: 1×1 스테이징 텍스처 3개를 돌려 씁니다. 이번 위치의 1픽셀을 `CopySubresourceRegion`으로 요청하고, 앞서 요청한 것 중 끝난 것을 `Map(D3D11_MAP_FLAG_DO_NOT_WAIT)`로 읽습니다. 아직이면 `DXGI_ERROR_WAS_STILL_DRAWING`을 받고 기다리지 않습니다 (그냥 `Map`하면 CPU가 GPU를 기다려 프레임이 멈춤). 결과는 2~3프레임 늦습니다.
+
 ### 4.3 렌더 패스
 
 ```cpp

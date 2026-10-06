@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace deskpet::testing {
@@ -26,6 +27,7 @@ struct FakeWindowState {
     core::RectI desktopBounds{0, 0, 1920, 1080};
     bool trayResult = true;
     std::function<void(int pollIndex, FakeWindowState&)> onPoll;  // poll 직전 훅
+    core::PointI cursor{-10000, -10000};  // 마우스 커서 (화면 좌표). 기본은 화면 밖
 
     // 관찰 결과
     bool created = false;
@@ -37,8 +39,8 @@ struct FakeWindowState {
     int pollCount = 0;
     core::PointI position;
     std::vector<core::PointI> positionHistory;
-    core::RectI hitRegion;
-    platform::HitShape hitShape = platform::HitShape::Ellipse;
+    bool clickThrough = false;  // true면 클릭이 아래 창으로 통과
+    int clickThroughChanges = 0;
     int menuShownCount = 0;
     std::vector<platform::MenuItem> lastMenu;
 };
@@ -97,10 +99,13 @@ public:
         return state_.trayResult;
     }
 
-    void setHitRegion(const core::RectI& local, platform::HitShape shape) override {
-        state_.hitRegion = local;
-        state_.hitShape = shape;
+    void setClickThrough(bool enabled) override {
+        if (enabled != state_.clickThrough) {
+            ++state_.clickThroughChanges;
+        }
+        state_.clickThrough = enabled;
     }
+    [[nodiscard]] core::PointI cursorPosition() const override { return state_.cursor; }
 
     int showContextMenu(const std::vector<platform::MenuItem>& items,
                         core::PointI /*screen*/) override {
@@ -127,6 +132,8 @@ struct FakeRendererState {
     core::SizeI initialSize;
     core::SizeI lastResize;
     renderer::RendererOptions options;
+    // 창 내부 좌표 → 그 픽셀의 알파. 기본은 전부 투명
+    std::function<float(core::PointI)> alphaAt = [](core::PointI) { return 0.0f; };
 };
 
 class FakeRenderer final : public renderer::IRenderer {
@@ -149,6 +156,10 @@ public:
     }
 
     void resize(core::SizeI size) override { state_.lastResize = size; }
+    // 실제 렌더러는 몇 프레임 늦게 결과가 오지만, 가짜는 바로 돌려줌
+    std::optional<renderer::AlphaSample> sampleAlpha(core::PointI local) override {
+        return renderer::AlphaSample{local, state_.alphaAt(local)};
+    }
     void shutdown() override { state_.shutdownCalled = true; }
 
 private:
