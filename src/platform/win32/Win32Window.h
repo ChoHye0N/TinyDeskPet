@@ -26,7 +26,7 @@ public:
     [[nodiscard]] core::PointI position() const override { return position_; }
     void setSize(core::SizeI size) override;
     [[nodiscard]] core::SizeI size() const override { return size_; }
-    [[nodiscard]] core::RectI workArea() const override;
+    [[nodiscard]] core::RectI workAreaAt(core::PointI screen) const override;
     [[nodiscard]] core::RectI desktopBounds() const override;
     [[nodiscard]] float dpiScale() const override;
     bool showTrayIcon(const std::string& tooltip) override;

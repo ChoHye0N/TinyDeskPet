@@ -68,7 +68,7 @@ Application::Application(core::AppConfig config, std::unique_ptr<platform::IWind
       now_(std::move(timeSource)),
       character_(character::Params::fromConfig(config_.character)) {
     scalePercent_ = snapScalePercent(config_.state.scale.value_or(100));
-    windowSize_ = targetWindowSize();
+    boxSize_ = targetBoxSize();
 }
 
 Application::~Application() = default;
@@ -87,12 +87,12 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
 
 void Application::refitCamera() {
     if (model_) {
-        camera_ = fitCameraToBounds(displayBounds_, windowSize_);
+        camera_ = fitCameraToBounds(displayBounds_, boxSize_);
         // 발 평면에서 1m가 화면에서 몇 px인지 → 창이 움직인 px를 모델 공간 m로 바꿀 때 씀
         const core::Vec4 a = core::transform({0.0f, 0.0f, 0.0f}, camera_);
         const core::Vec4 b = core::transform({0.0f, 1.0f, 0.0f}, camera_);
         const float pixelsPerMeter =
-            (b.y / b.w - a.y / a.w) * 0.5f * static_cast<float>(windowSize_.height);
+            (b.y / b.w - a.y / a.w) * 0.5f * static_cast<float>(boxSize_.height);
         metersPerPixel_ = pixelsPerMeter > 0.0f ? 1.0f / pixelsPerMeter : 0.0f;
     }
 }
@@ -154,9 +154,17 @@ int Application::run() {
 // ---------------------------------------------------------------------------
 
 bool Application::initialize() {
+    // 오버레이 창: 캐릭터가 시작할 모니터의 작업 영역 전체를 덮는 투명 창 (ADR-0011).
+    // 캐릭터는 창 안에서 움직이고, 캐릭터가 아닌 픽셀은 클릭이 아래 창으로 통과 (FR-04).
+    // 모니터 전체가 아니라 작업 영역인 이유: 모니터를 꽉 채운 항상 위 창은 Windows가 전체 화면
+    // 앱으로 보고 알림을 막을 수 있음
+    const std::optional<core::PointI> saved = config_.state.lastPosition();
+    overlay_ = window_->workAreaAt(saved.value_or(core::PointI{0, 0}));
+
     platform::WindowDesc desc;
     desc.title = "DeskPet";
-    desc.size = {windowSize_.width, windowSize_.height};
+    desc.position = {overlay_.left, overlay_.top};
+    desc.size = {overlay_.width(), overlay_.height()};
     desc.alwaysOnTop = config_.window.alwaysOnTop;
 
     if (!window_->create(desc)) {
@@ -164,15 +172,13 @@ bool Application::initialize() {
         return false;
     }
 
-    // 고 DPI 모니터에서는 설정 크기(96 DPI 기준)를 배율만큼 키움 (DEBT-01)
+    // 고 DPI 모니터에서는 캐릭터 크기(96 DPI 기준)를 배율만큼 키움 (DEBT-01)
     dpiScale_ = window_->dpiScale();
-    if (targetWindowSize() != windowSize_) {
-        windowSize_ = targetWindowSize();
-        window_->setSize(windowSize_);
+    if (targetBoxSize() != boxSize_) {
+        boxSize_ = targetBoxSize();
         refitCamera();
-        desc.size = windowSize_;
-        core::logging::info("DPI 배율 {:.2f}, 크기 {}% → 창 {}x{}", dpiScale_, scalePercent_,
-                            windowSize_.width, windowSize_.height);
+        core::logging::info("DPI 배율 {:.2f}, 크기 {}% → 캐릭터 {}x{}", dpiScale_, scalePercent_,
+                            boxSize_.width, boxSize_.height);
     }
 
     renderer::RendererOptions options;
@@ -237,7 +243,7 @@ bool Application::tick() {
         character_.update(dt);
     }
 
-    syncWindowToCharacter();
+    updateOverlay();
     updateAnimation(static_cast<float>(steps) * dt);  // 이번 프레임에 진행한 시뮬레이션 시간
 
     const renderer::FrameResult frame = renderer_->render(buildScene());
@@ -286,6 +292,8 @@ void Application::handleEvent(const core::Event& event) {
                    [this](const core::WorkAreaChangedEvent&) {
                        refreshGround();
                        refreshBounds();
+                       overlay_ = {};  // 작업 영역 크기가 바뀌었을 수 있으므로 다시 맞춤
+                       updateOverlay();
                    },
                    [this](const core::QuitRequestedEvent&) { requestQuit(); },
                    [this](const core::TrayMenuRequestedEvent& e) { onContextMenu(e.screen); },
@@ -334,16 +342,16 @@ void Application::executeMenuCommand(int commandId) {
 // ---------------------------------------------------------------------------
 
 void Application::resetCharacterPosition() {
-    const core::RectI area = window_->workArea();
+    const core::RectI area = overlay_;  // 지금 캐릭터가 있는 모니터
     character_.setGround(static_cast<float>(area.bottom));
 
-    const float halfWidth = static_cast<float>(windowSize_.width) / 2.0f;
+    const float halfWidth = static_cast<float>(boxSize_.width) / 2.0f;
     const core::Vec2 feet{
         static_cast<float>(area.right - scaled(config_.window.marginRight, dpiScale_)) - halfWidth,
         static_cast<float>(area.bottom),
     };
     character_.teleport(feet);
-    syncWindowToCharacter();
+    updateOverlay();
 }
 
 bool Application::restoreSavedPosition() {
@@ -359,27 +367,28 @@ bool Application::restoreSavedPosition() {
         return false;
     }
 
-    // 먼저 창을 그 위치로 옮겨야 해당 모니터의 바닥(작업 영역)을 알 수 있음
     const core::Vec2 feet{static_cast<float>(saved->x), static_cast<float>(saved->y)};
     character_.teleport(feet);
-    syncWindowToCharacter();
-    refreshGround();
+    updateOverlay();
+    refreshGround();            // 그 모니터의 바닥
     character_.teleport(feet);  // 새 바닥 기준으로 서 있을지 떨어질지 다시 판정
-    syncWindowToCharacter();
     return true;
 }
 
 void Application::refreshGround() {
-    character_.setGround(static_cast<float>(window_->workArea().bottom));
+    // 발이 있는 모니터의 작업 영역 바닥 (걷기·던지기로 다른 모니터에 넘어갔을 수 있음)
+    const core::Vec2 feet = character_.position();
+    character_.setGround(
+        static_cast<float>(window_->workAreaAt({roundToInt(feet.x), roundToInt(feet.y)}).bottom));
 }
 
 void Application::refreshBounds() {
     // 그려지는 영역(visibleRect)이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
-    // 창 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로,
-    // 창의 투명한 부분은 화면 밖으로 나가도 됨. 발은 창 가로 중앙
+    // 상자 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로,
+    // 상자의 투명한 부분은 화면 밖으로 나가도 됨. 발은 상자 가로 중앙
     const core::RectI desktop = window_->desktopBounds();
     const core::RectI visible = visibleRect();
-    const float center = static_cast<float>(windowSize_.width) / 2.0f;
+    const float center = static_cast<float>(boxSize_.width) / 2.0f;
     character_.setHorizontalBounds(
         static_cast<float>(desktop.left) + (center - static_cast<float>(visible.left)),
         static_cast<float>(desktop.right) - (static_cast<float>(visible.right) - center));
@@ -390,9 +399,9 @@ void Application::applyDpiScale(float scale) {
         return;
     }
     dpiScale_ = scale;
-    resizeWindow();
-    core::logging::info("DPI 배율 변경 {:.2f} → 창 {}x{}", scale, windowSize_.width,
-                        windowSize_.height);
+    resizeCharacter();
+    core::logging::info("DPI 배율 변경 {:.2f} → 캐릭터 {}x{}", scale, boxSize_.width,
+                        boxSize_.height);
 }
 
 void Application::setScalePercent(int percent) {
@@ -401,26 +410,22 @@ void Application::setScalePercent(int percent) {
         return;
     }
     scalePercent_ = percent;
-    resizeWindow();
-    core::logging::info("크기 {}% → 창 {}x{}", scalePercent_, windowSize_.width,
-                        windowSize_.height);
+    resizeCharacter();
+    core::logging::info("크기 {}% → 캐릭터 {}x{}", scalePercent_, boxSize_.width, boxSize_.height);
 }
 
-// 설정 크기(96 DPI 기준) × DPI 배율 × 사용자 배율. 슬라임·모델 모두 창에 맞춰 그리므로
-// 창 크기만 바꾸면 캐릭터 크기가 바뀜. 물리 상수(중력, 걷기 속도 등)는 그대로
-core::SizeI Application::targetWindowSize() const {
+// 설정 크기(96 DPI 기준) × DPI 배율 × 사용자 배율. 슬라임·모델 모두 상자에 맞춰 그리므로
+// 상자 크기만 바꾸면 캐릭터 크기가 바뀜. 물리 상수(중력, 걷기 속도 등)는 그대로
+core::SizeI Application::targetBoxSize() const {
     const float scale = dpiScale_ * static_cast<float>(scalePercent_) / 100.0f;
     return {scaled(config_.window.width, scale), scaled(config_.window.height, scale)};
 }
 
-void Application::resizeWindow() {
-    windowSize_ = targetWindowSize();
-    // 발 위치를 기준으로 창을 다시 놓으므로 캐릭터는 같은 자리에 서 있음
-    window_->setSize(windowSize_);
-    renderer_->resize(windowSize_);
+void Application::resizeCharacter() {
+    // 발 위치는 그대로라 캐릭터는 같은 자리에 서 있음. 창(오버레이)은 그대로
+    boxSize_ = targetBoxSize();
     refitCamera();
     refreshBounds();
-    syncWindowToCharacter();
 }
 
 void Application::setVisible(bool visible) {
@@ -432,19 +437,52 @@ void Application::setVisible(bool visible) {
     }
 }
 
-void Application::syncWindowToCharacter() {
-    window_->setPosition(windowTopLeftFor(character_.position()));
+// 발이 다른 모니터로 넘어갔거나 작업 영역이 바뀌었을 때만 창을 옮김 (매 프레임 옮기지 않음).
+// 다른 DPI의 모니터로 옮기면 OS가 WM_DPICHANGED를 보내 캐릭터 크기도 맞춰짐
+void Application::updateOverlay() {
+    const core::Vec2 feet = character_.position();
+    const core::RectI area = window_->workAreaAt({roundToInt(feet.x), roundToInt(feet.y)});
+    if (area == overlay_) {
+        return;
+    }
+    overlay_ = area;
+    window_->setPosition({area.left, area.top});
+    window_->setSize({area.width(), area.height()});
+    renderer_->resize({area.width(), area.height()});
 }
 
-core::PointI Application::windowTopLeftFor(core::Vec2 feet) const {
-    const auto width = static_cast<float>(windowSize_.width);
-    const auto height = static_cast<float>(windowSize_.height);
-    return {roundToInt(feet.x - width / 2.0f), roundToInt(feet.y - height)};
+core::RectI Application::characterRect() const {
+    const core::Vec2 feet = character_.position();
+    const int left = roundToInt(feet.x - static_cast<float>(boxSize_.width) / 2.0f);
+    const int top = roundToInt(feet.y - static_cast<float>(boxSize_.height));
+    return {left, top, left + boxSize_.width, top + boxSize_.height};
+}
+
+core::PointI Application::boxOffset() const {
+    const core::RectI box = characterRect();
+    return {box.left - overlay_.left, box.top - overlay_.top};
+}
+
+// 카메라는 상자(boxSize_)를 화면 전체로 보고 맞춰져 있음. 투영 뒤 클립 좌표를 상자가 오버레이
+// 안에서 차지하는 자리로 옮기는 2D 변환 (x' = x·sx + w·cx). 뷰포트를 상자로 줄이지 않으므로
+// 상자 밖으로 나간 머리카락·팔도 잘리지 않음
+core::Mat4 Application::boxToOverlay() const {
+    const auto overlayW = static_cast<float>(std::max(overlay_.width(), 1));
+    const auto overlayH = static_cast<float>(std::max(overlay_.height(), 1));
+    const core::PointI offset = boxOffset();
+    const float centerX = static_cast<float>(offset.x) + static_cast<float>(boxSize_.width) * 0.5f;
+    const float centerY = static_cast<float>(offset.y) + static_cast<float>(boxSize_.height) * 0.5f;
+    core::Mat4 m = core::Mat4::identity();
+    m.m[0][0] = static_cast<float>(boxSize_.width) / overlayW;
+    m.m[1][1] = static_cast<float>(boxSize_.height) / overlayH;
+    m.m[3][0] = centerX / overlayW * 2.0f - 1.0f;  // 상자 중심의 NDC (y는 위가 +)
+    m.m[3][1] = 1.0f - centerY / overlayH * 2.0f;
+    return m;
 }
 
 core::RectI Application::visibleRect() const {
-    const auto width = static_cast<float>(windowSize_.width);
-    const auto height = static_cast<float>(windowSize_.height);
+    const auto width = static_cast<float>(boxSize_.width);
+    const auto height = static_cast<float>(boxSize_.height);
     if (model_) {
         return modelVisibleRect();
     }
@@ -464,10 +502,10 @@ core::RectI Application::visibleRect() const {
         roundToInt(centerX + radiusX + padding),
         roundToInt(bottom + padding),
     };
-    rect.left = std::clamp(rect.left, 0, windowSize_.width);
-    rect.top = std::clamp(rect.top, 0, windowSize_.height);
-    rect.right = std::clamp(rect.right, 0, windowSize_.width);
-    rect.bottom = std::clamp(rect.bottom, 0, windowSize_.height);
+    rect.left = std::clamp(rect.left, 0, boxSize_.width);
+    rect.top = std::clamp(rect.top, 0, boxSize_.height);
+    rect.right = std::clamp(rect.right, 0, boxSize_.width);
+    rect.bottom = std::clamp(rect.bottom, 0, boxSize_.height);
     return rect;
 }
 
@@ -481,10 +519,9 @@ void Application::updateClickThrough() {
         return;
     }
     const core::PointI cursor = window_->cursorPosition();
-    const core::PointI windowPos = window_->position();
-    const core::PointI local{cursor.x - windowPos.x, cursor.y - windowPos.y};
+    const core::PointI local{cursor.x - overlay_.left, cursor.y - overlay_.top};
     const bool insideWindow =
-        local.x >= 0 && local.y >= 0 && local.x < windowSize_.width && local.y < windowSize_.height;
+        local.x >= 0 && local.y >= 0 && local.x < overlay_.width() && local.y < overlay_.height();
     if (!insideWindow) {
         window_->setClickThrough(true);
         return;
@@ -496,8 +533,8 @@ void Application::updateClickThrough() {
 
 // 모델 경계 상자 8개 꼭짓점을 화면에 투영한 사각형
 core::RectI Application::modelVisibleRect() const {
-    const auto width = static_cast<float>(windowSize_.width);
-    const auto height = static_cast<float>(windowSize_.height);
+    const auto width = static_cast<float>(boxSize_.width);
+    const auto height = static_cast<float>(boxSize_.height);
     const model::Bounds& b = displayBounds_;
 
     float left = width;
@@ -519,29 +556,32 @@ core::RectI Application::modelVisibleRect() const {
     }
 
     core::RectI rect{roundToInt(left), roundToInt(top), roundToInt(right), roundToInt(bottom)};
-    rect.left = std::clamp(rect.left, 0, windowSize_.width);
-    rect.top = std::clamp(rect.top, 0, windowSize_.height);
-    rect.right = std::clamp(rect.right, 0, windowSize_.width);
-    rect.bottom = std::clamp(rect.bottom, 0, windowSize_.height);
+    rect.left = std::clamp(rect.left, 0, boxSize_.width);
+    rect.top = std::clamp(rect.top, 0, boxSize_.height);
+    rect.right = std::clamp(rect.right, 0, boxSize_.width);
+    rect.bottom = std::clamp(rect.bottom, 0, boxSize_.height);
     return rect;
 }
 
 renderer::RenderScene Application::buildScene() const {
-    const auto width = static_cast<float>(windowSize_.width);
-    const auto height = static_cast<float>(windowSize_.height);
+    const auto width = static_cast<float>(boxSize_.width);
+    const auto height = static_cast<float>(boxSize_.height);
     const character::Pose pose = character_.pose();
+    const core::PointI offset = boxOffset();
 
     renderer::RenderScene scene;
-    scene.viewport = {windowSize_.width, windowSize_.height};
+    scene.viewport = {overlay_.width(), overlay_.height()};
 
     // 착지 반동: 세로로 눌리고 가로로 퍼짐 (발 위치는 고정)
-    const float unit = std::min(width, height);  // 창이 세로로 길어도 슬라임 비율 유지
+    const float unit = std::min(width, height);  // 상자가 세로로 길어도 슬라임 비율 유지
     const float radiusY = unit * kBodyHeightRatio * (1.0f - pose.squash);
     const float radiusX = unit * kBodyWidthRatio * (1.0f + 0.5f * pose.squash);
 
     renderer::PlaceholderCharacter& body = scene.placeholder;
     body.visible = true;
-    body.center = {width / 2.0f, height - kFootMargin - radiusY + pose.breathOffset};
+    body.center = {
+        static_cast<float>(offset.x) + width / 2.0f,
+        static_cast<float>(offset.y) + height - kFootMargin - radiusY + pose.breathOffset};
     body.radiusX = radiusX;
     body.radiusY = radiusY;
     body.eyesClosed = pose.eyesClosed;
@@ -555,11 +595,10 @@ renderer::RenderScene Application::buildScene() const {
         const core::Mat4 turn = core::Mat4::rotationY(turnRadians_);
         scene.character.model = model_.get();
         // 착지 반동은 슬라임처럼 늘이지 않고 관절로 웅크림 (anim의 applyCrouch)
-        scene.character.viewProjection = turn * camera_;
+        scene.character.viewProjection = turn * camera_ * boxToOverlay();
         scene.character.skinMatrices = animation_.skin;
         scene.character.expressionWeights = animation_.expressions;
     }
-    // TODO(M4): Pose → 본 행렬·모프 가중치 변환
 
     return scene;
 }

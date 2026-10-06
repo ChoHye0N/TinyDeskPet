@@ -47,8 +47,23 @@ protected:
 };
 
 // 작업 영역 1920x1040, 창 200x200, 오른쪽 여백 40일 때 시작 위치
-constexpr PointI kStartTopLeft{1920 - 40 - 200, 1040 - 200};   // (1680, 840)
+constexpr PointI kStartTopLeft{1920 - 40 - 200, 1040 - 200};  // (1680, 840) 캐릭터 상자 좌상단
 constexpr Vec2 kStartFeet{1920.0f - 40.0f - 100.0f, 1040.0f};  // (1780, 1040)
+
+}  // namespace
+
+namespace {
+
+// 캐릭터 상자 (화면 좌표). 창은 이제 작업 영역 전체(오버레이)라 창 위치 대신 상자로 확인 (ADR-0011)
+PointI boxTopLeft(const Application& app) {
+    const core::RectI box = app.characterRect();
+    return {box.left, box.top};
+}
+
+core::SizeI boxSize(const Application& app) {
+    const core::RectI box = app.characterRect();
+    return {box.width(), box.height()};
+}
 
 }  // namespace
 
@@ -75,7 +90,10 @@ TEST_F(ApplicationTest, Startup_PlacesCharacterAtBottomRightOnGround) {
 
     EXPECT_EQ(app->run(), static_cast<int>(ExitCode::Ok));
     EXPECT_TRUE(window_.shown);
-    EXPECT_EQ(window_.position, kStartTopLeft);
+    EXPECT_EQ(boxTopLeft(*app), kStartTopLeft);
+    // 창은 작업 영역 전체를 덮는 오버레이
+    EXPECT_EQ(window_.position, (PointI{0, 0}));
+    EXPECT_EQ(window_.size, (core::SizeI{1920, 1040}));
     EXPECT_EQ(app->character().state(), State::Idle);
     EXPECT_EQ(app->character().position(), kStartFeet);
     EXPECT_TRUE(renderer_.shutdownCalled);
@@ -110,10 +128,12 @@ TEST_F(ApplicationTest, RendersSceneWithPlaceholderInsideViewport) {
 
     ASSERT_EQ(renderer_.renderCount, 2U);
     const auto& scene = renderer_.lastScene;
-    EXPECT_EQ(scene.viewport, (core::SizeI{200, 200}));
-    EXPECT_FLOAT_EQ(scene.placeholder.center.x, 100.0f);
+    EXPECT_EQ(scene.viewport, (core::SizeI{1920, 1040}));  // 오버레이 전체
+    // 슬라임은 캐릭터 상자(좌상단 1680, 840, 200×200) 안, 오버레이 좌표로
+    EXPECT_FLOAT_EQ(scene.placeholder.center.x, 1680.0f + 100.0f);
     EXPECT_GT(scene.placeholder.radiusX, 0.0f);
-    EXPECT_LT(scene.placeholder.center.y + scene.placeholder.radiusY, 200.0f);
+    EXPECT_LT(scene.placeholder.center.y + scene.placeholder.radiusY, 1040.0f);
+    EXPECT_GT(scene.placeholder.center.y - scene.placeholder.radiusY, 840.0f);
 }
 
 TEST_F(ApplicationTest, Drag_WindowFollowsPointer) {
@@ -125,8 +145,9 @@ TEST_F(ApplicationTest, Drag_WindowFollowsPointer) {
     (void)app->run();
 
     EXPECT_EQ(app->character().state(), State::Dragged);
-    // 발 = (1700, 940) → 창 좌상단 = (1600, 740)
-    EXPECT_EQ(window_.position, (PointI{1600, 740}));
+    // 발 = (1700, 940) → 상자 좌상단 = (1600, 740). 창(오버레이)은 그대로
+    EXPECT_EQ(boxTopLeft(*app), (PointI{1600, 740}));
+    EXPECT_EQ(window_.position, (PointI{0, 0}));
 }
 
 TEST_F(ApplicationTest, DragAndRelease_FallsBackToGround) {
@@ -137,15 +158,22 @@ TEST_F(ApplicationTest, DragAndRelease_FallsBackToGround) {
     }
     window_.frames.push_back({core::PointerUpEvent{{1700.0f, 500.0f}, core::MouseButton::Left}});
     window_.pollsBeforeQuit = 180;  // 3초면 충분히 착지
+    std::vector<PointI> history;
+    const Application* running = nullptr;
+    window_.onPoll = [&](int, FakeWindowState&) {
+        if (running != nullptr) {
+            history.push_back(boxTopLeft(*running));
+        }
+    };
     auto app = makeApp();
+    running = app.get();
     (void)app->run();
 
     EXPECT_EQ(app->character().state(), State::Idle);
     EXPECT_FLOAT_EQ(app->character().position().y, 1040.0f);
-    EXPECT_EQ(window_.position, (PointI{1600, 840}));
+    EXPECT_EQ(boxTopLeft(*app), (PointI{1600, 840}));
 
-    // 낙하하는 동안 창이 아래로만 움직였는지 확인. 놓은 지점: 발 (1700, 540) → 창 (1600, 340)
-    const auto& history = window_.positionHistory;
+    // 낙하하는 동안 상자가 아래로만 움직였는지 확인. 놓은 지점: 발 (1700, 540) → 상자 (1600, 340)
     const auto releaseIt = std::find(history.begin(), history.end(), PointI{1600, 340});
     ASSERT_NE(releaseIt, history.end());
     EXPECT_TRUE(std::is_sorted(releaseIt, history.end(),
@@ -221,10 +249,9 @@ TEST_F(ApplicationTest, ScaleUp_EnlargesWindowAndKeepsFeetOnGround) {
     (void)app->run();
 
     EXPECT_EQ(app->scalePercent(), 110);
-    EXPECT_EQ(window_.size, (core::SizeI{220, 220}));
-    EXPECT_EQ(renderer_.lastResize, (core::SizeI{220, 220}));
-    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{220, 220}));
-    EXPECT_EQ(window_.position.y + 220, 1040);  // 발은 그대로 바닥에
+    EXPECT_EQ(boxSize(*app), (core::SizeI{220, 220}));
+    EXPECT_EQ(window_.size, (core::SizeI{1920, 1040}));  // 창(오버레이)은 그대로
+    EXPECT_EQ(boxTopLeft(*app).y + 220, 1040);           // 발은 그대로 바닥에
     EXPECT_FLOAT_EQ(app->character().position().x, kStartFeet.x);
 }
 
@@ -236,7 +263,7 @@ TEST_F(ApplicationTest, ScaleDown_ShrinksWindow) {
     (void)app->run();
 
     EXPECT_EQ(app->scalePercent(), 90);
-    EXPECT_EQ(window_.size, (core::SizeI{180, 180}));
+    EXPECT_EQ(boxSize(*app), (core::SizeI{180, 180}));
 }
 
 TEST_F(ApplicationTest, ScaleAtMaximum_DisablesScaleUpAndIgnoresIt) {
@@ -250,7 +277,7 @@ TEST_F(ApplicationTest, ScaleAtMaximum_DisablesScaleUpAndIgnoresIt) {
     EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleUp)->enabled);
     EXPECT_TRUE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
     EXPECT_EQ(app->scalePercent(), 200);
-    EXPECT_EQ(window_.size, (core::SizeI{400, 400}));
+    EXPECT_EQ(boxSize(*app), (core::SizeI{400, 400}));
 }
 
 TEST_F(ApplicationTest, ScaleAtMinimum_DisablesScaleDownAndIgnoresIt) {
@@ -263,7 +290,7 @@ TEST_F(ApplicationTest, ScaleAtMinimum_DisablesScaleDownAndIgnoresIt) {
 
     EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
     EXPECT_EQ(app->scalePercent(), 50);
-    EXPECT_EQ(window_.size, (core::SizeI{100, 100}));
+    EXPECT_EQ(boxSize(*app), (core::SizeI{100, 100}));
 }
 
 TEST_F(ApplicationTest, SavedScale_IsRestoredSnappedToStepAndCombinedWithDpi) {
@@ -274,9 +301,9 @@ TEST_F(ApplicationTest, SavedScale_IsRestoredSnappedToStepAndCombinedWithDpi) {
     (void)app->run();
 
     EXPECT_EQ(app->scalePercent(), 140);
-    EXPECT_EQ(window_.size, (core::SizeI{420, 420}));  // 200 × 1.5 × 1.4
-    EXPECT_EQ(renderer_.initialSize, (core::SizeI{420, 420}));
-    EXPECT_EQ(window_.position.y + 420, 1040);
+    EXPECT_EQ(boxSize(*app), (core::SizeI{420, 420}));            // 200 × 1.5 × 1.4
+    EXPECT_EQ(renderer_.initialSize, (core::SizeI{1920, 1040}));  // 렌더러는 오버레이 크기
+    EXPECT_EQ(boxTopLeft(*app).y + 420, 1040);
 }
 
 TEST_F(ApplicationTest, RendererFatal_ReturnsRendererFailed) {
@@ -311,7 +338,8 @@ TEST_F(ApplicationTest, WorkAreaChanged_MovesCharacterToNewGround) {
 
     EXPECT_EQ(app->character().state(), State::Idle);
     EXPECT_FLOAT_EQ(app->character().position().y, 900.0f);
-    EXPECT_EQ(window_.position.y, 900 - 200);
+    EXPECT_EQ(boxTopLeft(*app).y, 900 - 200);
+    EXPECT_EQ(window_.size, (core::SizeI{1920, 900}));  // 오버레이도 새 작업 영역으로
 }
 
 TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
@@ -365,10 +393,13 @@ TEST_F(ApplicationTest, WithModel_RendersModelInsteadOfPlaceholder) {
     EXPECT_FALSE(scene.placeholder.visible);
     EXPECT_EQ(scene.character.model, model.get());
 
-    // 발 중앙(0,0,0)이 창 아래쪽 가운데로 투영됨
+    // 발 중앙(0,0,0)이 캐릭터 상자 아래 가운데로 투영됨 (오버레이 픽셀)
     const auto clip = deskpet::core::transform({0.0f, 0.0f, 0.0f}, scene.character.viewProjection);
-    EXPECT_NEAR(clip.x / clip.w, 0.0f, 1e-4f);
-    EXPECT_LT(clip.y / clip.w, -0.9f);
+    const float px = (clip.x / clip.w + 1.0f) * 0.5f * 1920.0f;
+    const float py = (1.0f - clip.y / clip.w) * 0.5f * 1040.0f;
+    const core::RectI box = app->characterRect();
+    EXPECT_NEAR(px, static_cast<float>(box.left + box.right) * 0.5f, 0.5f);
+    EXPECT_NEAR(py, static_cast<float>(box.bottom), 0.5f);
 }
 
 TEST_F(ApplicationTest, WithModel_HitRegionCoversProjectedModel) {
@@ -447,11 +478,11 @@ TEST_F(ApplicationTest, StartupDpiScale_ScalesWindowAndRenderer) {
     auto app = makeApp();
     (void)app->run();
 
-    EXPECT_EQ(window_.size, (core::SizeI{300, 300}));
-    EXPECT_EQ(renderer_.initialSize, (core::SizeI{300, 300}));
-    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{300, 300}));
+    EXPECT_EQ(boxSize(*app), (core::SizeI{300, 300}));
+    EXPECT_EQ(renderer_.initialSize, (core::SizeI{1920, 1040}));
+    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{1920, 1040}));
     // 발은 그대로 바닥에, 창 아래쪽이 바닥에 맞음
-    EXPECT_EQ(window_.position.y + 300, 1040);
+    EXPECT_EQ(boxTopLeft(*app).y + 300, 1040);
 }
 
 TEST_F(ApplicationTest, DpiChanged_ResizesWindowAndRendererKeepingFeet) {
@@ -460,14 +491,13 @@ TEST_F(ApplicationTest, DpiChanged_ResizesWindowAndRendererKeepingFeet) {
     auto app = makeApp();
     (void)app->run();
 
-    EXPECT_EQ(window_.size, (core::SizeI{400, 400}));
-    EXPECT_EQ(renderer_.lastResize, (core::SizeI{400, 400}));
-    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{400, 400}));
+    EXPECT_EQ(boxSize(*app), (core::SizeI{400, 400}));
+    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{1920, 1040}));
     // 발 높이는 그대로. 커진 슬라임이 오른쪽 화면 끝(1920)을 넘지 않을 만큼만 안쪽으로 밀림
     // (FR-17). 창의 투명한 여백은 화면 밖으로 나가도 됨
-    EXPECT_EQ(window_.position.y, 1040 - 400);
-    EXPECT_LE(window_.position.x + app->visibleRect().right, 1920);
-    EXPECT_LT(window_.position.x, 1780 - 200);  // 발(1780)이 그대로면 넘치므로 안쪽으로 밀림
+    EXPECT_EQ(boxTopLeft(*app).y, 1040 - 400);
+    EXPECT_LE(boxTopLeft(*app).x + app->visibleRect().right, 1920);
+    EXPECT_LT(boxTopLeft(*app).x, 1780 - 200);  // 발(1780)이 그대로면 넘치므로 안쪽으로 밀림
     EXPECT_LE(app->visibleRect().right, 400);
     EXPECT_GT(app->visibleRect().width(), 200);
 }
@@ -489,10 +519,10 @@ TEST_F(ApplicationTest, DraggedPastDesktopEdge_StaysInsideAfterRelease) {
 
     // 막는 기준은 창이 아니라 그려지는 영역: 그 오른쪽 끝이 모니터 끝에 맞음.
     // 창의 투명한 여백은 화면 밖으로 나가도 됨 (창 반폭으로 막으면 끝에서 멈춰 보임)
-    const int visibleRight = window_.position.x + app->visibleRect().right;
+    const int visibleRight = boxTopLeft(*app).x + app->visibleRect().right;
     EXPECT_LE(visibleRight, 1920);
     EXPECT_GE(visibleRight, 1918);
-    EXPECT_GT(window_.position.x + 200, 1920);
+    EXPECT_GT(boxTopLeft(*app).x + 200, 1920);
 }
 
 TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
@@ -507,7 +537,7 @@ TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
     app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
     (void)app->run();
 
-    const int visibleLeft = window_.position.x + app->visibleRect().left;
+    const int visibleLeft = boxTopLeft(*app).x + app->visibleRect().left;
     EXPECT_GE(visibleLeft, 0);
     EXPECT_LE(visibleLeft, 2);
 }
@@ -547,7 +577,7 @@ TEST_F(ApplicationTest, SavedPositionOutsideDesktop_IsIgnored) {
     auto app = makeApp();
     (void)app->run();
 
-    EXPECT_EQ(window_.position, kStartTopLeft);
+    EXPECT_EQ(boxTopLeft(*app), kStartTopLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -670,4 +700,50 @@ TEST_F(ApplicationTest, ClickThroughState_ChangesOnlyWhenNeeded) {
     auto app = makeApp();
     (void)app->run();
     EXPECT_LE(window_.clickThroughChanges, 1);
+}
+
+// ---------------------------------------------------------------------------
+// 화면 전체 오버레이 (ADR-0011)
+// ---------------------------------------------------------------------------
+
+TEST_F(ApplicationTest, Overlay_DoesNotMoveWhileCharacterMoves) {
+    // 끌어도 창은 그대로, 캐릭터 상자만 움직임 (매 프레임 SetWindowPos 없음)
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{900.0f, 600.0f}}});
+    window_.pollsBeforeQuit = 4;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(boxTopLeft(*app), (PointI{800, 440}));
+    EXPECT_TRUE(window_.positionHistory.empty());
+}
+
+TEST_F(ApplicationTest, Overlay_FollowsCharacterToAnotherMonitor) {
+    // 오른쪽에 두 번째 모니터. 발이 넘어가면 창이 그 모니터의 작업 영역으로 옮겨감
+    window_.monitors = {{0, 0, 1920, 1040}, {1920, 0, 3840, 1040}};
+    window_.desktopBounds = {0, 0, 3840, 1080};
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{2500.0f, 1000.0f}}});
+    window_.pollsBeforeQuit = 4;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(window_.position, (PointI{1920, 0}));
+    EXPECT_EQ(window_.size, (core::SizeI{1920, 1040}));
+    EXPECT_EQ(renderer_.lastResize, (core::SizeI{1920, 1040}));
+    // 상자는 새 오버레이 기준 좌표로 그려짐 (발 x 2500 → 오버레이 안 580)
+    EXPECT_FLOAT_EQ(renderer_.lastScene.placeholder.center.x, 2500.0f - 1920.0f);
+}
+
+TEST_F(ApplicationTest, Overlay_StartsOnMonitorOfSavedPosition) {
+    window_.monitors = {{0, 0, 1920, 1040}, {1920, 0, 3840, 1040}};
+    window_.desktopBounds = {0, 0, 3840, 1080};
+    config_.state.lastX = 3000;
+    config_.state.lastY = 1040;
+    window_.pollsBeforeQuit = 2;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(window_.position, (PointI{1920, 0}));
+    EXPECT_TRUE(window_.positionHistory.empty());  // 처음부터 그 모니터에 만들어짐
 }

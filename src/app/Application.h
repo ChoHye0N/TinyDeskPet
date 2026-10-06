@@ -69,9 +69,12 @@ public:
     // 현재 캐릭터 크기 (%). 종료할 때 [state] scale로 저장
     [[nodiscard]] int scalePercent() const noexcept { return scalePercent_; }
 
-    // 창 안에서 캐릭터가 그려질 수 있는 영역 (창 내부 px). 벽(FR-17) 계산에 씀.
+    // 캐릭터 상자 안에서 캐릭터가 그려질 수 있는 영역 (상자 내부 px). 벽(FR-17) 계산에 씀.
     // 슬라임은 몸 타원을 감싸는 사각형, 모델은 모든 자세의 경계 상자를 투영한 사각형
     [[nodiscard]] core::RectI visibleRect() const;
+
+    // 캐릭터 상자 (화면 좌표). 발 = 상자 아래 가운데. 크기 = 설정 × DPI × 사용자 배율
+    [[nodiscard]] core::RectI characterRect() const;
 
 private:
     [[nodiscard]] bool initialize();
@@ -88,14 +91,15 @@ private:
     void refreshBounds();
     void applyDpiScale(float scale);
     void setScalePercent(int percent);
-    void resizeWindow();  // windowSize_를 targetWindowSize()로 바꾸고 관련된 것을 모두 갱신
-    [[nodiscard]] core::SizeI targetWindowSize() const;
+    void resizeCharacter();  // boxSize_를 targetBoxSize()로 바꾸고 카메라·벽을 갱신
+    [[nodiscard]] core::SizeI targetBoxSize() const;
     void refitCamera();
     void setVisible(bool visible);
     void updateAnimation(float dt);
-    void syncWindowToCharacter();
+    void updateOverlay();  // 발이 있는 모니터의 작업 영역으로 오버레이 창을 맞춤 (바뀔 때만)
 
-    [[nodiscard]] core::PointI windowTopLeftFor(core::Vec2 feet) const;
+    [[nodiscard]] core::PointI boxOffset() const;  // 상자 좌상단 (오버레이 내부 px)
+    [[nodiscard]] core::Mat4 boxToOverlay() const;  // 상자 기준 클립 좌표 → 오버레이 클립 좌표
     [[nodiscard]] core::RectI modelVisibleRect() const;
     void updateClickThrough();
     [[nodiscard]] renderer::RenderScene buildScene() const;
@@ -103,7 +107,10 @@ private:
     core::AppConfig config_;
     float dpiScale_ = 1.0f;
     int scalePercent_ = 100;  // 사용자 크기 배율 (%)
-    core::SizeI windowSize_;  // 설정 크기 × DPI 배율 × 사용자 배율 (물리 px)
+    // 캐릭터 상자: 설정 크기 × DPI 배율 × 사용자 배율 (물리 px). 카메라는 이 상자에 모델을 맞춤.
+    // 예전에는 창 크기였지만 이제 창은 화면 전체(오버레이)이고 상자는 창 안에서 발을 따라 움직임
+    core::SizeI boxSize_;
+    core::RectI overlay_;  // 오버레이 창 = 발이 있는 모니터의 작업 영역 (화면 좌표, ADR-0011)
     bool hidden_ = false;
     bool pointerDown_ = false;  // 왼쪽 버튼을 누르고 있는 동안은 항상 클릭을 받음 (끌기)
     std::shared_ptr<const model::Model> model_;

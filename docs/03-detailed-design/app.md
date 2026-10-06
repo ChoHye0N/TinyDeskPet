@@ -126,17 +126,20 @@ if result == Fatal: exitCode = RendererFailed; break
 
 ### 4.5 좌표 변환
 
-창 크기를 `W × H`, 캐릭터 발 위치를 `F`라 할 때
+창(**오버레이**)은 발이 있는 모니터의 작업 영역 `O` 전체를 덮습니다 (ADR-0011). 캐릭터는 창 안의 **캐릭터 상자**(크기 `W × H`)로 움직이고, 발 위치를 `F`(화면 좌표)라 할 때
 
 | 변환 | 공식 |
 |---|---|
-| 발 → 창 좌상단 | `(round(F.x − W/2), round(F.y − H))` |
-| 시작 위치 (발) | `(workArea.right − marginRight × 배율 − W/2, workArea.bottom)` |
+| 오버레이 | `O = workAreaAt(F)`. 발이 다른 모니터로 넘어가거나 작업 영역이 바뀔 때만 창을 옮기고 렌더러 크기를 바꿈 (`updateOverlay`). 매 프레임 `SetWindowPos` 없음 |
+| 발 → 상자 좌상단 (화면) | `(round(F.x − W/2), round(F.y − H))` = `characterRect()` |
+| 상자 좌상단 (오버레이 내부) | 위 값 − `(O.left, O.top)` = `boxOffset()` |
+| 모델 투영 | `rotationY(turn) × camera × boxToOverlay`. 카메라는 상자에 맞추고(§4.7), 투영 뒤 클립 좌표를 상자가 오버레이 안에서 차지하는 자리로 옮김: `x' = x·(W/Ow) + w·cx`, `y' = y·(H/Oh) + w·cy` (cx, cy = 상자 중심의 오버레이 NDC). 뷰포트를 상자로 줄이지 않으므로 상자 밖으로 나간 머리카락도 그려짐 |
+| 시작 위치 (발) | `(O.right − marginRight × 배율 − W/2, O.bottom)` |
 | 발 x 범위 (FR-17) | `[desktop.left + (W/2 − hit.left), desktop.right − (hit.right − W/2)]` — **그려지는 영역**(`hitRegion`, 모델 경계 상자 투영)이 가상 데스크톱 안에 머묾. 창 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로, 창의 투명한 부분은 화면 밖으로 나가도 됨. 모델·DPI가 바뀌면 다시 계산 |
-| 창 크기 `W × H` | 설정 크기 × DPI 배율 × 사용자 크기(%) (물리 px). 슬라임·모델 모두 창에 맞춰 그리므로 창 크기만 바꾸면 캐릭터 크기가 바뀜. 물리 상수(중력 등)는 배율과 무관 |
-| 바닥 | `workArea.bottom` |
+| 상자 크기 `W × H` | 설정 크기 × DPI 배율 × 사용자 크기(%) (물리 px). 슬라임·모델 모두 상자에 맞춰 그리므로 상자 크기만 바꾸면 캐릭터 크기가 바뀜 (창은 그대로). 물리 상수(중력 등)는 배율과 무관 |
+| 바닥 | `workAreaAt(F).bottom` |
 
-플레이스홀더 캐릭터 (창 내부 좌표)
+플레이스홀더 캐릭터 (상자 내부 좌표, 그릴 때 `boxOffset`을 더함)
 
 | 값 | 공식 |
 |---|---|

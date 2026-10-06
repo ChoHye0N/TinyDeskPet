@@ -8,9 +8,11 @@
 #include "platform/IWindow.h"
 #include "renderer/IRenderer.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -20,6 +22,8 @@ struct FakeWindowState {
     // 설정
     bool createResult = true;
     core::RectI workArea{0, 0, 1920, 1040};
+    // 여러 모니터 흉내: 비어 있지 않으면 workAreaAt이 점을 포함하는(없으면 가장 가까운) 것을 고름
+    std::vector<core::RectI> monitors;
     std::deque<std::vector<core::Event>> frames;  // pollEvents 호출마다 앞에서 하나씩 꺼냄
     int pollsBeforeQuit = 1000;  // 이 횟수만큼 poll하면 QuitRequested 발생
     int menuChoice = 0;          // showContextMenu가 돌려줄 id
@@ -88,7 +92,22 @@ public:
     [[nodiscard]] core::PointI position() const override { return state_.position; }
     void setSize(core::SizeI size) override { state_.size = size; }
     [[nodiscard]] core::SizeI size() const override { return state_.size; }
-    [[nodiscard]] core::RectI workArea() const override { return state_.workArea; }
+    [[nodiscard]] core::RectI workAreaAt(core::PointI screen) const override {
+        if (state_.monitors.empty()) {
+            return state_.workArea;
+        }
+        const core::RectI* nearest = &state_.monitors.front();
+        int best = std::numeric_limits<int>::max();
+        for (const core::RectI& m : state_.monitors) {
+            const int dx = std::max({m.left - screen.x, 0, screen.x - (m.right - 1)});
+            const int dy = std::max({m.top - screen.y, 0, screen.y - (m.bottom - 1)});
+            if (dx + dy < best) {
+                best = dx + dy;
+                nearest = &m;
+            }
+        }
+        return *nearest;
+    }
     [[nodiscard]] core::RectI desktopBounds() const override { return state_.desktopBounds; }
     [[nodiscard]] float dpiScale() const override { return state_.dpiScale; }
 
