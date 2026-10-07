@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -109,12 +110,11 @@ TEST(SpringBone, Collider_PushesTailOutOfSphere) {
     group.gravityPower = 3.0f;
     group.hitRadius = 0.01f;
     Model model = makeChainModel({0.1f, 0.0f, 0.0f}, group);
-    // 구가 없으면 사슬 끝(본 3)이 늘어져 오는 자리(뿌리 0.2 아래)에 구 중심을 둠
-    const Vec3 offset{0.1f, -0.2f, 0.0f};
-    const Vec3 center = model.bones[0].position + offset;
 
+    // 구가 없을 때 사슬 끝(본 3)이 늘어져 가는 자리에 구 중심을 둠
     Rig free(model);
-    EXPECT_LT(distance(free.run(120)[3], center), 0.01f);  // 대조: 구 없이 중심까지 늘어짐
+    const Vec3 center = free.run(120)[3];
+    const Vec3 offset = center - model.bones[0].position;
 
     model.springColliders.push_back({0, offset, 0.05f});
     model.springGroups[0].colliders = {0};
@@ -157,4 +157,63 @@ TEST(SpringBone, Settled_GivesExactlySameRotations) {
     const std::vector<Quat> before = rig.rotations;
     (void)rig.run(1);
     EXPECT_EQ(rig.rotations, before);
+}
+
+// ---------------------------------------------------------------------------
+// 흔들림 범위 제한: 아무리 세게 움직여도 원래 방향에서 kMaxSwingDegrees 안
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 본 j에서 다음 본으로 가는 방향과 원래(바인드) 방향 사이 각도 (도)
+float swingDegrees(const Model& model, const std::vector<Vec3>& posed, std::size_t j) {
+    const Vec3 rest = model.bones[j + 1].position - model.bones[j].position;
+    const Vec3 now = posed[j + 1] - posed[j];
+    const float c = deskpet::core::dot(rest, now) /
+                    std::sqrt(deskpet::core::dot(rest, rest) * deskpet::core::dot(now, now));
+    return std::acos(std::clamp(c, -1.0f, 1.0f)) * 180.0f / 3.14159265f;
+}
+
+}  // namespace
+
+TEST(SpringBone, ViolentMovement_SwingStaysWithinLimit) {
+    // 빠르게 떨어지다 멈춘 상황: 아래로 늘어진 머리카락이 위로 크게 튀어 오르면 안 됨
+    deskpet::model::SpringGroup group;
+    group.stiffness = 0.5f;
+    group.dragForce = 0.1f;
+    const Model model = makeChainModel({0.0f, -0.1f, 0.0f}, group);
+    Rig rig(model);
+    (void)rig.run(5);
+    for (int i = 0; i < 30; ++i) {
+        const auto posed =
+            rig.run(1, {0.0f, -0.25f, 0.0f});  // 초속 15m로 낙하 (순간 이동 기준 미만)
+        for (std::size_t j = 1; j <= 2; ++j) {
+            EXPECT_LE(swingDegrees(model, posed, j), SpringBoneSimulator::kMaxSwingDegrees + 0.5f)
+                << i << ' ' << j;
+        }
+        // 마디마다 각도가 누적되지 않음: 뿌리에서 끝까지 전체 방향도 범위 안
+        const Vec3 rest = model.bones[3].position - model.bones[1].position;
+        const Vec3 now = posed[3] - posed[1];
+        const float c = deskpet::core::dot(rest, now) /
+                        std::sqrt(deskpet::core::dot(rest, rest) * deskpet::core::dot(now, now));
+        EXPECT_LE(std::acos(std::clamp(c, -1.0f, 1.0f)) * 180.0f / 3.14159265f,
+                  SpringBoneSimulator::kMaxSwingDegrees + 0.5f)
+            << i;
+    }
+    const auto landed = rig.run(3);  // 멈춘 직후에도
+    EXPECT_LE(swingDegrees(model, landed, 2), SpringBoneSimulator::kMaxSwingDegrees + 0.5f);
+}
+
+TEST(SpringBone, FastMovement_InertiaIsCapped) {
+    // 같은 거리를 빠르게(한 프레임) 움직이든 그 절반 속도로 움직이든 상한 이상은 차이가 없음
+    deskpet::model::SpringGroup group;
+    group.stiffness = 1.0f;
+    const Model model = makeChainModel({0.0f, -0.1f, 0.0f}, group);
+    Rig fast(model);
+    Rig faster(model);
+    (void)fast.run(5);
+    (void)faster.run(5);
+    const auto a = fast.run(1, {0.2f, 0.0f, 0.0f});
+    const auto b = faster.run(1, {0.4f, 0.0f, 0.0f});
+    EXPECT_LT(distance(a[3], b[3]), 1e-4f);
 }

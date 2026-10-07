@@ -19,6 +19,13 @@ namespace deskpet::anim {
 
 class SpringBoneSimulator {
 public:
+    // 흔들리는 본이 원래 방향에서 벗어날 수 있는 최대 각도. 빠르게 떨어지다 멈추면 관성으로
+    // 머리카락이 몸보다 높이 튀어 오르는 등 과장되고, 창 밖으로 크게 나가는 것을 막음
+    static constexpr float kMaxSwingDegrees = 40.0f;
+    // 화면 이동에서 오는 관성의 상한 (한 단계 = 1/60초에 m). 던지기·낙하 같은 빠른 이동도
+    // 이 속도(초속 1.8m)로 움직인 것처럼 반응
+    static constexpr float kMaxInertiaMetersPerStep = 0.03f;
+
     explicit SpringBoneSimulator(const model::Model& model);
 
     [[nodiscard]] bool empty() const noexcept { return joints_.empty(); }
@@ -54,6 +61,7 @@ private:
 
     // 중간 결과 (할당 재사용)
     std::vector<core::Quat> accumulated_;
+    std::vector<core::Quat> bodyAccumulated_;
     std::vector<core::Vec3> posed_;
     std::vector<core::Vec3> colliderCenters_;
 };

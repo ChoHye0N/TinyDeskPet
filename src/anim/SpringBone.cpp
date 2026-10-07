@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace deskpet::anim {
 namespace {
@@ -18,6 +19,27 @@ constexpr float kSettleMeters = 1e-5f;
 
 float length(core::Vec3 v) {
     return std::sqrt(core::dot(v, v));
+}
+
+// dir(단위 벡터)이 rest(단위 벡터)에서 kMaxSwingDegrees보다 벌어지면 그 각도로 되돌림
+// (같은 평면 안에서 rest 쪽으로). 충돌 처리 전에 적용해 몸을 뚫는 것보다 우선하지 않게 함
+core::Vec3 limitSwing(core::Vec3 rest, core::Vec3 dir) {
+    static const float kMaxCos =
+        std::cos(SpringBoneSimulator::kMaxSwingDegrees * std::numbers::pi_v<float> / 180.0f);
+    static const float kMaxSin =
+        std::sin(SpringBoneSimulator::kMaxSwingDegrees * std::numbers::pi_v<float> / 180.0f);
+    const float c = core::dot(rest, dir);
+    if (c >= kMaxCos) {
+        return dir;
+    }
+    core::Vec3 side = dir - rest * c;  // rest에 수직인 성분 = 벌어진 방향
+    float sideLength = length(side);
+    if (sideLength < 1e-6f) {  // 정반대: 아무 수직 방향
+        side = core::cross(rest, std::abs(rest.x) < 0.9f ? core::Vec3{1.0f, 0.0f, 0.0f}
+                                                         : core::Vec3{0.0f, 1.0f, 0.0f});
+        sideLength = length(side);
+    }
+    return rest * kMaxCos + side * (kMaxSin / sideLength);
 }
 
 // 본별 자식 목록 (본 배열 순서)
@@ -107,7 +129,11 @@ void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Qua
     // 고정 간격으로 나눠 계산 (프레임이 밀려 dt가 커져도 같은 결과에 가깝게)
     const int steps = std::clamp(static_cast<int>(std::lround(dt / kStepSeconds)), 1, kMaxSteps);
     const float stepDt = dt / static_cast<float>(steps);
-    const core::Vec3 stepMove = movement * (1.0f / static_cast<float>(steps));
+    core::Vec3 stepMove = movement * (1.0f / static_cast<float>(steps));
+    const float stepLength = length(stepMove);
+    if (stepLength > kMaxInertiaMetersPerStep) {
+        stepMove = stepMove * (kMaxInertiaMetersPerStep / stepLength);
+    }
     const std::vector<core::Quat> base = rotations;
     for (int i = 0; i < steps; ++i) {
         rotations = base;
@@ -125,6 +151,7 @@ void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Qua
 void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
                                float dt, core::Vec3 rootOffset) {
     skeleton.computePose(rotations, accumulated_, posed_, rootOffset);
+    bodyAccumulated_ = accumulated_;  // 흔들림을 더하기 전 몸 자세 (흔들림 범위 제한의 기준)
 
     colliderCenters_.clear();
     for (const model::SpringCollider& c : model_.springColliders) {
@@ -168,6 +195,10 @@ void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>
             return len > 1e-6f ? head + d * (joint.length / len) : head + restDir * joint.length;
         };
         next = constrain(next);
+        // 범위 제한 기준은 부모의 휜 방향이 아니라 몸 자세 그대로의 방향. 부모 기준이면 마디마다
+        // 각도가 누적되어 긴 머리카락이 날개처럼 펼쳐짐
+        const core::Vec3 bodyRest = bodyAccumulated_[j].rotate(joint.axis) * (1.0f / joint.length);
+        next = head + limitSwing(bodyRest, (next - head) * (1.0f / joint.length)) * joint.length;
 
         for (const int index : group.colliders) {
             if (index < 0 || static_cast<std::size_t>(index) >= colliderCenters_.size()) {
