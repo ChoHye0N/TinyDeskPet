@@ -569,10 +569,10 @@ core::RectI Application::modelVisibleRect() const {
 core::RectI Application::sceneRegionFor(const core::Mat4& viewProjection) const {
     const core::PointI offset = boxOffset();
     const core::RectI body = visibleRect();
-    float left = static_cast<float>(offset.x + body.left);
-    float top = static_cast<float>(offset.y + body.top);
-    float right = static_cast<float>(offset.x + body.right);
-    float bottom = static_cast<float>(offset.y + body.bottom);
+    auto left = static_cast<float>(offset.x + body.left);
+    auto top = static_cast<float>(offset.y + body.top);
+    auto right = static_cast<float>(offset.x + body.right);
+    auto bottom = static_cast<float>(offset.y + body.bottom);
     const auto width = static_cast<float>(overlay_.width());
     const auto height = static_cast<float>(overlay_.height());
     if (animation_.skin.size() == model_->bones.size()) {
