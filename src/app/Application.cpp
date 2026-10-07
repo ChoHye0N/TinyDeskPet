@@ -223,7 +223,8 @@ bool Application::tick() {
     if (quitRequested_) {
         return false;
     }
-    if (hidden_) {
+    updateFullscreenHiding();
+    if (hidden_ || autoHidden_) {
         // 숨김 중에는 갱신·렌더링 없이 메뉴(트레이) 입력만 기다림
         window_->waitForEvents(kHiddenWaitMs);
         lastTime_ = now_();
@@ -430,18 +431,56 @@ void Application::resizeCharacter() {
 
 void Application::setVisible(bool visible) {
     hidden_ = !visible;
-    if (visible) {
+    applyVisibility();
+}
+
+void Application::applyVisibility() {
+    if (!hidden_ && !autoHidden_) {
         window_->show();
     } else {
         window_->hide();
     }
 }
 
+// 항상 위 오버레이가 전체 화면 게임·영상을 가리지 않도록, 캐릭터가 있는 모니터에 전체 화면 앱이
+// 떠 있는 동안 자동으로 숨김. 창 상태를 묻는 비용이 있어 0.5초마다만 확인 (lastTime_ 기준)
+void Application::updateFullscreenHiding() {
+    constexpr double kCheckSeconds = 0.5;
+    if (lastTime_ < nextFullscreenCheck_) {
+        return;
+    }
+    nextFullscreenCheck_ = lastTime_ + kCheckSeconds;
+    const core::Vec2 feet = character_.position();
+    const bool fullscreen =
+        window_->fullscreenAppActive({roundToInt(feet.x), roundToInt(feet.y) - 1});
+    if (fullscreen == autoHidden_) {
+        return;
+    }
+    autoHidden_ = fullscreen;
+    if (fullscreen) {
+        core::logging::info("전체 화면 앱이 있어 숨깁니다");
+    } else {
+        core::logging::info("전체 화면 앱이 닫혀 다시 보입니다");
+    }
+    applyVisibility();
+}
+
 // 발이 다른 모니터로 넘어갔거나 작업 영역이 바뀌었을 때만 창을 옮김 (매 프레임 옮기지 않음).
 // 다른 DPI의 모니터로 옮기면 OS가 WM_DPICHANGED를 보내 캐릭터 크기도 맞춰짐
+// 캐릭터가 두 모니터에 걸치면 두 작업 영역을 합친 사각형으로 넓혀 양쪽 모두 그림.
+// 몸 범위(visibleRect)의 왼쪽·오른쪽 아래와 위 가운데가 있는 모니터를 합침
 void Application::updateOverlay() {
-    const core::Vec2 feet = character_.position();
-    const core::RectI area = window_->workAreaAt({roundToInt(feet.x), roundToInt(feet.y)});
+    const core::RectI box = characterRect();
+    const core::RectI body = visibleRect();
+    const int bottom = box.top + body.bottom - 1;
+    core::RectI area = window_->workAreaAt({box.left + body.left, bottom});
+    for (const core::PointI p :
+         {core::PointI{box.left + body.right - 1, bottom},
+          core::PointI{box.left + (body.left + body.right) / 2, box.top + body.top}}) {
+        const core::RectI other = window_->workAreaAt(p);
+        area = {std::min(area.left, other.left), std::min(area.top, other.top),
+                std::max(area.right, other.right), std::max(area.bottom, other.bottom)};
+    }
     if (area == overlay_) {
         return;
     }

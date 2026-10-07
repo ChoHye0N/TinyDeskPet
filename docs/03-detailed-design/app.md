@@ -124,13 +124,15 @@ if result == Fatal: exitCode = RendererFailed; break
 
 **클릭 통과 (FR-04, `updateClickThrough`)**: 매 프레임 렌더 뒤 `cursorPosition()`을 창 내부 좌표로 바꿔, 창 밖이면 통과. 창 안이면 `renderer->sampleAlpha(local)`의 알파가 0.1보다 크면(외곽선·안티에일리어싱 가장자리 포함) 클릭을 받고 아니면 통과. 왼쪽 버튼을 누르고 있는 동안(끌기)은 항상 받음. 알파는 2~3프레임 늦게 오지만 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없습니다.
 
+**전체 화면 앱 자동 숨김 (`updateFullscreenHiding`)**: 0.5초마다(`lastTime_` 기준) `window->fullscreenAppActive(발 위치)`를 확인해, 전체 화면 앱이 있으면 창을 숨기고 갱신·렌더링을 멈춤(`autoHidden_`). 닫히면 다시 보임. 사용자가 메뉴로 숨긴 상태(`hidden_`)와 따로 관리해서, 자동 숨김이 풀려도 사용자 숨김은 그대로.
+
 ### 4.5 좌표 변환
 
 창(**오버레이**)은 발이 있는 모니터의 작업 영역 `O` 전체를 덮습니다 (ADR-0011). 캐릭터는 창 안의 **캐릭터 상자**(크기 `W × H`)로 움직이고, 발 위치를 `F`(화면 좌표)라 할 때
 
 | 변환 | 공식 |
 |---|---|
-| 오버레이 | `O = workAreaAt(F)`. 발이 다른 모니터로 넘어가거나 작업 영역이 바뀔 때만 창을 옮기고 렌더러 크기를 바꿈 (`updateOverlay`). 매 프레임 `SetWindowPos` 없음 |
+| 오버레이 | `O` = 몸 범위(`visibleRect`)의 왼쪽 아래·오른쪽 아래·위 가운데가 있는 모니터 작업 영역들을 합친 사각형 (보통 한 모니터, 경계에 걸치면 두 모니터). 바뀔 때만 창을 옮기고 렌더러 크기를 바꿈 (`updateOverlay`). 매 프레임 `SetWindowPos` 없음 |
 | 발 → 상자 좌상단 (화면) | `(round(F.x − W/2), round(F.y − H))` = `characterRect()` |
 | 상자 좌상단 (오버레이 내부) | 위 값 − `(O.left, O.top)` = `boxOffset()` |
 | 모델 투영 | `rotationY(turn) × camera × boxToOverlay`. 카메라는 상자에 맞추고(§4.7), 투영 뒤 클립 좌표를 상자가 오버레이 안에서 차지하는 자리로 옮김: `x' = x·(W/Ow) + w·cx`, `y' = y·(H/Oh) + w·cy` (cx, cy = 상자 중심의 오버레이 NDC). 뷰포트를 상자로 줄이지 않으므로 상자 밖으로 나간 머리카락도 그려짐 |

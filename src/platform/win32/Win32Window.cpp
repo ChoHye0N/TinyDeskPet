@@ -6,8 +6,10 @@
 #include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
 
 #include <algorithm>
+#include <array>
 #include <iterator>
 #include <shellapi.h>  // Shell_NotifyIconW
+#include <string_view>
 
 namespace deskpet::platform::win32 {
 namespace {
@@ -200,6 +202,40 @@ void Win32Window::setClickThrough(bool enabled) {
         enabled ? (style | WS_EX_TRANSPARENT) : (style & ~static_cast<DWORD>(WS_EX_TRANSPARENT));
     SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, static_cast<LONG_PTR>(style));
     clickThrough_ = enabled;
+}
+
+bool Win32Window::fullscreenAppActive(core::PointI screen) const {
+    // 1) 전용 전체 화면 D3D 게임, 프레젠테이션 모드 (모니터 구분 없이 Windows가 알려 줌)
+    QUERY_USER_NOTIFICATION_STATE state{};
+    if (SUCCEEDED(SHQueryUserNotificationState(&state)) &&
+        (state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)) {
+        return true;
+    }
+    // 2) 그 모니터를 꽉 채운 포그라운드 창 (테두리 없는 전체 화면 게임, F11 브라우저, 영상).
+    //    바탕화면(Progman/WorkerW)과 작업 표시줄, 이 창 자신은 제외
+    const HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr || foreground == hwnd_) {
+        return false;
+    }
+    std::array<wchar_t, 32> className{};
+    GetClassNameW(foreground, className.data(), static_cast<int>(className.size()));
+    const std::wstring_view name(className.data());
+    if (name == L"Progman" || name == L"WorkerW" || name == L"Shell_TrayWnd") {
+        return false;
+    }
+    const HMONITOR monitor = MonitorFromWindow(foreground, MONITOR_DEFAULTTONULL);
+    if (monitor == nullptr ||
+        monitor != MonitorFromPoint(POINT{screen.x, screen.y}, MONITOR_DEFAULTTONEAREST)) {
+        return false;  // 다른 모니터의 전체 화면은 상관없음
+    }
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    RECT rect{};
+    if (GetMonitorInfoW(monitor, &info) == FALSE || GetWindowRect(foreground, &rect) == FALSE) {
+        return false;
+    }
+    return rect.left <= info.rcMonitor.left && rect.top <= info.rcMonitor.top &&
+           rect.right >= info.rcMonitor.right && rect.bottom >= info.rcMonitor.bottom;
 }
 
 core::PointI Win32Window::cursorPosition() const {
