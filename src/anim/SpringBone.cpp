@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace deskpet::anim {
 namespace {
@@ -24,9 +25,9 @@ float length(core::Vec3 v) {
 // (같은 평면 안에서 rest 쪽으로). 충돌 처리 전에 적용해 몸을 뚫는 것보다 우선하지 않게 함
 core::Vec3 limitSwing(core::Vec3 rest, core::Vec3 dir) {
     static const float kMaxCos =
-        std::cos(SpringBoneSimulator::kMaxSwingDegrees * 3.14159265f / 180.0f);
+        std::cos(SpringBoneSimulator::kMaxSwingDegrees * std::numbers::pi_v<float> / 180.0f);
     static const float kMaxSin =
-        std::sin(SpringBoneSimulator::kMaxSwingDegrees * 3.14159265f / 180.0f);
+        std::sin(SpringBoneSimulator::kMaxSwingDegrees * std::numbers::pi_v<float> / 180.0f);
     const float c = core::dot(rest, dir);
     if (c >= kMaxCos) {
         return dir;
