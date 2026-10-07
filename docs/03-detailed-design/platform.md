@@ -60,6 +60,7 @@ public:
     virtual bool showTrayIcon(const std::string& tooltip) = 0;      // 클릭 → TrayMenuRequestedEvent
     virtual void setClickThrough(bool enabled) = 0;        // true면 클릭이 아래 창으로 (FR-04)
     virtual core::PointI cursorPosition() const = 0;       // 화면 좌표 (클릭 통과 중엔 마우스 메시지가 없음)
+    virtual bool fullscreenAppActive(core::PointI screen) const = 0;  // 그 모니터에 전체 화면 앱
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0; // 선택한 id, 취소 시 0
     [[nodiscard]] virtual void* nativeHandle() const = 0;            // Win32에서는 HWND
@@ -133,6 +134,7 @@ flowchart TD
 | 창 스타일 | `WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT` (+ 항상 위). LAYERED + TRANSPARENT = 클릭이 아래 창으로 통과. DirectComposition 창에 LAYERED를 함께 걸어도 그리기는 그대로임을 실험으로 확인 (`WindowFromPoint`·화면 캡처). LAYERED 창은 `SetLayeredWindowAttributes(255)`를 한 번 불러야 보임 |
 | `setClickThrough` | `GWL_EXSTYLE`의 `WS_EX_TRANSPARENT`만 켜고 끔. 같은 상태면 건드리지 않음. 예전의 `SetWindowRgn`(도형 영역)은 클릭뿐 아니라 **그리기도 잘라내서**(학습 노트 #17) 없앰 |
 | `cursorPosition` | `GetCursorPos` |
+| `fullscreenAppActive` | ① `SHQueryUserNotificationState`가 전용 전체 화면 D3D·프레젠테이션 모드 ② 포그라운드 창(바탕화면·작업 표시줄·자신 제외)이 그 점의 모니터 전체를 덮음. ②는 다른 모니터의 전체 화면은 무시 |
 | `showContextMenu` | `CreatePopupMenu` → 항목 추가(UTF-8→UTF-16) → `SetForegroundWindow` → `TrackPopupMenu(TPM_RETURNCMD)` → `PostMessage(WM_NULL)` (메뉴가 바로 닫히지 않는 알려진 문제 회피) |
 
 ### 4.5 창 프로시저와 `this` 연결

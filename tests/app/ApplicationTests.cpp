@@ -786,3 +786,61 @@ TEST_F(ApplicationTest, SceneRegion_IncludesBonesOutsideBodyEnvelope) {
     const float x = (clip.x / clip.w + 1.0f) * 0.5f * 1920.0f;
     EXPECT_GE(static_cast<float>(std::min(scene.sceneRegion.right, 1920)), std::min(x, 1920.0f));
 }
+
+TEST_F(ApplicationTest, Overlay_SpansBothMonitorsWhileCrossingBoundary) {
+    // 캐릭터가 두 모니터에 걸치면 오버레이를 두 작업 영역을 합친 크기로 → 양쪽 모두 그려짐
+    window_.monitors = {{0, 0, 1920, 1040}, {1920, 0, 3840, 1040}};
+    window_.desktopBounds = {0, 0, 3840, 1080};
+    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window_.frames.push_back({core::PointerMoveEvent{{1920.0f, 1000.0f}}});  // 발이 경계 위
+    window_.pollsBeforeQuit = 4;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_EQ(window_.position, (PointI{0, 0}));
+    EXPECT_EQ(window_.size, (core::SizeI{3840, 1040}));
+    EXPECT_EQ(renderer_.lastScene.viewport, (core::SizeI{3840, 1040}));
+}
+
+// ---------------------------------------------------------------------------
+// 전체 화면 앱(게임·영상·프레젠테이션)이 있으면 자동으로 숨김
+// ---------------------------------------------------------------------------
+
+TEST_F(ApplicationTest, FullscreenApp_HidesPetAndStopsRendering) {
+    window_.fullscreenApp = true;
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_FALSE(window_.visible);
+    EXPECT_LT(renderer_.renderCount, 5U);  // 숨긴 뒤에는 그리지 않음
+}
+
+TEST_F(ApplicationTest, FullscreenAppClosed_ShowsPetAgain) {
+    window_.fullscreenApp = true;
+    window_.onPoll = [](int pollIndex, FakeWindowState& w) {
+        if (pollIndex == 60) {
+            w.fullscreenApp = false;  // 1초 뒤 게임 종료
+        }
+    };
+    window_.pollsBeforeQuit = 120;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_TRUE(window_.visible);
+    EXPECT_GT(renderer_.renderCount, 20U);
+}
+
+TEST_F(ApplicationTest, UserHidden_StaysHiddenAfterFullscreenAppCloses) {
+    // 메뉴로 직접 숨긴 상태는 자동 숨김이 풀려도 그대로
+    window_.frames.push_back({core::TrayMenuRequestedEvent{{1800, 1000}}});
+    window_.menuChoice = static_cast<int>(MenuCommand::ToggleVisible);
+    window_.onPoll = [](int pollIndex, FakeWindowState& w) {
+        w.fullscreenApp = pollIndex >= 10 && pollIndex < 60;
+    };
+    window_.pollsBeforeQuit = 120;
+    auto app = makeApp();
+    (void)app->run();
+
+    EXPECT_FALSE(window_.visible);
+}

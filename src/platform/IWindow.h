@@ -78,6 +78,10 @@ public:
     // 마우스 커서 위치 (화면 좌표). 클릭 통과 중에는 마우스 메시지가 오지 않으므로 직접 물어봄
     [[nodiscard]] virtual core::PointI cursorPosition() const = 0;
 
+    // screen 점이 있는 모니터에 전체 화면 앱(게임·영상·프레젠테이션)이 떠 있는지.
+    // 항상 위 오버레이가 그 위를 가리지 않도록 앱이 자동으로 숨김 (ADR-0011)
+    [[nodiscard]] virtual bool fullscreenAppActive(core::PointI screen) const = 0;
+
     // 선택한 항목의 id를 반환합니다. 취소하면 0.
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0;

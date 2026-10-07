@@ -95,6 +95,8 @@ private:
     [[nodiscard]] core::SizeI targetBoxSize() const;
     void refitCamera();
     void setVisible(bool visible);
+    void applyVisibility();  // 사용자 숨김·자동 숨김을 합쳐 창을 보이거나 숨김
+    void updateFullscreenHiding();  // 전체 화면 앱이 있으면 자동 숨김 (0.5초마다 확인)
     void updateAnimation(float dt);
     void updateOverlay();  // 발이 있는 모니터의 작업 영역으로 오버레이 창을 맞춤 (바뀔 때만)
 
@@ -112,7 +114,9 @@ private:
     // 예전에는 창 크기였지만 이제 창은 화면 전체(오버레이)이고 상자는 창 안에서 발을 따라 움직임
     core::SizeI boxSize_;
     core::RectI overlay_;  // 오버레이 창 = 발이 있는 모니터의 작업 영역 (화면 좌표, ADR-0011)
-    bool hidden_ = false;
+    bool hidden_ = false;      // 사용자가 메뉴로 숨김
+    bool autoHidden_ = false;  // 전체 화면 앱 때문에 자동으로 숨김
+    double nextFullscreenCheck_ = 0.0;
     bool pointerDown_ = false;  // 왼쪽 버튼을 누르고 있는 동안은 항상 클릭을 받음 (끌기)
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;

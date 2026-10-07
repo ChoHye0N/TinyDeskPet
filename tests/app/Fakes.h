@@ -31,7 +31,9 @@ struct FakeWindowState {
     core::RectI desktopBounds{0, 0, 1920, 1080};
     bool trayResult = true;
     std::function<void(int pollIndex, FakeWindowState&)> onPoll;  // poll 직전 훅
-    core::PointI cursor{-10000, -10000};  // 마우스 커서 (화면 좌표). 기본은 화면 밖
+    core::PointI cursor{-10000, -10000};
+    bool fullscreenApp = false;  // 캐릭터가 있는 모니터에 전체 화면 앱(게임·영상)이 떠 있음  //
+                                 // 마우스 커서 (화면 좌표). 기본은 화면 밖
 
     // 관찰 결과
     bool created = false;
@@ -125,6 +127,9 @@ public:
         state_.clickThrough = enabled;
     }
     [[nodiscard]] core::PointI cursorPosition() const override { return state_.cursor; }
+    [[nodiscard]] bool fullscreenAppActive(core::PointI /*screen*/) const override {
+        return state_.fullscreenApp;
+    }
 
     int showContextMenu(const std::vector<platform::MenuItem>& items,
                         core::PointI /*screen*/) override {
