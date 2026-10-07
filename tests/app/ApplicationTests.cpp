@@ -748,22 +748,41 @@ TEST_F(ApplicationTest, Overlay_StartsOnMonitorOfSavedPosition) {
     EXPECT_TRUE(window_.positionHistory.empty());  // 처음부터 그 모니터에 만들어짐
 }
 
-TEST_F(ApplicationTest, SceneRegion_CoversCharacterBoxWithMarginInsideOverlay) {
-    // 렌더러는 3D를 이 영역만 그림 → 상자 전체와 위·옆 여유를 포함하고 화면 밖으로 나가지 않아야 함
+TEST_F(ApplicationTest, SceneRegion_FitsCurrentPoseNotFixedMargin) {
+    // 렌더러는 3D를 이 영역만 그림 → 몸 자세 범위(visibleRect)를 포함하되, 예전 고정 여유
+    // (좌우 0.75배·위로 상자 높이)보다 훨씬 작아야 MSAA 비용이 줄어듦
     window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
     window_.frames.push_back({core::PointerMoveEvent{{900.0f, 700.0f}}});
     window_.pollsBeforeQuit = 4;
     auto app = makeApp();
-    app->setModel(makeHumanoidModel());
+    app->setModel(makeSkinnedModel());
     (void)app->run();
 
     const core::RectI region = renderer_.lastScene.sceneRegion;
     const core::RectI box = app->characterRect();  // 오버레이 원점이 (0, 0)이라 좌표가 같음
-    EXPECT_LE(region.left, box.left - 100);        // 옆 여유 (상자 폭 200의 0.75배 = 150)
-    EXPECT_GE(region.right, box.right + 100);
-    EXPECT_LE(region.top, box.top - 150);  // 위 여유 (상자 높이)
-    EXPECT_GE(region.bottom, box.bottom);
-    EXPECT_GE(region.left, 0);
-    EXPECT_LE(region.right, 1920);
-    EXPECT_LE(region.bottom, 1040);
+    const core::RectI body = app->visibleRect();  // 상자 내부 좌표
+    EXPECT_LE(region.left, box.left + body.left);
+    EXPECT_GE(region.right, box.left + body.right);
+    EXPECT_LE(region.top, box.top + body.top);
+    EXPECT_GE(region.bottom, box.top + body.bottom);
+    EXPECT_LT(region.width(), box.width() * 3 / 2);
+    EXPECT_LT(region.height(), box.height() * 3 / 2);
+}
+
+TEST_F(ApplicationTest, SceneRegion_IncludesBonesOutsideBodyEnvelope) {
+    // 메시 범위 밖으로 뻗은 본(흔들리는 머리카락 끝 등)도 영역에 들어가야 잘리지 않음
+    auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    deskpet::model::Bone far;
+    far.parent = 1;
+    far.position = {1.5f, 1.2f, 0.0f};  // 몸 오른쪽 멀리 (정점 없음 → 경계 상자에 없음)
+    model->bones.push_back(far);
+    window_.pollsBeforeQuit = 3;
+    auto app = makeApp();
+    app->setModel(model);
+    (void)app->run();
+
+    const auto& scene = renderer_.lastScene;
+    const auto clip = deskpet::core::transform(far.position, scene.character.viewProjection);
+    const float x = (clip.x / clip.w + 1.0f) * 0.5f * 1920.0f;
+    EXPECT_GE(static_cast<float>(std::min(scene.sceneRegion.right, 1920)), std::min(x, 1920.0f));
 }
