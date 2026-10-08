@@ -10,8 +10,9 @@
 ## 1. 책임
 
 - 뼈대 정방향 운동학(FK)으로 본별 스킨 행렬을 계산합니다.
-- 캐릭터 동작 상태를 휴머노이드 본 회전과 표정 가중치로 바꿉니다 (모션 파일 없이 코드로 계산).
-- 하지 않는 일: GPU 업로드(renderer), 캐릭터 상태 결정(character), 모션 파일 재생(이후 과제).
+- 캐릭터 동작 상태를 휴머노이드 본 회전과 표정 가중치로 바꿉니다 (코드로 계산, 동작별로 모션 파일 재생 가능).
+- 모션 클립(model::MotionClip)을 대상 모델의 뼈대에 맞춰 재생합니다 (리타기팅, §4.5).
+- 하지 않는 일: GPU 업로드(renderer), 캐릭터 상태 결정(character), 모션 파일 읽기(model).
 - 플랫폼 독립. Linux CI에서 테스트됩니다.
 
 ## 2. 파일 구성
@@ -21,6 +22,7 @@
 | `src/anim/Skeleton.h/.cpp` | 본 계층 정리(부모 먼저 순서), FK, 스킨 행렬 |
 | `src/anim/ProceduralAnimator.h/.cpp` | `Motion` → 본 회전·표정, 표시용 경계 상자 |
 | `src/anim/SpringBone.h/.cpp` | 머리카락·옷 흔들림 (VRM SpringBone, §4.4) |
+| `src/anim/MotionPlayer.h/.cpp` | 모션 클립 재생·리타기팅 (§4.5, ADR-0013) |
 | `src/core/Math3D.h` | `Quat` (해밀턴 곱, `axisAngle`, `fromTo`, `toMat4`) |
 
 ## 3. 공개 인터페이스
@@ -44,6 +46,7 @@ struct AnimationOutput { std::vector<core::Mat4> skin; std::array<float, Express
 class ProceduralAnimator {
 public:
     explicit ProceduralAnimator(const model::Model& model);  // model은 animator보다 오래 살아야 함
+    void setClip(Motion motion, std::shared_ptr<const model::MotionClip> clip);  // nullptr = 코드 동작
     static constexpr float kTransitionSeconds = 0.2f;
     void evaluate(const AnimationInput& input, AnimationOutput& out) const;  // 입력만으로 정해지는 자세
     void animate(const AnimationInput& input, float dt, AnimationOutput& out);  // 전환 보간 포함 (매 프레임)
@@ -124,6 +127,16 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 - **정지**: 끝이 한 단계에 0.01mm 미만으로 움직이면 그대로 둠. 미세한 오차로 매 프레임 자세가 바뀌면 Present 생략(DEBT-02)이 안 되기 때문.
 - `animate`에서만 계산합니다 (`evaluate`·`displayBounds`는 상태가 없어 흔들림 없음). 자세 전환 보간 대상도 아닙니다 (스스로 연속적).
 
+### 4.5 모션 클립 재생 (`MotionPlayer`, ADR-0013)
+
+클립은 휴머노이드 본마다 30fps "원본 기본 자세 → 지금" 모델 공간 회전 Δ와 원본 기본 자세의 팔다리 방향을 가집니다 ([model.md §4.9](model.md)).
+
+- **생성 시**: 대상 본마다 트랙 번호와 보정 C를 구함. C = fromTo(대상 기본 자세 방향, 원본 기본 자세 방향) (팔다리 → `limbChild` 방향). 방향을 모르는 본(몸통, 손, 중간 본)은 부모의 C를 물려받음 → 손은 아래팔과 함께 돌아 손목이 꺾이지 않음
+- **`sample(time)`**: 프레임 = time × 30을 길이로 나눈 나머지(반복), 앞뒤 프레임을 slerp. 부모 먼저 순서로 Aⱼ = Δ·C (트랙 있음) 또는 A부모 (없음), 델타 = Aⱼ·A부모⁻¹
+- **`ProceduralAnimator` 연결**: `computeRotations`에서 그 동작에 클립이 있으면 코드 자세 대신 `sample(input.time)`. 대기 동작을 끄면(`idleMotion = false`) 첫 프레임에 멈춤 (Present 생략 유지). 전환 보간·착지·발 붙이기·흔들림은 그대로
+- **경계 상자**: 클립이 있는 동작은 길이 전체에서 고르게 최대 24자세 (§4.3)
+- 엉덩이 이동은 쓰지 않음. Idle·Walk의 발 높이는 기존 발 붙이기(groundOffset)가 맞춤
+
 ## 5. 테스트 항목
 
 `tests/anim/` — `AnimTestModels.h`의 최소 휴머노이드(본 13개, 자식이 부모보다 앞에 오도록 섞음, T/A포즈 선택)로 검증합니다.
@@ -151,6 +164,8 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `WalkKeepsLowerFootOnGround` | 걷는 동안 낮은 쪽 발이 바닥 |
 | `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
 | `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
+| `MotionPlayer.*` | 빈 클립은 기본 자세, 월드 델타 → 로컬 델타(트랙 없는 본은 부모를 따라감), A포즈 원본 → T포즈 대상 보정(손도 같이), 같은 기본 자세면 보정 없음, 프레임 보간·반복 |
+| `ProceduralAnimatorClip.*` | 지정한 동작만 클립 재생, 경계 상자에 클립 자세 포함, 클립 제거 시 코드 동작 복귀 |
 
 `tests/anim/SpringBoneTests.cpp` — 몸통 + 사슬 3개짜리 모델: 힘이 없으면 바인드 포즈 유지, 중력으로 처지되 본 길이 유지, 캐릭터가 움직이면 끝이 뒤처졌다가 돌아옴, 구 충돌체 안으로 들어가지 않음(구가 없을 때와 대조), 순간 이동은 초기화, 멈춘 뒤 회전이 정확히 같음, 격하게 움직여도 각 마디·사슬 전체가 범위 안, 관성 상한.
 
@@ -158,7 +173,7 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 
 | TODO | 내용 |
 |---|---|
-| `TODO(M4)` | 모션 파일 재생 (VRMA, VMD, FBX) — 같은 휴머노이드 본으로 리타기팅 |
+| ~~`TODO(M4)`~~ | ✅ 모션 파일 재생 (VRMA, VMD, FBX, §4.5). 남은 것: 걷기 클립 보폭과 이동 속도 맞추기, VRMA 표정 |
 | `TODO(M4)` | 손가락 |
 | ~~`TODO(M5)`~~ | ✅ SpringBone (VRM 0.x, §4.4) |
 | `TODO(M5)` | VRM 1.0 SpringBone(`VRMC_springBone`, 캡슐 충돌체), PMX 강체 → 흔들림 근사 |

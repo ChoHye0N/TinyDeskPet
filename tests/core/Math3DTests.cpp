@@ -121,3 +121,10 @@ TEST(Quat, Slerp_NearlyEqualRotationsStayFinite) {
     EXPECT_TRUE(std::isfinite(q.w));
     EXPECT_NEAR(q.w, a.w, 1e-5f);
 }
+
+TEST(Quat, Conjugate_UndoesRotation) {
+    const Quat q = Quat::axisAngle(deskpet::core::normalize(Vec3{1.0f, 2.0f, 3.0f}), 0.7f);
+    const Vec3 v{0.3f, -0.4f, 0.5f};
+    expectNear(q.conjugate().rotate(q.rotate(v)), v);
+    expectNear((q * q.conjugate()).rotate(v), v);
+}

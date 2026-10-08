@@ -78,6 +78,23 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
     animator_.reset();
     if (model_) {
         animator_.emplace(*model_);
+    }
+    applyAnimation();
+}
+
+void Application::setMotionClips(MotionClips clips) {
+    clips_ = std::move(clips);
+    if (animator_) {
+        animator_.emplace(*model_);  // 전환·흔들림 상태도 처음부터
+    }
+    applyAnimation();
+}
+
+void Application::applyAnimation() {
+    if (animator_) {
+        for (std::size_t m = 0; m < clips_.size(); ++m) {
+            animator_->setClip(static_cast<anim::Motion>(m), clips_[m]);
+        }
         // T포즈 폭 대신 실제로 취할 자세 + 걸을 때 돌린 몸 기준 (꼬리·치마가 옆으로 나옴)
         displayBounds_ = animator_->displayBounds(kWalkTurnRadians);
     }

@@ -1,21 +1,28 @@
 #pragma once
 
-// 코드로 계산하는 휴머노이드 동작 (모션 파일 없음, ADR-0010). 명세: docs/03-detailed-design/anim.md
+// 코드로 계산하는 휴머노이드 동작 (ADR-0010). 명세: docs/03-detailed-design/anim.md
 // 휴머노이드 본 이름(model::HumanBone)만 쓰므로 VRM·PMX·FBX 모두 같은 동작을 합니다.
 // 없는 본은 건너뛰므로, 본이 부족한 모델도 할 수 있는 만큼만 움직입니다.
+// 동작별로 모션 파일(VRMA·VMD·FBX)을 지정하면 그 동작은 코드 대신 파일을 재생합니다 (ADR-0013).
+// 전환 보간·착지 웅크림·발 붙이기·흔들림은 어느 쪽이든 같이 적용됩니다.
 
+#include "anim/MotionPlayer.h"
 #include "anim/Skeleton.h"
 #include "anim/SpringBone.h"
 #include "model/Model.h"
+#include "model/Motion.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <vector>
 
 namespace deskpet::anim {
 
 // 캐릭터 상태를 애니메이션 관점으로 옮긴 것 (character 모듈에 의존하지 않도록 app이 변환)
 enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
+inline constexpr std::size_t kMotionCount = 4;
 
 struct AnimationInput {
     Motion motion = Motion::Idle;
@@ -39,6 +46,9 @@ public:
     static constexpr float kTransitionSeconds = 0.2f;
 
     explicit ProceduralAnimator(const model::Model& model);
+
+    // motion 동작에 재생할 모션 클립. nullptr이면 코드로 만든 동작으로 되돌림
+    void setClip(Motion motion, std::shared_ptr<const model::MotionClip> clip);
 
     // 입력만으로 정해지는 자세 (전환 보간 없음, 상태를 바꾸지 않음)
     void evaluate(const AnimationInput& input, AnimationOutput& out) const;
@@ -72,12 +82,14 @@ private:
                      core::Vec3 rootOffset) const;
     void includePosedVertices(const std::vector<core::Mat4>& skin, float maxTurnRadians,
                               model::Bounds& bounds) const;
+    [[nodiscard]] std::vector<AnimationInput> boundsSamples() const;
 
     const model::Model& model_;
     Skeleton skeleton_;
     SpringBoneSimulator springs_;  // animate 전용 (머리카락·옷 흔들림)
     Limb leftArm_;
     Limb rightArm_;
+    std::array<std::optional<MotionPlayer>, kMotionCount> clips_;  // Motion 순서
     mutable std::vector<core::Quat> rotations_;      // evaluate 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> poseRotations_;  // groundOffset 중간 결과
     mutable std::vector<core::Vec3> posePositions_;

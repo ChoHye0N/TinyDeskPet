@@ -165,6 +165,26 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          }},
         {"animation.idle_motion",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.animation.idleMotion); }},
+        {"animation.idle_clip",
+         [](std::string_view v, AppConfig& c) {
+             c.animation.idleClip = std::string(v);
+             return ApplyResult{};
+         }},
+        {"animation.walk_clip",
+         [](std::string_view v, AppConfig& c) {
+             c.animation.walkClip = std::string(v);
+             return ApplyResult{};
+         }},
+        {"animation.dragged_clip",
+         [](std::string_view v, AppConfig& c) {
+             c.animation.draggedClip = std::string(v);
+             return ApplyResult{};
+         }},
+        {"animation.airborne_clip",
+         [](std::string_view v, AppConfig& c) {
+             c.animation.airborneClip = std::string(v);
+             return ApplyResult{};
+         }},
         {"state.last_x",
          [](std::string_view v, AppConfig& c) {
              return assignOptionalInt(v, -100000, 100000, c.state.lastX);

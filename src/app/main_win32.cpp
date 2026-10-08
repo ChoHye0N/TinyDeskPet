@@ -7,6 +7,7 @@
 #include "core/LogFile.h"
 #include "deskpet/Version.h"
 #include "model/ModelLoader.h"
+#include "model/Motion.h"
 #include "platform/win32/Win32Strings.h"
 #include "platform/win32/Win32Window.h"
 #include "renderer/d3d11/D3D11Renderer.h"
@@ -14,6 +15,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -22,6 +24,7 @@
 #include <memory>
 #include <objbase.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -118,19 +121,20 @@ struct ComScope {
     bool ok;
 };
 
+// 설정의 경로(UTF-8) → 파일 경로. u8 경로로 만들어야 한글 폴더 이름이 깨지지 않음.
+// 상대 경로는 실행 파일 폴더 기준
+fs::path resolvePath(const std::string& configured, const fs::path& baseDir) {
+    fs::path path(std::u8string(configured.begin(), configured.end()));
+    return path.is_relative() ? baseDir / path : path;
+}
+
 // 실패해도 종료하지 않고 슬라임으로 계속합니다 (ADR-0008).
 std::shared_ptr<const model::Model> loadModel(const core::ModelConfig& config,
                                               const fs::path& baseDir) {
     if (config.path.empty()) {
         return nullptr;
     }
-    // 설정 파일은 UTF-8 → u8 경로로 만들어야 한글 폴더 이름이 깨지지 않음
-    fs::path path(std::u8string(config.path.begin(), config.path.end()));
-    if (path.is_relative()) {
-        path = baseDir / path;
-    }
-
-    model::LoadResult result = model::loadModelFile(path);
+    model::LoadResult result = model::loadModelFile(resolvePath(config.path, baseDir));
     if (!result.model) {
         logging::warn("모델을 불러오지 못해 슬라임으로 표시합니다 ({}): {}", config.path,
                       result.error);
@@ -154,6 +158,39 @@ std::shared_ptr<const model::Model> loadModel(const core::ModelConfig& config,
         config.path, format, m.vertices.size(), m.materials.size(), m.textures.size(),
         m.bones.size(), humanoid, m.bounds.size().y);
     return std::make_shared<const model::Model>(std::move(*result.model));
+}
+
+// 동작별 모션 파일 (ADR-0013). 실패한 동작은 코드로 만든 동작으로 계속
+app::Application::MotionClips loadMotionClips(const core::AnimationConfig& config,
+                                              const fs::path& baseDir) {
+    const std::array<std::pair<anim::Motion, const std::string*>, anim::kMotionCount> entries = {{
+        {anim::Motion::Idle, &config.idleClip},
+        {anim::Motion::Walk, &config.walkClip},
+        {anim::Motion::Dragged, &config.draggedClip},
+        {anim::Motion::Airborne, &config.airborneClip},
+    }};
+    constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
+                                                                    "airborne"};
+    constexpr std::array<const char*, 4> kFormats = {"?", "VRMA", "VMD", "FBX"};
+    app::Application::MotionClips clips{};
+    for (const auto& [motion, configured] : entries) {
+        const auto m = static_cast<std::size_t>(motion);
+        if (configured->empty()) {
+            continue;
+        }
+        model::MotionLoadResult result = model::loadMotionFile(resolvePath(*configured, baseDir));
+        if (!result.clip) {
+            logging::warn("모션을 불러오지 못해 기본 동작을 씁니다 ({} = {}): {}", kNames[m],
+                          *configured, result.error);
+            continue;
+        }
+        const model::MotionClip& clip = *result.clip;
+        logging::info("모션 로드: {} = {} ({}, {:.2f}초, 본 {}개)", kNames[m], *configured,
+                      kFormats[static_cast<std::size_t>(clip.format)], clip.duration(),
+                      clip.trackCount());
+        clips[m] = std::make_shared<const model::MotionClip>(std::move(*result.clip));
+    }
+    return clips;
 }
 
 void showError(const std::string& message) {
@@ -187,6 +224,7 @@ int runApplication(HINSTANCE instance) {
     app::Application application(loaded.config,
                                  std::make_unique<platform::win32::Win32Window>(instance),
                                  std::make_unique<renderer::d3d11::D3D11Renderer>());
+    application.setMotionClips(loadMotionClips(loaded.config.animation, baseDir));
     if (auto model = loadModel(loaded.config.model, baseDir)) {
         application.setModel(std::move(model));
     }

@@ -4,7 +4,9 @@
 #include "model/Importers.h"
 #include "model/TextureSource.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <limits>
 #include <memory>
@@ -247,7 +249,129 @@ private:
     std::unordered_map<const ufbx_node*, int> boneIndices_;
 };
 
+core::Quat toQuat(ufbx_quat q) {
+    return core::Quat{static_cast<float>(q.x), static_cast<float>(q.y), static_cast<float>(q.z),
+                      static_cast<float>(q.w)}
+        .normalized();
+}
+
+// 첫 번째 애니메이션 스택 → MotionClip (ADR-0013). 본 이름은 Mixamo 관례로 휴머노이드에 연결.
+// 기본 자세 = 애니메이션 없는 노드 값 (Mixamo는 T포즈). 다른 자세여도 기본 자세 방향을 같은
+// 값에서 재므로 팔다리 방향은 맞음
+class FbxMotionConverter {
+public:
+    explicit FbxMotionConverter(const ufbx_scene& scene) : scene_(scene) {}
+
+    std::optional<MotionClip> run(std::string& error) {
+        if (scene_.anim_stacks.count == 0) {
+            error = "애니메이션이 없습니다";
+            return std::nullopt;
+        }
+        std::array<const ufbx_node*, kHumanBoneCount> human{};
+        for (const ufbx_node* node : scene_.nodes) {
+            const auto bone = static_cast<std::size_t>(humanBoneFromFbxName(toString(node->name)));
+            if (bone != 0 && human[bone] == nullptr) {
+                human[bone] = node;
+            }
+        }
+        if (std::ranges::all_of(human, [](const ufbx_node* n) { return n == nullptr; })) {
+            error = "휴머노이드 본(Mixamo 이름 등)이 없습니다";
+            return std::nullopt;
+        }
+
+        const ufbx_anim_stack& stack = *scene_.anim_stacks.data[0];
+        double begin = stack.time_begin;
+        double end = stack.time_end;
+        if (end <= begin) {
+            // 재생 구간(LocalStart/Stop)이 없는 파일: 키프레임이 있는 구간 전체
+            begin = std::numeric_limits<double>::max();
+            end = std::numeric_limits<double>::lowest();
+            for (const ufbx_anim_curve* curve : scene_.anim_curves) {
+                if (curve->keyframes.count > 0) {
+                    begin = std::min(begin, curve->min_time);
+                    end = std::max(end, curve->max_time);
+                }
+            }
+            if (end < begin) {
+                begin = end = 0.0;
+            }
+        }
+        const double length = end - begin;
+        MotionClip clip;
+        clip.format = MotionFormat::Fbx;
+        clip.frameCount =
+            static_cast<std::size_t>(std::floor(length * MotionClip::kFramesPerSecond + 1e-3)) + 1;
+
+        const std::vector<core::Quat> rest = worldRotations(nullptr, 0.0);
+        std::array<std::optional<core::Vec3>, kHumanBoneCount> positions{};
+        for (std::size_t b = 0; b < human.size(); ++b) {
+            if (human[b] != nullptr) {
+                positions[b] = toVec3(human[b]->node_to_world.cols[3]);
+            }
+        }
+        for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
+            const double time = begin + static_cast<double>(frame) / MotionClip::kFramesPerSecond;
+            const std::vector<core::Quat> world = worldRotations(stack.anim, time);
+            for (std::size_t b = 0; b < human.size(); ++b) {
+                if (human[b] != nullptr) {
+                    const std::size_t n = human[b]->typed_id;
+                    // 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전)
+                    clip.tracks[b].push_back(world[n] * rest[n].conjugate());
+                }
+            }
+        }
+        motion::setRestDirections(clip, positions);
+        return clip;
+    }
+
+private:
+    // 노드별 월드 회전 (typed_id 순). anim이 nullptr이면 애니메이션 없는 값
+    [[nodiscard]] std::vector<core::Quat> worldRotations(const ufbx_anim* anim, double time) const {
+        std::vector<core::Quat> world(scene_.nodes.count);
+        std::vector<bool> done(scene_.nodes.count, false);
+        // 부모를 먼저 계산 (scene.nodes의 순서에 기대지 않음). 깊이는 뼈대 깊이 정도
+        const auto compute = [&](const auto& self, const ufbx_node* node) -> core::Quat {
+            const std::size_t n = node->typed_id;
+            if (done[n]) {
+                return world[n];
+            }
+            const ufbx_transform local =
+                anim != nullptr ? ufbx_evaluate_transform(anim, node, time) : node->local_transform;
+            const core::Quat parent =
+                node->parent != nullptr ? self(self, node->parent) : core::Quat{};
+            world[n] = parent * toQuat(local.rotation);  // W = W부모 · L
+            done[n] = true;
+            return world[n];
+        };
+        for (const ufbx_node* node : scene_.nodes) {
+            compute(compute, node);
+        }
+        return world;
+    }
+
+    const ufbx_scene& scene_;
+};
+
 }  // namespace
+
+MotionLoadResult importFbxMotion(std::span<const std::uint8_t> bytes) {
+    ufbx_load_opts options{};
+    options.target_axes = ufbx_axes_right_handed_y_up;
+    options.target_unit_meters = 1.0;
+    options.space_conversion = UFBX_SPACE_CONVERSION_MODIFY_GEOMETRY;
+    options.ignore_geometry = true;  // 모션만 필요 (메시가 함께 있는 파일도 빠르게)
+
+    ufbx_error error{};
+    const ScenePtr scene(ufbx_load_memory(bytes.data(), bytes.size(), &options, &error));
+    if (!scene) {
+        std::array<char, 512> message{};
+        ufbx_format_error(message.data(), message.size(), &error);
+        return {std::nullopt, std::format("FBX를 읽을 수 없습니다: {}", message.data())};
+    }
+    MotionLoadResult result;
+    result.clip = FbxMotionConverter(*scene).run(result.error);
+    return result;
+}
 
 LoadResult importFbx(std::span<const std::uint8_t> bytes, const ImportContext& context) {
     ufbx_load_opts options{};

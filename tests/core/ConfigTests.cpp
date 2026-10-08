@@ -146,6 +146,21 @@ TEST(Config, ModelPath_DefaultsToEmptyAndIsReadAsText) {
     EXPECT_EQ(result.config.model.path, "models/zmd_EM.vrm");
 }
 
+TEST(Config, MotionClips_DefaultToEmptyAndAreReadPerMotion) {
+    const auto& defaults = parseConfig("").config.animation;
+    EXPECT_TRUE(defaults.idleClip.empty());
+    EXPECT_TRUE(defaults.walkClip.empty());
+
+    const auto result = parseConfig(
+        "[animation]\nidle_clip = motions/idle.vrma\nwalk_clip = motions/walk.vmd\n"
+        "dragged_clip = motions/dangle.fbx\nairborne_clip = motions/fall.vrma\n");
+    EXPECT_TRUE(result.warnings.empty());
+    EXPECT_EQ(result.config.animation.idleClip, "motions/idle.vrma");
+    EXPECT_EQ(result.config.animation.walkClip, "motions/walk.vmd");
+    EXPECT_EQ(result.config.animation.draggedClip, "motions/dangle.fbx");
+    EXPECT_EQ(result.config.animation.airborneClip, "motions/fall.vrma");
+}
+
 TEST(Config, LastPosition_IsOptionalAndReadWhenPresent) {
     EXPECT_FALSE(parseConfig("").config.state.lastPosition().has_value());
 

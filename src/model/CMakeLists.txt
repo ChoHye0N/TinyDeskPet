@@ -36,9 +36,11 @@ add_library(deskpet_model STATIC
   GltfImporter.cpp
   Humanoid.cpp
   ModelLoader.cpp
+  MotionLoader.cpp
   PmxImporter.cpp
   TexturePadding.cpp
-  TextureSource.cpp)
+  TextureSource.cpp
+  VmdImporter.cpp)
 add_library(deskpet::model ALIAS deskpet_model)
 
 target_link_libraries(deskpet_model

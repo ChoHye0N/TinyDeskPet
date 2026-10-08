@@ -609,6 +609,34 @@ TEST_F(ApplicationTest, SkinnedModel_SceneHasSkinMatrixPerBone) {
     EXPECT_FLOAT_EQ(renderer_.lastScene.character.expressionWeights[kSurprised], 0.0f);
 }
 
+TEST_F(ApplicationTest, IdleMotionClip_IsPlayedWhetherSetBeforeOrAfterModel) {
+    // 왼팔을 수직으로 드는 대기 클립 → 손(본 3)이 어깨 위로
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 1;
+    clip->track(deskpet::model::HumanBone::LeftUpperArm) = {
+        deskpet::core::Quat::axisAngle({0.0f, 0.0f, 1.0f}, 1.5707963f)};
+    Application::MotionClips clips{};
+    clips[static_cast<std::size_t>(deskpet::anim::Motion::Idle)] = clip;
+    const auto model = makeSkinnedModel();
+    const auto handY = [&](bool clipsFirst) {
+        window_.pollsBeforeQuit = 2;
+        auto app = makeApp();
+        if (clipsFirst) {
+            app->setMotionClips(clips);
+            app->setModel(model);
+        } else {
+            app->setModel(model);
+            app->setMotionClips(clips);
+        }
+        (void)app->run();
+        return deskpet::core::transformPoint(model->bones[3].position,
+                                             renderer_.lastScene.character.skinMatrices[3])
+            .y;
+    };
+    EXPECT_GT(handY(true), 1.9f);
+    EXPECT_GT(handY(false), 1.9f);
+}
+
 TEST_F(ApplicationTest, DraggingModel_ShowsSurprisedExpression) {
     window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
     window_.frames.push_back({core::PointerMoveEvent{{1700.0f, 700.0f}}});

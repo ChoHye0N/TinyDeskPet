@@ -26,7 +26,9 @@
 | `src/model/FbxImporter.cpp` | FBX 바이너리·ASCII (ufbx) |
 | `src/model/TexturePadding.h/.cpp` | 텍스처 패딩: UV 섬 바깥 여백을 섬 색으로 채워 이음매 선 방지 (§4.8) |
 | `src/model/TextureSource.h/.cpp` | 텍스처 바이트 정리, 외부 텍스처 파일 읽기, TGA 디코딩 |
-| `src/model/Humanoid.h/.cpp` | `HumanBone`과 형식별 본 이름 매핑표 |
+| `src/model/Humanoid.h/.cpp` | `HumanBone`과 형식별 본 이름 매핑표, `limbChild`(팔다리 다음 본) |
+| `src/model/Motion.h`, `MotionLoader.cpp` | 모션 클립(`MotionClip`)과 진입점: `detectMotionFormat`, `loadMotionFromMemory`, `loadMotionFile` (§4.9) |
+| `src/model/VmdImporter.cpp` | VMD (직접 구현, 표준 MMD 뼈대 + 다리 IK). VRMA는 `GltfImporter.cpp`, FBX 모션은 `FbxImporter.cpp` |
 | `src/model/ThirdPartyImpl.cpp` | cgltf·stb_image 구현부 (우리 경고 옵션 미적용 타깃 `deskpet_model_thirdparty`, ufbx.c 포함) |
 | `src/core/Math3D.h` | `Vec3`, `Vec4`, `Mat4` ([core.md §3.8](core.md)) |
 
@@ -189,6 +191,16 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 
 렌더러는 디코딩·축소 직후, **밉맵을 만들기 전에** 16텍셀(512 기준 밉 4단계까지)을 채웁니다. 측정: 펭귄 모델(텍스처 7장, 삼각형 5.3만 개) 로드 + 업로드 0.2초.
 
+### 4.9 모션 (`MotionClip`, ADR-0013)
+
+모든 형식을 읽을 때 **30fps, 휴머노이드 본별 월드 델타 Δ = W(t)·W₀⁻¹**(원본 기본 자세 → 지금, 공통 규약의 모델 축)로 바꿉니다. 함께 원본 기본 자세의 팔다리 방향(`restDirections`, 본 → `limbChild`)을 기록해 재생할 때 대상의 T/A포즈 차이를 보정합니다 ([anim.md §4.5](anim.md)).
+
+| 형식 | 판별 | 변환 |
+|---|---|---|
+| VRMA | glTF/GLB + `VRMC_vrm_animation` (없으면 오류) | `humanoid.humanBones`로 노드 → 본. 첫 애니메이션의 회전 채널만 (LINEAR = slerp, STEP, CUBICSPLINE은 값만). 노드 회전은 TRS, W = W부모·L (부모 먼저 순서는 직접 계산). 좌표는 VRM 1.0과 같음 |
+| VMD | `Vocaloid Motion Data 0002`(모델 이름 20바이트) / `... file`(10바이트) | 본 키 111바이트(이름 15 Shift-JIS, 프레임, 이동, 회전, 보간 64). 표준 MMD 뼈대(全ての親 → センター → グルーブ → 腰 → 上半身·下半身 …, 腕捩·手捩 포함)로 W = W부모·q. 보간은 키의 베지어 4개(X·Y·Z·회전, 바이트 [c], [c+4], [c+8], [c+12]). 足ＩＫ 키가 있는 쪽 다리는 2관절 IK(표준 길이, 무릎은 下半身 앞, 비틀림은 골반을 따름, 발 = IK 본 회전). z 반전: 회전 (x, y, z, w) → (−x, −y, z, w). 팔 기본 자세 37° 아래(A포즈). 손가락·눈 등 모르는 본은 건너뜀. 30분 초과 프레임 무시 |
+| FBX | ufbx (`ignore_geometry`) | 첫 애니메이션 스택. 구간이 없으면 키프레임 범위. 본 이름은 Mixamo 관례. `ufbx_evaluate_transform`의 로컬 회전을 부모부터 곱해 W, 기본 자세 = 애니메이션 없는 노드 값 |
+
 ### 4.7 오류
 
 | 상황 | 결과 |
@@ -242,7 +254,8 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
 | `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
-| `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑 |
+| `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑, 팔다리 다음 본 |
+| `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 확장 없으면 오류. FBX(ASCII): 회전 곡선 재샘플링, 애니메이션 없으면 오류 |
 
 수동 확인: VRM 0.x 모델, ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
 
@@ -254,5 +267,5 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | `TODO(M6)` | VRM 메타(이름, 작가, 라이선스) 파싱과 표시 |
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
-| `TODO(M4)` | 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 |
+| ~~`TODO(M4)`~~ | ✅ 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 (§4.9). 남은 것: 손가락, VRMA 표정·루트 이동 |
 | `TODO(M5)` | ~~MToon 파라미터~~ ✅ (ADR-0012), VRM 1.0 SpringBone, MMD 툰·스피어 텍스처 |

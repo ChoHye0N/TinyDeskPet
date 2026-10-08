@@ -25,3 +25,18 @@ path = models/miku/miku.pmx     ; 텍스처는 .pmx와 같은 폴더 기준 상�
 ## 직접 만들기
 
 [VRoid Studio](https://vroid.com/studio)로 만든 캐릭터는 내보낼 때 이용 조건을 직접 정할 수 있어, 포트폴리오 시연용으로 가장 안전합니다.
+
+## 모션 파일 (VRMA, VMD, FBX)
+
+대기·걷기·매달림·공중 동작마다 모션 파일을 지정할 수 있습니다 ([ADR-0013](../docs/02-architecture/adr/0013-motion-clip-retargeting.md)). `assets/models/motions/`에 두면 모델과 함께 복사되고 커밋되지 않습니다.
+
+```ini
+[animation]
+idle_clip = models/motions/idle.vrma   ; VRM Animation
+walk_clip = models/motions/walk.vmd    ; MMD 모션 (다리는 足ＩＫ 키로 계산)
+dragged_clip = models/motions/hang.fbx ; Mixamo 등 FBX ("Without Skin"도 가능)
+```
+
+- 모션은 반복 재생되고, 모델의 기본 자세(VRM T포즈, MMD A포즈)에 맞춰 팔다리 방향을 자동으로 맞춥니다.
+- 몸 위치(엉덩이 이동)는 쓰지 않습니다. 걷기·대기에서 발은 바닥에 붙여 둡니다.
+- 모션도 이용 조건을 확인하세요 (MMD 모션은 "배포 금지", "특정 모델 전용"인 경우가 많음).
