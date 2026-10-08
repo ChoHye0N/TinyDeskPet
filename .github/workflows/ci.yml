@@ -144,8 +144,9 @@ jobs:
       - name: Configure, build, test${{ matrix.config == 'release' && ', package' || '' }}
         run: cmake --workflow --preset ci-windows-${{ matrix.config }}
 
+      # 배포 zip은 main에 들어온 빌드만 보관 (PR마다 쌓이는 아티팩트는 쓰지 않음)
       - name: Upload package
-        if: matrix.config == 'release'
+        if: matrix.config == 'release' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: DeskPet-win64-${{ github.sha }}
