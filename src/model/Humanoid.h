@@ -49,4 +49,8 @@ enum class HumanBone : std::uint8_t {
 // Mixamo 등 FBX 관례 ("mixamorig:LeftArm", "LeftArm" …). ':' 앞 접두사는 무시
 [[nodiscard]] HumanBone humanBoneFromFbxName(std::string_view name);
 
+// 팔다리 본의 다음 본 (어깨 → 위팔 → 아래팔 → 손, 허벅지 → 정강이 → 발 → 발가락).
+// 기본 자세의 본 방향을 잴 때 씀 (모션 리타기팅). 몸통·머리·손끝은 None
+[[nodiscard]] HumanBone limbChild(HumanBone bone);
+
 }  // namespace deskpet::model

@@ -14,6 +14,7 @@
 - **투명 배경 + 항상 위 + 픽셀 단위 클릭 통과** — DirectComposition으로 GPU 안에서 합성 ([ADR-0001](docs/02-architecture/adr/0001-directcomposition-for-transparency.md)). 작업 영역 전체를 덮는 오버레이 안에서 캐릭터가 움직이고, 캐릭터가 아닌 픽셀은 클릭이 아래 창으로 감 ([ADR-0011](docs/02-architecture/adr/0011-fullscreen-overlay.md))
 - **VRM · PMX · FBX 모델** — 형식별 로더를 하나의 모델 표현으로 통일 ([ADR-0009](docs/02-architecture/adr/0009-multiple-model-formats.md))
 - **코드로 만든 애니메이션** — 대기·걷기·매달림·공중·착지 자세, GPU 스키닝, 표정, 상태 전환 slerp 보간 ([ADR-0010](docs/02-architecture/adr/0010-procedural-animation.md))
+- **모션 파일** — 대기·걷기·매달림·공중 동작마다 VRMA, VMD(MMD), FBX(Mixamo) 모션을 지정해 재생. 모델의 기본 자세(T/A포즈)에 맞춰 리타기팅 ([ADR-0013](docs/02-architecture/adr/0013-motion-clip-retargeting.md))
 - **렌더링** — MToon 툰 셰이딩(그림자 색·텍스처, 림, MatCap, 발광)과 선형 색공간 ([ADR-0012](docs/02-architecture/adr/0012-mtoon-linear-color.md)), MSAA, 반전 헐 외곽선 (모델의 MToon·PMX 에지 설정 사용)
 - **머리카락·옷 흔들림** — VRM SpringBone. 끌거나 걸으면 관성으로 날리고 다리·팔 충돌체를 피함
 - **드래그 · 던지기 · 낙하 · 점프 · 걷기** — 고정 시간 간격 물리 ([ADR-0004](docs/02-architecture/adr/0004-fixed-timestep-update.md)), 드래그 중에도 애니메이션 유지 ([ADR-0003](docs/02-architecture/adr/0003-manual-window-drag.md))

@@ -1,5 +1,6 @@
 # anim: 휴머노이드 뼈대 계산과 코드로 만드는 동작 (플랫폼 독립, docs/03-detailed-design/anim.md)
 add_library(deskpet_anim STATIC
+  MotionPlayer.cpp
   ProceduralAnimator.cpp
   Skeleton.cpp
   SpringBone.cpp)

@@ -164,8 +164,22 @@ void ProceduralAnimator::poseLeg(int upper, int lower, float swing, float knee) 
     setRotation(lower, core::Quat::axisAngle(kAxisX, radians(knee)));  // + = 발이 뒤로 (무릎 굽힘)
 }
 
+void ProceduralAnimator::setClip(Motion motion, std::shared_ptr<const model::MotionClip> clip) {
+    auto& slot = clips_[static_cast<std::size_t>(motion)];
+    slot.reset();
+    if (clip && clip->frameCount > 0) {
+        slot.emplace(skeleton_, std::move(clip));
+    }
+}
+
 void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     rotations_.assign(skeleton_.size(), core::Quat{});
+    if (const auto& clip = clips_[static_cast<std::size_t>(input.motion)]) {
+        // 대기 동작을 끄면 첫 프레임에 멈춤 (화면이 안 바뀌어 Present 생략, DEBT-02)
+        const bool still = input.motion == Motion::Idle && !input.idleMotion;
+        clip->sample(still ? 0.0f : input.time, rotations_);
+        return;
+    }
     const PoseParams p = paramsFor(input);
 
     poseArm(leftArm_, p.armOutward, p.leftArmSwing, p.elbow);
@@ -374,27 +388,46 @@ model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
         return bounds;
     }
 
-    // 걷기는 한 주기를 8등분해 샘플링: 다리를 가장 멀리 뻗는 순간(1/4, 3/4)과
-    // 무릎을 가장 굽히는 순간(0, 1/2)이 모두 포함됨
-    constexpr int kWalkSamples = 8;
-    std::vector<AnimationInput> inputs;
-    for (const Motion motion : {Motion::Idle, Motion::Dragged, Motion::Airborne}) {
-        AnimationInput& input = inputs.emplace_back();
-        input.motion = motion;
-        input.idleMotion = false;
-    }
-    for (int i = 0; i < kWalkSamples; ++i) {
-        AnimationInput& input = inputs.emplace_back();
-        input.motion = Motion::Walk;
-        input.time = kWalkCycle * static_cast<float>(i) / kWalkSamples;
-    }
-
     AnimationOutput out;
-    for (const AnimationInput& input : inputs) {
+    for (const AnimationInput& input : boundsSamples()) {
         evaluate(input, out);
         includePosedVertices(out.skin, maxTurnRadians, bounds);
     }
     return bounds;
+}
+
+// 경계 상자를 잴 자세들
+std::vector<AnimationInput> ProceduralAnimator::boundsSamples() const {
+    // 모션 파일은 길이 전체에서 고르게 최대 kClipSamples개 (30fps 프레임을 모두 보면 느림)
+    constexpr std::size_t kClipSamples = 24;
+    // 걷기는 한 주기를 8등분해 샘플링: 다리를 가장 멀리 뻗는 순간(1/4, 3/4)과
+    // 무릎을 가장 굽히는 순간(0, 1/2)이 모두 포함됨
+    constexpr int kWalkSamples = 8;
+    std::vector<AnimationInput> inputs;
+    for (const Motion motion : {Motion::Idle, Motion::Walk, Motion::Dragged, Motion::Airborne}) {
+        const auto& clip = clips_[static_cast<std::size_t>(motion)];
+        if (clip) {
+            const std::size_t samples = std::min(clip->frameCount(), kClipSamples);
+            for (std::size_t i = 0; i < samples; ++i) {
+                AnimationInput& input = inputs.emplace_back();
+                input.motion = motion;
+                input.time = samples > 1 ? clip->duration() * static_cast<float>(i) /
+                                               static_cast<float>(samples - 1)
+                                         : 0.0f;
+            }
+        } else if (motion == Motion::Walk) {
+            for (int i = 0; i < kWalkSamples; ++i) {
+                AnimationInput& input = inputs.emplace_back();
+                input.motion = Motion::Walk;
+                input.time = kWalkCycle * static_cast<float>(i) / kWalkSamples;
+            }
+        } else {
+            AnimationInput& input = inputs.emplace_back();
+            input.motion = motion;
+            input.idleMotion = false;
+        }
+    }
+    return inputs;
 }
 
 void ProceduralAnimator::includePosedVertices(const std::vector<core::Mat4>& skin,

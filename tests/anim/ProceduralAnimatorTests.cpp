@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <numbers>
 
 using deskpet::anim::AnimationInput;
 using deskpet::anim::AnimationOutput;
@@ -312,4 +314,57 @@ TEST(ProceduralAnimator, DisplayBounds_CoverIntermediateTurnAngles) {
     constexpr float kTurn = 50.0f * 3.14159265f / 180.0f;
     const auto bounds = ProceduralAnimator(model).displayBounds(kTurn);
     EXPECT_GT(bounds.max.x, 0.6f * std::sqrt(2.0f) - 0.002f);
+}
+
+// ---------------------------------------------------------------------------
+// 모션 파일 (ADR-0013): 동작별로 클립을 지정하면 코드로 만든 자세 대신 재생
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 왼팔을 수직으로 드는 정지 자세 클립 (월드 델타: +X → +Y)
+std::shared_ptr<deskpet::model::MotionClip> raisedArmClip() {
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 1;
+    clip->track(deskpet::model::HumanBone::LeftUpperArm) = {
+        deskpet::core::Quat::axisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 2.0f)};
+    return clip;
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorClip, AssignedMotion_PlaysClipInsteadOfProceduralPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    animator.setClip(Motion::Walk, raisedArmClip());
+
+    AnimationOutput out;
+    AnimationInput input;
+    input.motion = Motion::Walk;
+    animator.evaluate(input, out);
+    const Vec3 hand = posed(model, out, 3);
+    EXPECT_NEAR(hand.x, 0.2f, 1e-3f);  // 어깨 바로 위
+    EXPECT_GT(hand.y, 1.4f + 0.5f);
+
+    input.motion = Motion::Idle;  // 클립이 없는 동작은 그대로 코드로 만든 자세 (팔 내림)
+    animator.evaluate(input, out);
+    EXPECT_LT(posed(model, out, 3).y, 1.0f);
+}
+
+TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    const float withoutClip = animator.displayBounds().max.y;
+    animator.setClip(Motion::Idle, raisedArmClip());
+    EXPECT_GT(animator.displayBounds().max.y, withoutClip + 0.4f);  // 든 손끝까지 포함
+}
+
+TEST(ProceduralAnimatorClip, RemovingClip_RestoresProceduralPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    animator.setClip(Motion::Idle, raisedArmClip());
+    animator.setClip(Motion::Idle, nullptr);
+    AnimationOutput out;
+    animator.evaluate({}, out);
+    EXPECT_LT(posed(model, out, 3).y, 1.0f);
 }

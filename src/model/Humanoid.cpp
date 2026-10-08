@@ -126,4 +126,22 @@ HumanBone humanBoneFromFbxName(std::string_view name) {
     return lookup(kFbxNames, name);
 }
 
+HumanBone limbChild(HumanBone bone) {
+    switch (bone) {
+        case HumanBone::LeftShoulder: return HumanBone::LeftUpperArm;
+        case HumanBone::LeftUpperArm: return HumanBone::LeftLowerArm;
+        case HumanBone::LeftLowerArm: return HumanBone::LeftHand;
+        case HumanBone::RightShoulder: return HumanBone::RightUpperArm;
+        case HumanBone::RightUpperArm: return HumanBone::RightLowerArm;
+        case HumanBone::RightLowerArm: return HumanBone::RightHand;
+        case HumanBone::LeftUpperLeg: return HumanBone::LeftLowerLeg;
+        case HumanBone::LeftLowerLeg: return HumanBone::LeftFoot;
+        case HumanBone::LeftFoot: return HumanBone::LeftToes;
+        case HumanBone::RightUpperLeg: return HumanBone::RightLowerLeg;
+        case HumanBone::RightLowerLeg: return HumanBone::RightFoot;
+        case HumanBone::RightFoot: return HumanBone::RightToes;
+        default: return HumanBone::None;
+    }
+}
+
 }  // namespace deskpet::model

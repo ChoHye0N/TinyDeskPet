@@ -20,6 +20,7 @@ add_executable(deskpet_tests
   core/Math3DTests.cpp
   core/MathTests.cpp
   anim/AnimTestModels.h
+  anim/MotionPlayerTests.cpp
   anim/ProceduralAnimatorTests.cpp
   anim/SkeletonTests.cpp
   anim/SpringBoneTests.cpp
@@ -28,6 +29,7 @@ add_executable(deskpet_tests
   model/HumanoidTests.cpp
   model/ModelFormatTests.cpp
   model/ModelLoaderTests.cpp
+  model/MotionLoaderTests.cpp
   model/PmxBuilder.h
   model/PmxImporterTests.cpp
   model/TexturePaddingTests.cpp

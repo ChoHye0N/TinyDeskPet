@@ -8,6 +8,7 @@
 #include <array>
 #include <cgltf.h>
 #include <charconv>
+#include <cmath>
 #include <format>
 #include <map>
 #include <memory>
@@ -967,7 +968,193 @@ LoadResult convert(cgltf_data* raw, const ImportContext& context) {
     return result;
 }
 
+// VRMA (VRM Animation): glTF 노드 계층 + 애니메이션 + VRMC_vrm_animation.humanoid (ADR-0013).
+// 좌표는 VRM 1.0과 같음 (정면 +Z). 노드는 TRS만 지원 (matrix 노드는 회전 없음으로 봄)
+class VrmaConverter {
+public:
+    explicit VrmaConverter(const cgltf_data& data) : data_(data) {}
+
+    std::optional<MotionClip> run(std::string& error) {
+        if (!readHumanoid()) {
+            error = "VRMC_vrm_animation 확장이 없습니다 (VRMA 파일이 아닙니다)";
+            return std::nullopt;
+        }
+        if (data_.animations_count == 0) {
+            error = "애니메이션이 없습니다";
+            return std::nullopt;
+        }
+        readChannels(data_.animations[0]);
+        orderNodes();
+
+        MotionClip clip;
+        clip.format = MotionFormat::Vrma;
+        clip.frameCount =
+            static_cast<std::size_t>(std::floor(duration_ * MotionClip::kFramesPerSecond + 1e-3f)) +
+            1;
+        std::vector<core::Quat> rest = worldRotations(-1.0f);
+        std::vector<core::Quat> world;
+        for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
+            world = worldRotations(static_cast<float>(frame) / MotionClip::kFramesPerSecond);
+            for (std::size_t n = 0; n < human_.size(); ++n) {
+                if (human_[n] != HumanBone::None) {
+                    // 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전)
+                    clip.track(human_[n]).push_back(world[n] * rest[n].conjugate());
+                }
+            }
+        }
+        std::array<std::optional<Vec3>, kHumanBoneCount> positions{};
+        for (std::size_t n = 0; n < human_.size(); ++n) {
+            if (human_[n] != HumanBone::None) {
+                const Mat4 m = worldMatrix(data_.nodes[n]);
+                positions[static_cast<std::size_t>(human_[n])] =
+                    Vec3{m.m[3][0], m.m[3][1], m.m[3][2]};
+            }
+        }
+        motion::setRestDirections(clip, positions);
+        return clip;
+    }
+
+private:
+    struct Channel {
+        std::vector<float> times;
+        std::vector<core::Quat> values;
+        bool step = false;
+    };
+
+    bool readHumanoid() {
+        const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
+        const auto start = json.empty() ? std::nullopt : valueOf(json, "humanBones");
+        if (!start || *start >= json.size()) {
+            return false;
+        }
+        const std::size_t end = skipBalanced(json, *start);
+        if (end == std::string_view::npos) {
+            return false;
+        }
+        std::vector<Bone> bones(data_.nodes_count);
+        mapHumanBoneEntries(json.substr(*start + 1, end - *start - 2), bones);  // 괄호 안쪽
+        human_.resize(bones.size());
+        std::ranges::transform(bones, human_.begin(), &Bone::human);
+        return true;
+    }
+
+    // 회전 채널만 읽음 (이동·크기는 리타기팅에 쓰지 않음)
+    void readChannels(const cgltf_animation& animation) {
+        channels_.resize(data_.nodes_count);
+        for (cgltf_size c = 0; c < animation.channels_count; ++c) {
+            const cgltf_animation_channel& channel = animation.channels[c];
+            if (channel.target_node == nullptr || channel.sampler == nullptr ||
+                channel.target_path != cgltf_animation_path_type_rotation) {
+                continue;
+            }
+            const cgltf_animation_sampler& sampler = *channel.sampler;
+            Channel& out = channels_[static_cast<std::size_t>(channel.target_node - data_.nodes)];
+            const cgltf_size count = sampler.input->count;
+            // CUBICSPLINE은 키마다 (들어오는 접선, 값, 나가는 접선): 값만 쓰고 선형으로 근사
+            const cgltf_size stride =
+                sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;
+            if (sampler.output->count < count * stride) {
+                continue;
+            }
+            out = {};
+            out.step = sampler.interpolation == cgltf_interpolation_type_step;
+            for (cgltf_size k = 0; k < count; ++k) {
+                float t = 0.0f;
+                std::array<float, 4> q{};
+                cgltf_accessor_read_float(sampler.input, k, &t, 1);
+                cgltf_accessor_read_float(sampler.output, k * stride + (stride - 1) / 2, q.data(),
+                                          4);
+                out.times.push_back(t);
+                out.values.push_back(core::Quat{q[0], q[1], q[2], q[3]}.normalized());
+                duration_ = std::max(duration_, t);
+            }
+        }
+    }
+
+    // 부모가 먼저 오는 노드 순서 (glTF는 자식 번호가 부모보다 작을 수 있음)
+    void orderNodes() {
+        std::vector<bool> placed(data_.nodes_count, false);
+        while (order_.size() < data_.nodes_count) {
+            const std::size_t before = order_.size();
+            for (cgltf_size n = 0; n < data_.nodes_count; ++n) {
+                const cgltf_node* parent = data_.nodes[n].parent;
+                if (!placed[n] &&
+                    (parent == nullptr || placed[static_cast<std::size_t>(parent - data_.nodes)])) {
+                    placed[n] = true;
+                    order_.push_back(n);
+                }
+            }
+            if (order_.size() == before) {
+                break;  // 순환 (손상된 파일): 남은 노드는 무시
+            }
+        }
+    }
+
+    [[nodiscard]] static core::Quat sample(const Channel& channel, float time) {
+        const auto& t = channel.times;
+        if (time <= t.front()) {
+            return channel.values.front();
+        }
+        if (time >= t.back()) {
+            return channel.values.back();
+        }
+        const auto k = static_cast<std::size_t>(std::ranges::upper_bound(t, time) - t.begin()) - 1;
+        if (channel.step || t[k + 1] <= t[k]) {
+            return channel.values[k];
+        }
+        return core::slerp(channel.values[k], channel.values[k + 1],
+                           (time - t[k]) / (t[k + 1] - t[k]));
+    }
+
+    // time < 0이면 애니메이션 없는 기본 자세
+    [[nodiscard]] std::vector<core::Quat> worldRotations(float time) const {
+        std::vector<core::Quat> world(data_.nodes_count);
+        for (const std::size_t n : order_) {
+            const cgltf_node& node = data_.nodes[n];
+            core::Quat local{};
+            if (time >= 0.0f && !channels_[n].times.empty()) {
+                local = sample(channels_[n], time);
+            } else if (node.has_rotation != 0) {
+                local = core::Quat{node.rotation[0], node.rotation[1], node.rotation[2],
+                                   node.rotation[3]}
+                            .normalized();
+            }
+            const core::Quat parent =
+                node.parent != nullptr ? world[static_cast<std::size_t>(node.parent - data_.nodes)]
+                                       : core::Quat{};
+            world[n] = parent * local;  // 로컬을 먼저 적용한 뒤 부모 (W = W부모 · L)
+        }
+        return world;
+    }
+
+    const cgltf_data& data_;
+    std::vector<HumanBone> human_;  // 노드 → 휴머노이드 본
+    std::vector<Channel> channels_;
+    std::vector<std::size_t> order_;
+    float duration_ = 0.0f;
+};
+
 }  // namespace
+
+MotionLoadResult importVrma(std::span<const std::uint8_t> bytes) {
+    cgltf_options options{};
+    cgltf_data* raw = nullptr;
+    cgltf_result status = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
+    if (status != cgltf_result_success) {
+        return {std::nullopt, resultToString(status)};
+    }
+    const DataPtr data(raw);
+    status = cgltf_load_buffers(&options, data.get(), "");
+    if (status == cgltf_result_success) {
+        status = cgltf_validate(data.get());
+    }
+    if (status != cgltf_result_success) {
+        return {std::nullopt, resultToString(status)};
+    }
+    MotionLoadResult result;
+    result.clip = VrmaConverter(*data).run(result.error);
+    return result;
+}
 
 LoadResult importGltf(std::span<const std::uint8_t> bytes, const ImportContext& context) {
     cgltf_options options{};

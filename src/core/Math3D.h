@@ -182,6 +182,9 @@ struct Quat {
         return Quat{c.x, c.y, c.z, 1.0f + d}.normalized();
     }
 
+    // 켤레 = 단위 쿼터니언의 역회전
+    [[nodiscard]] constexpr Quat conjugate() const noexcept { return {-x, -y, -z, w}; }
+
     [[nodiscard]] Quat normalized() const noexcept {
         const float len = std::sqrt(x * x + y * y + z * z + w * w);
         return len > 0.0f ? Quat{x / len, y / len, z / len, w / len} : Quat{};

@@ -27,3 +27,16 @@ TEST(Humanoid, FbxMixamoNames_IgnorePrefix) {
     EXPECT_EQ(humanBoneFromFbxName("Spine1"), HumanBone::Chest);
     EXPECT_EQ(humanBoneFromFbxName("Camera"), HumanBone::None);
 }
+
+TEST(Humanoid, LimbChild_IsNextBoneAlongArmsAndLegs) {
+    using deskpet::model::limbChild;
+    EXPECT_EQ(limbChild(HumanBone::LeftShoulder), HumanBone::LeftUpperArm);
+    EXPECT_EQ(limbChild(HumanBone::RightUpperArm), HumanBone::RightLowerArm);
+    EXPECT_EQ(limbChild(HumanBone::LeftLowerArm), HumanBone::LeftHand);
+    EXPECT_EQ(limbChild(HumanBone::RightUpperLeg), HumanBone::RightLowerLeg);
+    EXPECT_EQ(limbChild(HumanBone::LeftLowerLeg), HumanBone::LeftFoot);
+    EXPECT_EQ(limbChild(HumanBone::RightFoot), HumanBone::RightToes);
+    // 몸통·머리·손끝은 방향을 재지 않음 (부모 쪽 보정을 따름)
+    EXPECT_EQ(limbChild(HumanBone::Spine), HumanBone::None);
+    EXPECT_EQ(limbChild(HumanBone::LeftHand), HumanBone::None);
+}

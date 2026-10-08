@@ -13,6 +13,7 @@
 #include "platform/IWindow.h"
 #include "renderer/IRenderer.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -62,6 +63,10 @@ public:
     // run() 전에 호출. 모델이 있으면 슬라임 대신 그립니다 (ADR-0008).
     void setModel(std::shared_ptr<const model::Model> model);
 
+    // 동작별 모션 클립 (ADR-0013). 비어 있는 동작은 코드로 만든 동작. setModel 앞뒤 어디서나
+    using MotionClips = std::array<std::shared_ptr<const model::MotionClip>, anim::kMotionCount>;
+    void setMotionClips(MotionClips clips);
+
     [[nodiscard]] const character::CharacterController& character() const noexcept {
         return character_;
     }
@@ -93,6 +98,7 @@ private:
     void setScalePercent(int percent);
     void resizeCharacter();  // boxSize_를 targetBoxSize()로 바꾸고 카메라·벽을 갱신
     [[nodiscard]] core::SizeI targetBoxSize() const;
+    void applyAnimation();  // 클립 연결, 자세 경계 상자·카메라·벽 다시 계산
     void refitCamera();
     void setVisible(bool visible);
     void applyVisibility();  // 사용자 숨김·자동 숨김을 합쳐 창을 보이거나 숨김
@@ -120,6 +126,7 @@ private:
     bool pointerDown_ = false;  // 왼쪽 버튼을 누르고 있는 동안은 항상 클릭을 받음 (끌기)
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;
+    MotionClips clips_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용
     model::Bounds displayBounds_;  // 카메라·클릭 영역 기준 (애니메이션 자세 포함)
     float metersPerPixel_ = 0.0f;  // 발 평면(z = 0)에서 창 1px = 모델 공간 몇 m (흔들림 관성용)
