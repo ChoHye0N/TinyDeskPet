@@ -60,4 +60,9 @@ struct RectI {
     return current - maxDelta > target ? current - maxDelta : target;
 }
 
+// sRGB(감마) 값 → 선형 값 (IEC 61966-2-1). 0 ~ 1
+[[nodiscard]] inline float srgbToLinear(float c) noexcept {
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
 }  // namespace deskpet::core

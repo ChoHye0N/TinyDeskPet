@@ -1,6 +1,8 @@
-// 캐릭터 메시 셰이더: GPU 스키닝 + 표정(모프) + 2단 툰 (ADR-0008, ADR-0010).
+// 캐릭터 메시 셰이더: GPU 스키닝 + 표정(모프) + MToon 툰 셰이딩 (ADR-0008, ADR-0010, ADR-0012).
 // 빌드 시 fxc로 바이트코드 헤더가 됩니다 (d3d11/CMakeLists.txt).
-// 색공간: 텍스처를 감마 공간 그대로 계산합니다. 선형 색공간 처리는 M5(MToon)에서.
+// 색공간: 텍스처는 _SRGB 뷰로 읽어 선형 값으로 계산하고, 출력 직전에 sRGB로 바꿉니다.
+// 렌더 타깃을 _SRGB로 두지 않는 이유: 하드웨어 변환은 알파를 곱한 값(c·a)을 변환해
+// DWM이 기대하는 "sRGB 색 × a"와 달라짐 → 반투명 가장자리가 밝게 뜸 (ADR-0012)
 
 // row_major: C++ 쪽 행렬이 행 우선 저장 + 행 벡터 규약(core/Math3D.h)이라 mul(v, M)로 그대로 씁니다.
 // (HLSL 상수 버퍼의 기본 패킹은 column_major라, 지정하지 않으면 전치된 행렬로 읽힘)
@@ -9,8 +11,11 @@ cbuffer FrameConstants : register(b0)
     row_major float4x4 viewProjection;
     float3 lightDirection;  // 빛이 진행하는 방향 (모델 공간)
     uint boneCount;         // 0이면 스키닝 없이 바인드 포즈
+    float3 viewDirection;   // 모델 → 카메라 방향 (모델 공간). 화각이 좁아 방향 하나로 근사
+    float framePadding;
 };
 
+// 색은 모두 선형 공간. 값의 의미는 model::Material (VRM 1.0 MToon 정의)
 cbuffer MaterialConstants : register(b1)
 {
     float4 baseColor;
@@ -19,6 +24,18 @@ cbuffer MaterialConstants : register(b1)
     float forceOpaque;  // OPAQUE/MASK는 알파를 1로
     float outlineWidth; // 외곽선 패스에서만 0보다 큼: 법선 방향으로 밀어낼 거리 (m)
     float4 outlineColor;
+    float3 shadeColor;
+    float hasShadeTexture;
+    float shadingShift;
+    float shadingToony;
+    float rimFresnelPower;
+    float rimLift;
+    float3 rimColor;
+    float rimLightingMix;
+    float3 matcapColor;
+    float hasMatcapTexture;
+    float3 emissiveColor;
+    float hasEmissiveTexture;
 };
 
 // 본별 스킨 행렬. 본 수가 수백 개일 수 있어 상수 버퍼(최대 4096 float4) 대신 구조화 버퍼를 씀.
@@ -30,7 +47,17 @@ struct SkinMatrix
 StructuredBuffer<SkinMatrix> skinMatrices : register(t0);
 
 Texture2D baseTexture : register(t0);
+Texture2D shadeTexture : register(t1);
+Texture2D matcapTexture : register(t2);
+Texture2D emissiveTexture : register(t3);
 SamplerState linearWrap : register(s0);
+
+// 선형 → sRGB (IEC 61966-2-1). 벡터에 쓰는 ?:는 성분별로 고름
+float3 linearToSrgb(float3 c)
+{
+    c = saturate(c);
+    return c <= 0.0031308f ? c * 12.92f : 1.055f * pow(c, 1.0f / 2.4f) - 0.055f;
+}
 
 struct VSInput
 {
@@ -95,14 +122,42 @@ float4 PSMain(PSInput input, bool frontFace : SV_IsFrontFace) : SV_Target
     }
 
     // 양면 머티리얼의 뒷면은 법선을 뒤집어야 조명이 맞음
-    float3 normal = normalize(input.normal) * (frontFace ? 1.0f : -1.0f);
-    float lit = dot(normal, -normalize(lightDirection));
-    // 2단 툰: 밝은 면 1.0, 그림자 면 0.75. smoothstep으로 경계만 살짝 부드럽게
-    color.rgb *= lerp(0.75f, 1.0f, smoothstep(-0.05f, 0.05f, lit));
+    const float3 normal = normalize(input.normal) * (frontFace ? 1.0f : -1.0f);
+    const float3 view = normalize(viewDirection);
 
-    // 스왑체인이 premultiplied alpha(ADR-0001)이므로 RGB에 알파를 미리 곱해 출력
-    color.rgb *= color.a;
-    return color;
+    // MToon 그림자: 밝기 = linearstep(−1 + toony, 1 − toony, N·L + shift)로 그림자 색 ↔ 기본색.
+    // MToon이 아닌 재질도 같은 식 (그림자 색 = 기본색을 어둡게, 경계 좁게 → 2단 툰)
+    float3 shade = shadeColor;
+    if (hasShadeTexture > 0.5f)
+    {
+        shade *= shadeTexture.Sample(linearWrap, input.uv).rgb;
+    }
+    const float edge0 = -1.0f + shadingToony;
+    const float edge1 = 1.0f - shadingToony;
+    const float shading = saturate((dot(normal, -normalize(lightDirection)) + shadingShift - edge0) /
+                                   max(edge1 - edge0, 1e-4f));
+    float3 lit = lerp(shade, color.rgb, shading);
+
+    // 림: 시선과 비스듬한 면(윤곽 쪽)을 밝힘 + MatCap(시점 기준 법선으로 구 텍스처를 찍음)
+    float3 rim = rimColor * pow(saturate(1.0f - dot(normal, view) + rimLift), max(rimFresnelPower, 1e-4f));
+    if (hasMatcapTexture > 0.5f)
+    {
+        const float3 right = normalize(cross(float3(0.0f, 1.0f, 0.0f), view));
+        const float3 up = cross(view, right);
+        const float2 uv = float2(dot(normal, right), -dot(normal, up)) * 0.5f + 0.5f;
+        rim += matcapColor * matcapTexture.Sample(linearWrap, uv).rgb;
+    }
+    lit += rim * lerp(1.0f, shading, rimLightingMix);
+
+    float3 emissive = emissiveColor;
+    if (hasEmissiveTexture > 0.5f)
+    {
+        emissive *= emissiveTexture.Sample(linearWrap, input.uv).rgb;
+    }
+    lit += emissive;
+
+    // 스왑체인이 premultiplied alpha(ADR-0001)이므로 sRGB로 바꾼 RGB에 알파를 곱해 출력
+    return float4(linearToSrgb(lit) * color.a, color.a);
 }
 
 // 외곽선 색 (조명 없음). 마스크 재질(머리카락 끝 등)은 잘린 모양대로 외곽선도 잘라야
@@ -114,5 +169,5 @@ float4 PSOutline(PSInput input) : SV_Target
     {
         discard;
     }
-    return float4(outlineColor.rgb * outlineColor.a, outlineColor.a);
+    return float4(linearToSrgb(outlineColor.rgb) * outlineColor.a, outlineColor.a);
 }

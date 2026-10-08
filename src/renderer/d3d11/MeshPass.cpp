@@ -24,10 +24,14 @@ struct FrameConstants {
     core::Mat4 viewProjection;
     core::Vec3 lightDirection;
     std::uint32_t boneCount = 0;  // 0이면 셰이더가 스키닝을 건너뜀
+    core::Vec3 viewDirection;
+    float padding = 0.0f;
 };
 static_assert(sizeof(core::Mat4) == 64);
 static_assert(sizeof(FrameConstants) % 16 == 0);
 
+// float3 다음에 float 하나를 붙여 16바이트 경계를 맞춤 (HLSL 패킹 규칙: 4성분이 16바이트를
+// 넘어가는 멤버는 다음 레지스터로 넘어감)
 struct MaterialConstants {
     core::Vec4 baseColor;
     float alphaCutoff = -1.0f;
@@ -35,8 +39,25 @@ struct MaterialConstants {
     float forceOpaque = 1.0f;
     float outlineWidth = 0.0f;  // 외곽선 패스에서만 0보다 큼 (m)
     core::Vec4 outlineColor;
+    core::Vec3 shadeColor;
+    float hasShadeTexture = 0.0f;
+    float shadingShift = 0.0f;
+    float shadingToony = 0.0f;
+    float rimFresnelPower = 1.0f;
+    float rimLift = 0.0f;
+    core::Vec3 rimColor;
+    float rimLightingMix = 0.0f;
+    core::Vec3 matcapColor;
+    float hasMatcapTexture = 0.0f;
+    core::Vec3 emissiveColor;
+    float hasEmissiveTexture = 0.0f;
 };
-static_assert(sizeof(MaterialConstants) % 16 == 0);
+static_assert(sizeof(MaterialConstants) == 128);
+
+// MToon이 아닌 재질의 기본 2단 툰: 그림자 면 = 기본색 × 0.53 (선형) ≈ 예전 감마 공간 0.75배,
+// 경계 폭 ±0.05 (toony 0.95)
+constexpr float kDefaultShade = 0.53f;
+constexpr float kDefaultToony = 0.95f;
 
 // 입력 레이아웃은 model::Vertex 메모리 배치와 같아야 합니다.
 static_assert(sizeof(model::Vertex) == 56);
@@ -387,6 +408,7 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
     frame.viewProjection = scene.character.viewProjection * ctx.clipTransform;
     frame.lightDirection = scene.character.lightDirection;
     frame.boneCount = scene.character.skinMatrices.empty() ? 0U : skinCapacity_;
+    frame.viewDirection = scene.character.viewDirection;
     if (!writeConstants(context, frameConstants_.Get(), frame)) {
         return false;
     }
@@ -444,9 +466,9 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
     }
 
     // 다음 패스(Direct2D)가 깊이 버퍼에 묶이지 않도록 원래 상태로 되돌림
-    ID3D11ShaderResourceView* nullView = nullptr;
-    context->PSSetShaderResources(0, 1, &nullView);
-    context->VSSetShaderResources(0, 1, &nullView);
+    const std::array<ID3D11ShaderResourceView*, kMaterialTextures> nullViews{};
+    context->PSSetShaderResources(0, kMaterialTextures, nullViews.data());
+    context->VSSetShaderResources(0, 1, nullViews.data());
     context->OMSetRenderTargets(1, &renderTarget, nullptr);
     return true;
 }
@@ -455,30 +477,59 @@ void MeshPass::drawPrimitive(const D3D11Context& ctx, const model::Model& model,
                              const GpuPrimitive& primitive) {
     ID3D11DeviceContext* context = ctx.context;
 
+    static const model::Material kDefaultMaterial;
+    const model::Material& material =
+        primitive.material >= 0 ? model.materials[static_cast<std::size_t>(primitive.material)]
+                                : kDefaultMaterial;
+
+    // t0 기본색, t1 그림자, t2 MatCap, t3 발광
+    std::array<ID3D11ShaderResourceView*, kMaterialTextures> views{
+        textureView(material.baseColorTexture), textureView(material.shadeTexture),
+        textureView(material.matcapTexture), textureView(material.emissiveTexture)};
+
     MaterialConstants constants;
-    constants.baseColor = {1.0f, 1.0f, 1.0f, 1.0f};
-    ID3D11ShaderResourceView* texture = nullptr;
-    if (primitive.material >= 0) {
-        const model::Material& material =
-            model.materials[static_cast<std::size_t>(primitive.material)];
-        constants.baseColor = material.baseColor;
-        constants.alphaCutoff =
-            material.alphaMode == model::AlphaMode::Mask ? material.alphaCutoff : -1.0f;
-        constants.forceOpaque = material.alphaMode == model::AlphaMode::Blend ? 0.0f : 1.0f;
-        if (material.baseColorTexture >= 0 &&
-            static_cast<std::size_t>(material.baseColorTexture) < textures_.size()) {
-            texture = textures_[static_cast<std::size_t>(material.baseColorTexture)].Get();
-        }
+    constants.baseColor = material.baseColor;
+    constants.alphaCutoff =
+        material.alphaMode == model::AlphaMode::Mask ? material.alphaCutoff : -1.0f;
+    constants.forceOpaque = material.alphaMode == model::AlphaMode::Blend ? 0.0f : 1.0f;
+    if (material.mtoon) {
+        constants.shadeColor = material.shadeColor;
+        constants.shadingShift = material.shadingShift;
+        constants.shadingToony = material.shadingToony;
+        constants.rimColor = material.rimColor;
+        constants.rimFresnelPower = material.rimFresnelPower;
+        constants.rimLift = material.rimLift;
+        constants.rimLightingMix = material.rimLightingMix;
+        constants.matcapColor = material.matcapColor;
+    } else {
+        // 그림자 = 기본색(텍스처 포함)을 어둡게. unlit이면 그림자 없음
+        const float shade = material.unlit ? 1.0f : kDefaultShade;
+        constants.shadeColor =
+            core::Vec3{material.baseColor.x, material.baseColor.y, material.baseColor.z} * shade;
+        constants.shadingToony = kDefaultToony;
+        views[1] = views[0];
+        views[2] = nullptr;
     }
-    constants.hasTexture = texture != nullptr ? 1.0f : 0.0f;
+    constants.emissiveColor = material.emissiveColor;
+    constants.hasTexture = views[0] != nullptr ? 1.0f : 0.0f;
+    constants.hasShadeTexture = views[1] != nullptr ? 1.0f : 0.0f;
+    constants.hasMatcapTexture = views[2] != nullptr ? 1.0f : 0.0f;
+    constants.hasEmissiveTexture = views[3] != nullptr ? 1.0f : 0.0f;
     if (!writeConstants(context, materialConstants_.Get(), constants)) {
         return;
     }
 
-    context->PSSetShaderResources(0, 1, &texture);
+    context->PSSetShaderResources(0, kMaterialTextures, views.data());
     context->RSSetState(primitive.doubleSided ? cullNone_.Get() : cullBack_.Get());
     context->OMSetDepthStencilState(primitive.blend ? depthReadOnly_.Get() : depthWrite_.Get(), 0);
     context->DrawIndexed(primitive.indexCount, primitive.firstIndex, 0);
+}
+
+// Model::textures 번호 → SRV. 없거나 읽기에 실패했으면 nullptr
+ID3D11ShaderResourceView* MeshPass::textureView(int index) const {
+    return index >= 0 && static_cast<std::size_t>(index) < textures_.size()
+               ? textures_[static_cast<std::size_t>(index)].Get()
+               : nullptr;
 }
 
 // 재질별 외곽선 굵기 (m). 반투명은 뒤가 비쳐야 하므로 외곽선 없음
@@ -508,11 +559,7 @@ void MeshPass::drawOutline(const D3D11Context& ctx, const model::Model& model,
         material.alphaMode == model::AlphaMode::Mask ? material.alphaCutoff : -1.0f;
     constants.outlineWidth = primitive.outlineWidth;
     constants.outlineColor = material.outlineColor;
-    ID3D11ShaderResourceView* texture = nullptr;
-    if (material.baseColorTexture >= 0 &&
-        static_cast<std::size_t>(material.baseColorTexture) < textures_.size()) {
-        texture = textures_[static_cast<std::size_t>(material.baseColorTexture)].Get();
-    }
+    ID3D11ShaderResourceView* texture = textureView(material.baseColorTexture);
     constants.hasTexture = texture != nullptr ? 1.0f : 0.0f;
     if (!writeConstants(context, materialConstants_.Get(), constants)) {
         return;

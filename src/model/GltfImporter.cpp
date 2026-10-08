@@ -1,5 +1,6 @@
 // glTF 2.0 / GLB / VRM 0.x·1.0 로더 (cgltf, ADR-0005). 명세: docs/03-detailed-design/model.md §4.1
 
+#include "core/Math.h"
 #include "model/Importers.h"
 #include "model/TextureSource.h"
 
@@ -278,6 +279,16 @@ core::Vec4 colorOr(std::optional<std::string_view> array, core::Vec4 fallback) {
     return {v[0], v[1], v[2], v.size() >= 4 ? v[3] : 1.0f};
 }
 
+core::Vec3 rgbOr(std::optional<std::string_view> array, core::Vec3 fallback) {
+    const core::Vec4 c = colorOr(array, {fallback.x, fallback.y, fallback.z, 1.0f});
+    return {c.x, c.y, c.z};
+}
+
+// VRM 0.x MToon 색은 Unity 재질 색 그대로(sRGB)라 선형으로 변환 (VRM 1.0·glTF는 이미 선형)
+core::Vec3 linearRgb(core::Vec3 srgb) {
+    return {core::srgbToLinear(srgb.x), core::srgbToLinear(srgb.y), core::srgbToLinear(srgb.z)};
+}
+
 std::string_view extensionJson(const cgltf_data& data, std::string_view wanted) {
     for (cgltf_size i = 0; i < data.data_extensions_count; ++i) {
         const cgltf_extension& extension = data.data_extensions[i];
@@ -452,14 +463,33 @@ private:
             dst.alphaMode = toAlphaMode(src.alpha_mode);
             dst.alphaCutoff = src.alpha_cutoff;
             dst.doubleSided = src.double_sided != 0;
-            readMToon1Outline(src, i);
+            dst.emissiveColor = {src.emissive_factor[0], src.emissive_factor[1],
+                                 src.emissive_factor[2]};
+            if (const cgltf_texture* texture = src.emissive_texture.texture; texture != nullptr) {
+                dst.emissiveTexture = indexOf(texture->image, data_.images);
+            }
+            dst.unlit = src.unlit != 0;
+            readMToon1(src, i);
         }
-        readMToon0Outlines();
+        readMToon0();
     }
 
-    // VRM 1.0: materials[i].extensions.VRMC_materials_mtoon
-    //   outlineWidthMode: "none" | "worldCoordinates"(m) | "screenCoordinates"(화면 높이 비율)
-    void readMToon1Outline(const cgltf_material& src, cgltf_size index) {
+    // glTF 텍스처 번호 → Model::textures(= 이미지) 번호, 없으면 -1
+    [[nodiscard]] int imageOfTexture(std::optional<int> texture) const {
+        if (!texture || *texture < 0 || static_cast<cgltf_size>(*texture) >= data_.textures_count) {
+            return -1;
+        }
+        return indexOf(data_.textures[*texture].image, data_.images);
+    }
+
+    // {"index": n} 형태의 텍스처 참조
+    [[nodiscard]] int textureInfo(std::string_view json, std::string_view key) const {
+        const auto info = valueSpan(json, key);
+        return info ? imageOfTexture(intMember(*info, "index")) : -1;
+    }
+
+    // VRM 1.0: materials[i].extensions.VRMC_materials_mtoon (값이 이미 VRM 1.0 정의·선형 색)
+    void readMToon1(const cgltf_material& src, cgltf_size index) {
         for (cgltf_size e = 0; e < src.extensions_count; ++e) {
             const cgltf_extension& extension = src.extensions[e];
             if (extension.name == nullptr || extension.data == nullptr ||
@@ -467,18 +497,37 @@ private:
                 continue;
             }
             const std::string_view json = extension.data;
-            const auto mode = stringMember(json, "outlineWidthMode");
-            const float width = floatMember(json, "outlineWidthFactor").value_or(0.0f);
-            if (!mode || *mode == "none" || width <= 0.0f) {
-                return;
-            }
             Material& dst = model_.materials[index];
-            dst.outlineWidth = width;
-            dst.outlineColor = colorOr(valueSpan(json, "outlineColorFactor"), dst.outlineColor);
-            if (*mode == "screenCoordinates") {
-                // 화면 높이 비율: 이 앱은 모델 키에 맞춰 창을 채우므로 모델 키를 곱해 m로 근사
-                screenOutlines_.push_back(index);
-            }
+            dst.mtoon = true;
+            dst.shadeColor = rgbOr(valueSpan(json, "shadeColorFactor"), dst.shadeColor);
+            dst.shadeTexture = textureInfo(json, "shadeMultiplyTexture");
+            dst.shadingShift = floatMember(json, "shadingShiftFactor").value_or(dst.shadingShift);
+            dst.shadingToony = floatMember(json, "shadingToonyFactor").value_or(dst.shadingToony);
+            dst.matcapColor = rgbOr(valueSpan(json, "matcapFactor"), dst.matcapColor);
+            dst.matcapTexture = textureInfo(json, "matcapTexture");
+            dst.rimColor = rgbOr(valueSpan(json, "parametricRimColorFactor"), dst.rimColor);
+            dst.rimFresnelPower =
+                floatMember(json, "parametricRimFresnelPowerFactor").value_or(dst.rimFresnelPower);
+            dst.rimLift = floatMember(json, "parametricRimLiftFactor").value_or(dst.rimLift);
+            dst.rimLightingMix =
+                floatMember(json, "rimLightingMixFactor").value_or(dst.rimLightingMix);
+            readMToon1Outline(json, index);
+        }
+    }
+
+    // outlineWidthMode: "none" | "worldCoordinates"(m) | "screenCoordinates"(화면 높이 비율)
+    void readMToon1Outline(std::string_view json, cgltf_size index) {
+        const auto mode = stringMember(json, "outlineWidthMode");
+        const float width = floatMember(json, "outlineWidthFactor").value_or(0.0f);
+        if (!mode || *mode == "none" || width <= 0.0f) {
+            return;
+        }
+        Material& dst = model_.materials[index];
+        dst.outlineWidth = width;
+        dst.outlineColor = colorOr(valueSpan(json, "outlineColorFactor"), dst.outlineColor);
+        if (*mode == "screenCoordinates") {
+            // 화면 높이 비율: 이 앱은 모델 키에 맞춰 창을 채우므로 모델 키를 곱해 m로 근사
+            screenOutlines_.push_back(index);
         }
     }
 
@@ -562,9 +611,9 @@ private:
         return group;
     }
 
-    // VRM 0.x: extensions.VRM.materialProperties[{name, floatProperties, vectorProperties}]
-    //   _OutlineWidthMode 0 = 없음, 1 = 월드, 2 = 화면 / _OutlineWidth는 cm (둘 다 cm로 취급)
-    void readMToon0Outlines() {
+    // VRM 0.x: extensions.VRM.materialProperties[{name, shader, floatProperties,
+    //   vectorProperties, textureProperties}]. 이름으로 재질을 찾고, shader가 "VRM/MToon"일 때만
+    void readMToon0() {
         const std::string_view json = extensionJson(data_, "VRM");
         const auto properties = json.empty() ? std::nullopt : valueSpan(json, "materialProperties");
         if (!properties) {
@@ -573,21 +622,63 @@ private:
         forEachObject(*properties, [&](std::string_view object) {
             const auto name = stringMember(object, "name");
             const auto floats = valueSpan(object, "floatProperties");
-            if (!name || !floats) {
-                return;
-            }
             const auto it = std::ranges::find_if(
-                model_.materials, [&](const Material& m) { return m.name == *name; });
-            const float mode = floatMember(*floats, "_OutlineWidthMode").value_or(0.0f);
-            const float width = floatMember(*floats, "_OutlineWidth").value_or(0.0f);
-            if (it == model_.materials.end() || mode <= 0.0f || width <= 0.0f) {
+                model_.materials, [&](const Material& m) { return name && m.name == *name; });
+            if (!floats || it == model_.materials.end() ||
+                stringMember(object, "shader") != std::optional<std::string_view>("VRM/MToon")) {
                 return;
             }
-            it->outlineWidth = width * 0.01f;  // cm → m
-            const auto vectors = valueSpan(object, "vectorProperties");
-            it->outlineColor = colorOr(
-                vectors ? valueSpan(*vectors, "_OutlineColor") : std::nullopt, it->outlineColor);
+            const std::string_view vectors =
+                valueSpan(object, "vectorProperties").value_or(std::string_view{});
+            const std::string_view textures =
+                valueSpan(object, "textureProperties").value_or(std::string_view{});
+            readMToon0Shading(*it, *floats, vectors, textures);
+            readMToon0Outline(*it, *floats, vectors);
         });
+    }
+
+    void readMToon0Shading(Material& dst, std::string_view floats, std::string_view vectors,
+                           std::string_view textures) const {
+        const auto color = [&](std::string_view key, Vec3 fallback) {
+            return rgbOr(vectors.empty() ? std::nullopt : valueSpan(vectors, key), fallback);
+        };
+        const auto texture = [&](std::string_view key) {
+            return imageOfTexture(textures.empty() ? std::nullopt : intMember(textures, key));
+        };
+        dst.mtoon = true;
+        dst.shadeColor = linearRgb(color("_ShadeColor", {1.0f, 1.0f, 1.0f}));
+        dst.shadeTexture = texture("_ShadeTexture");
+        // 0.x: 밝기 = saturate((N·L − min) / (max − min)), min = shift, max = lerp(1, shift, toony)
+        // → VRM 1.0의 linearstep(−1 + toony, 1 − toony, N·L + shift)로 바꾸면
+        //   shift = −(min + max) / 2, toony = 1 − (max − min) / 2 (경계의 중심과 반폭이 같음)
+        const float minThreshold = floatMember(floats, "_ShadeShift").value_or(0.0f);
+        const float toony = floatMember(floats, "_ShadeToony").value_or(0.9f);
+        const float maxThreshold = 1.0f + (minThreshold - 1.0f) * toony;
+        dst.shadingShift = -(minThreshold + maxThreshold) * 0.5f;
+        dst.shadingToony = 1.0f - (maxThreshold - minThreshold) * 0.5f;
+        dst.rimColor = linearRgb(color("_RimColor", {}));
+        dst.rimFresnelPower = floatMember(floats, "_RimFresnelPower").value_or(1.0f);
+        dst.rimLift = floatMember(floats, "_RimLift").value_or(0.0f);
+        dst.rimLightingMix = floatMember(floats, "_RimLightingMix").value_or(0.0f);
+        dst.matcapTexture = texture("_SphereAdd");  // 0.x MatCap(더하기)은 색 없이 텍스처만
+        // 0.x는 glTF emissive(대체 셰이더용 값)가 아니라 이 값을 씀. HDR 색이라 선형 그대로
+        dst.emissiveColor = color("_EmissionColor", {});
+        dst.emissiveTexture = texture("_EmissionMap");
+    }
+
+    //   _OutlineWidthMode 0 = 없음, 1 = 월드, 2 = 화면 / _OutlineWidth는 cm (둘 다 cm로 취급)
+    static void readMToon0Outline(Material& dst, std::string_view floats,
+                                  std::string_view vectors) {
+        const float mode = floatMember(floats, "_OutlineWidthMode").value_or(0.0f);
+        const float width = floatMember(floats, "_OutlineWidth").value_or(0.0f);
+        if (mode <= 0.0f || width <= 0.0f) {
+            return;
+        }
+        dst.outlineWidth = width * 0.01f;  // cm → m
+        const core::Vec4 srgb = colorOr(
+            vectors.empty() ? std::nullopt : valueSpan(vectors, "_OutlineColor"), dst.outlineColor);
+        const Vec3 rgb = linearRgb({srgb.x, srgb.y, srgb.z});
+        dst.outlineColor = {rgb.x, rgb.y, rgb.z, srgb.w};
     }
 
     // 표정 = VRM이 지정한 (메시, 모프 타깃, 가중치) 묶음의 합 (ADR-0010)

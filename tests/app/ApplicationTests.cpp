@@ -400,6 +400,10 @@ TEST_F(ApplicationTest, WithModel_RendersModelInsteadOfPlaceholder) {
     const core::RectI box = app->characterRect();
     EXPECT_NEAR(px, static_cast<float>(box.left + box.right) * 0.5f, 0.5f);
     EXPECT_NEAR(py, static_cast<float>(box.bottom), 0.5f);
+
+    // 서 있을 때(돌지 않음) 카메라는 모델 정면 +Z 쪽 (림·MatCap 계산용)
+    EXPECT_NEAR(scene.character.viewDirection.x, 0.0f, 1e-6f);
+    EXPECT_NEAR(scene.character.viewDirection.z, 1.0f, 1e-6f);
 }
 
 TEST_F(ApplicationTest, WithModel_HitRegionCoversProjectedModel) {

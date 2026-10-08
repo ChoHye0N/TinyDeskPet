@@ -209,11 +209,22 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 
 `secondaryAnimation` 안에는 `colliderGroups`가 두 단계(최상위, `boneGroups[]` 안)에 있어서, 처음 나온 키를 찾는 스캐너로는 엉뚱한 배열을 읽습니다. 바로 아래 단계만 찾는 `childSpan`을 씁니다.
 
+### MToon 정보 (ADR-0012)
+
+`Material`의 MToon 값은 VRM 1.0 정의 하나로 통일하고, 색은 모두 선형 공간입니다. 렌더러는 `mtoon = false`면 기본 2단 툰으로 그립니다.
+
+| 형식 | 출처 | 변환 |
+|---|---|---|
+| VRM 1.0 | `materials[].extensions.VRMC_materials_mtoon`: `shadeColorFactor`, `shadeMultiplyTexture`, `shadingShiftFactor`, `shadingToonyFactor`, `matcapFactor`, `matcapTexture`, `parametricRim*`, `rimLightingMixFactor`. 발광은 glTF `emissiveFactor`·`emissiveTexture` | 그대로. 텍스처 참조 `{index}`는 glTF 텍스처 → 이미지 번호로 |
+| VRM 0.x | `extensions.VRM.materialProperties[]`(재질 이름으로 매칭, `shader`가 `VRM/MToon`일 때만): `_ShadeColor`, `_ShadeTexture`, `_ShadeShift`, `_ShadeToony`, `_RimColor`, `_RimFresnelPower`, `_RimLift`, `_RimLightingMix`, `_SphereAdd`(MatCap), `_EmissionColor`, `_EmissionMap` | 색(그림자·림·외곽선)은 sRGB → 선형. 발광은 HDR이라 그대로. 그림자 경계: min = shift, max = lerp(1, shift, toony) → 1.0의 shift = −(min + max)/2, toony = 1 − (max − min)/2. glTF `emissiveFactor`(대체 셰이더용)는 무시 |
+| glTF(VRM 아님) | `emissiveFactor`·`emissiveTexture`, `KHR_materials_unlit` → `unlit` | MToon 아님 |
+| PMX, FBX | 없음 | MToon 아님 |
+
 ### 외곽선 정보 (반전 헐용)
 
 | 형식 | 출처 | 변환 |
 |---|---|---|
-| VRM 0.x | `extensions.VRM.materialProperties[]` (재질 이름으로 매칭): `_OutlineWidthMode` ≠ 0, `_OutlineWidth`(cm), `_OutlineColor` | cm → m. 화면 모드(2)도 cm로 취급 |
+| VRM 0.x | `extensions.VRM.materialProperties[]` (재질 이름으로 매칭, MToon만): `_OutlineWidthMode` ≠ 0, `_OutlineWidth`(cm), `_OutlineColor` | cm → m. 화면 모드(2)도 cm로 취급. 색은 sRGB → 선형 |
 | VRM 1.0 | `materials[].extensions.VRMC_materials_mtoon`: `outlineWidthMode`, `outlineWidthFactor`, `outlineColorFactor` | `worldCoordinates`: m 그대로. `screenCoordinates`(화면 높이 비율): 모델 키를 곱해 m로 근사 (이 앱은 창을 모델 키에 맞춤) |
 | PMX | 재질 플래그 0x10(에지 그리기), 에지 색, 에지 크기 | 크기 1 → 4mm (MMD 에지는 화면 기준이라 단위가 없어 근사) |
 | glTF(VRM 아님), FBX | 없음 | 0 (`[renderer] outline = all`이면 렌더러가 4mm 적용) |
@@ -225,7 +236,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정 |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
@@ -244,4 +255,4 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
 | `TODO(M4)` | 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 |
-| `TODO(M5)` | MToon 파라미터 (`VRMC_materials_mtoon`), VRM 1.0 SpringBone, MMD 툰·스피어 텍스처 |
+| `TODO(M5)` | ~~MToon 파라미터~~ ✅ (ADR-0012), VRM 1.0 SpringBone, MMD 툰·스피어 텍스처 |

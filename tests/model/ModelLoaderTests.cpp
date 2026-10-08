@@ -322,8 +322,8 @@ TEST(ModelLoader, Vrm0MToonOutline_IsReadPerMaterialByName) {
     const auto& materials = result.model->materials;
     ASSERT_EQ(materials.size(), 2U);
     EXPECT_NEAR(materials[0].outlineWidth, 0.006f, 1e-6f);
-    EXPECT_FLOAT_EQ(materials[0].outlineColor.x, 0.3f);
-    EXPECT_FLOAT_EQ(materials[0].outlineColor.z, 0.1f);
+    EXPECT_NEAR(materials[0].outlineColor.x, 0.07323f, 1e-4f);  // sRGB 0.3 → 선형
+    EXPECT_NEAR(materials[0].outlineColor.z, 0.01002f, 1e-4f);
     EXPECT_FLOAT_EQ(materials[1].outlineWidth, 0.0f);  // 모드 0 (외곽선 없음)
 }
 
@@ -408,4 +408,122 @@ TEST(ModelLoader, PlainGltf_HasNoSpringBones) {
     ASSERT_TRUE(result.model.has_value()) << result.error;
     EXPECT_TRUE(result.model->springGroups.empty());
     EXPECT_TRUE(result.model->springColliders.empty());
+}
+
+// ---------------------------------------------------------------------------
+// MToon 셰이딩: 그림자 색·단계, 림, MatCap, 발광 (색은 선형 공간)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 이미지 3개 + 텍스처 3개. 텍스처 i → 이미지 (2 - i) (텍스처 번호와 이미지 번호가 달라야 검증됨)
+std::string threeTextures(GltfBuilder& b) {
+    std::string images;
+    for (int i = 0; i < 3; ++i) {
+        const int view = b.addBufferView({0x89, 'P', 'N', 'G', static_cast<std::uint8_t>(i)});
+        images += (i > 0 ? "," : "") + std::string(R"({"bufferView":)") + std::to_string(view) +
+                  R"(,"mimeType":"image/png"})";
+    }
+    return R"("textures":[{"source":2},{"source":1},{"source":0}],"images":[)" + images + "]";
+}
+
+}  // namespace
+
+TEST(ModelLoader, Vrm0MToon_ReadsShadingRimMatcapAndConvertsSrgbColors) {
+    // VRM 0.x 색(_ShadeColor, _RimColor, _OutlineColor)은 sRGB → 선형으로 변환.
+    // _ShadeShift 0, _ShadeToony 0.5 → 경계 [0, 0.5] → VRM 1.0 정의로 shift −0.25, toony 0.75
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t, ",\"material\":0") + "," + kSingleNodeScene + "," + threeTextures(b) +
+        R"(,"materials":[{"name":"Body","emissiveFactor":[1,1,1]}],"extensionsUsed":["VRM"],)"
+        R"("extensions":{"VRM":{"materialProperties":[{"name":"Body","shader":"VRM/MToon",)"
+        R"("floatProperties":{"_ShadeShift":0,"_ShadeToony":0.5,"_RimFresnelPower":2,)"
+        R"("_RimLift":0.1,"_RimLightingMix":0.5,"_OutlineWidthMode":1,"_OutlineWidth":0.5},)"
+        R"("vectorProperties":{"_ShadeColor":[0.5,1,0,1],"_RimColor":[1,0.5,0,1],)"
+        R"("_EmissionColor":[0.25,0,0,1],"_OutlineColor":[0.5,0,0,1]},)"
+        R"("textureProperties":{"_MainTex":0,"_ShadeTexture":1,"_SphereAdd":2,"_EmissionMap":0}}]}})";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& m = result.model->materials[0];
+    EXPECT_TRUE(m.mtoon);
+    EXPECT_NEAR(m.shadeColor.x, 0.214041f, 1e-5f);
+    EXPECT_FLOAT_EQ(m.shadeColor.y, 1.0f);
+    EXPECT_EQ(m.shadeTexture, 1);  // 텍스처 1 → 이미지 1
+    EXPECT_NEAR(m.shadingShift, -0.25f, 1e-6f);
+    EXPECT_NEAR(m.shadingToony, 0.75f, 1e-6f);
+    EXPECT_FLOAT_EQ(m.rimColor.x, 1.0f);
+    EXPECT_NEAR(m.rimColor.y, 0.214041f, 1e-5f);
+    EXPECT_FLOAT_EQ(m.rimFresnelPower, 2.0f);
+    EXPECT_FLOAT_EQ(m.rimLift, 0.1f);
+    EXPECT_FLOAT_EQ(m.rimLightingMix, 0.5f);
+    EXPECT_EQ(m.matcapTexture, 0);  // 텍스처 2 → 이미지 0
+    EXPECT_FLOAT_EQ(m.matcapColor.x, 1.0f);
+    EXPECT_EQ(m.emissiveTexture, 2);  // 텍스처 0 → 이미지 2
+    // 발광은 HDR이라 선형 그대로. glTF emissiveFactor(대체용 unlit 재질의 값)는 무시
+    EXPECT_FLOAT_EQ(m.emissiveColor.x, 0.25f);
+    EXPECT_FLOAT_EQ(m.emissiveColor.y, 0.0f);
+    EXPECT_NEAR(m.outlineColor.x, 0.214041f, 1e-5f);
+}
+
+TEST(ModelLoader, Vrm0NonMToonShader_KeepsDefaultToon) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+        R"(,"materials":[{"name":"Metal"}],"extensionsUsed":["VRM"],)"
+        R"("extensions":{"VRM":{"materialProperties":[{"name":"Metal","shader":"VRM_USE_GLTFSHADER",)"
+        R"("floatProperties":{"_ShadeToony":0.5}}]}})";
+    const LoadResult result = load(b.build(json));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_FALSE(result.model->materials[0].mtoon);
+}
+
+TEST(ModelLoader, Vrm1MToon_ReadsFactorsTexturesAndGltfEmissive) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t, ",\"material\":0") + "," + kSingleNodeScene + "," + threeTextures(b) +
+        R"(,"extensionsUsed":["VRMC_vrm","VRMC_materials_mtoon"],"materials":[{"name":"Body",)"
+        R"("emissiveFactor":[0.5,0.25,0],"emissiveTexture":{"index":2},)"
+        R"("extensions":{"VRMC_materials_mtoon":{"shadeColorFactor":[0.5,0.25,0],)"
+        R"("shadeMultiplyTexture":{"index":0},"shadingShiftFactor":-0.1,"shadingToonyFactor":0.8,)"
+        R"("matcapFactor":[0.5,0.5,0.5],"matcapTexture":{"index":1},)"
+        R"("parametricRimColorFactor":[0,1,0],"parametricRimFresnelPowerFactor":3,)"
+        R"("parametricRimLiftFactor":0.2,"rimLightingMixFactor":0.4}}}])";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& m = result.model->materials[0];
+    EXPECT_TRUE(m.mtoon);
+    EXPECT_FLOAT_EQ(m.shadeColor.x, 0.5f);  // VRM 1.0 색은 이미 선형
+    EXPECT_FLOAT_EQ(m.shadeColor.y, 0.25f);
+    EXPECT_EQ(m.shadeTexture, 2);
+    EXPECT_FLOAT_EQ(m.shadingShift, -0.1f);
+    EXPECT_FLOAT_EQ(m.shadingToony, 0.8f);
+    EXPECT_FLOAT_EQ(m.matcapColor.x, 0.5f);
+    EXPECT_EQ(m.matcapTexture, 1);
+    EXPECT_FLOAT_EQ(m.rimColor.y, 1.0f);
+    EXPECT_FLOAT_EQ(m.rimFresnelPower, 3.0f);
+    EXPECT_FLOAT_EQ(m.rimLift, 0.2f);
+    EXPECT_FLOAT_EQ(m.rimLightingMix, 0.4f);
+    EXPECT_FLOAT_EQ(m.emissiveColor.x, 0.5f);
+    EXPECT_EQ(m.emissiveTexture, 0);
+}
+
+TEST(ModelLoader, PlainGltfMaterial_IsNotMToonButReadsEmissiveAndUnlit) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result =
+        load(b.build(meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+                     R"(,"extensionsUsed":["KHR_materials_unlit"],"materials":[{"name":"A",)"
+                     R"("emissiveFactor":[0,0,1],"extensions":{"KHR_materials_unlit":{}}}])"));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& m = result.model->materials[0];
+    EXPECT_FALSE(m.mtoon);
+    EXPECT_TRUE(m.unlit);
+    EXPECT_FLOAT_EQ(m.emissiveColor.z, 1.0f);
+    EXPECT_EQ(m.emissiveTexture, -1);
+    EXPECT_EQ(m.matcapTexture, -1);
 }

@@ -110,7 +110,7 @@ flowchart LR
 | 과제 | 학습 포인트 |
 |---|---|
 | MSAA (멀티샘플 텍스처 → resolve) ✅ | 컴포지션 스왑체인 제약, 샘플 평균 |
-| MToon 셰이더 (쉐이드 색, 림 라이트, MatCap) + 선형 색공간(sRGB) | 툰 셰이딩, 감마 |
+| MToon 셰이더 (쉐이드 색, 림 라이트, MatCap) + 선형 색공간(sRGB) ✅ (ADR-0012) | 툰 셰이딩, 감마, premultiplied alpha와 sRGB |
 | 아웃라인 (반전 헐) ✅ | 멀티 패스, 앞면 컬링, MToon·PMX 에지 굵기 |
 | SpringBone (머리카락·옷) ✅ VRM 0.x | Verlet 적분, 길이 구속, 구 충돌, 화면 이동 → 관성 |
 | 화면 전체 오버레이 ✅ (ADR-0011) | 창 = 작업 영역, 캐릭터는 창 안에서 이동, 투영 후 2D 변환 |

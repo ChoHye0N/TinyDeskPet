@@ -28,6 +28,7 @@ struct MeshCharacter {
     const model::Model* model = nullptr;  // 소유하지 않음. 렌더러는 주소가 바뀌면 GPU에 다시 올림
     core::Mat4 viewProjection = core::Mat4::identity();  // 모델 공간 → 클립 공간
     core::Vec3 lightDirection{0.3f, -0.5f, -1.0f};  // 빛이 진행하는 방향 (모델 공간)
+    core::Vec3 viewDirection{0.0f, 0.0f, 1.0f};  // 모델 → 카메라 방향 (모델 공간, 림·MatCap)
     // 애니메이션 (ADR-0010). 스킨 행렬이 비어 있으면 바인드 포즈 그대로
     std::vector<core::Mat4> skinMatrices;  // Model::bones 순서
     std::array<float, static_cast<std::size_t>(model::Expression::Count)> expressionWeights{};

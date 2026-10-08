@@ -43,6 +43,27 @@ struct Material {
     // VRM MToon의 _OutlineWidth / outlineWidthFactor, PMX 에지에서 읽음
     float outlineWidth = 0.0f;
     core::Vec4 outlineColor{0.0f, 0.0f, 0.0f, 1.0f};
+    // 발광 (glTF emissive, VRM 0.x는 MToon _EmissionColor). 텍스처 × 색을 더함
+    core::Vec3 emissiveColor;
+    int emissiveTexture = -1;
+    bool unlit = false;  // KHR_materials_unlit: 그림자 없이 기본색 그대로 (MToon이 아닐 때)
+
+    // MToon (VRM 툰 셰이딩, renderer.md §4.6). 값은 VRM 1.0 정의, 색은 모두 선형 공간.
+    // mtoon = false면 렌더러가 기본 2단 툰(그림자 = 기본색을 어둡게)으로 그림 (PMX, FBX 등)
+    bool mtoon = false;
+    core::Vec3 shadeColor{1.0f, 1.0f, 1.0f};  // 그림자 면 색 = shadeColor × shadeTexture
+    int shadeTexture = -1;                    // 없으면 흰색 (색만)
+    // 밝기 = linearstep(−1 + toony, 1 − toony, N·L + shift): 0이면 그림자 색, 1이면 기본색
+    float shadingShift = 0.0f;
+    float shadingToony = 0.9f;
+    // 림 = rimColor × (1 − N·V + rimLift)^rimFresnelPower + matcapColor × MatCap 텍스처.
+    // rimLightingMix: 1이면 그림자 쪽에서 림이 약해짐
+    core::Vec3 rimColor;
+    float rimFresnelPower = 5.0f;
+    float rimLift = 0.0f;
+    float rimLightingMix = 1.0f;
+    core::Vec3 matcapColor{1.0f, 1.0f, 1.0f};
+    int matcapTexture = -1;  // 없으면 MatCap 없음
 };
 
 // 텍스처 이미지. 둘 중 하나만 채워지며, 둘 다 비어 있으면 읽기에 실패한 것(렌더러가 흰색 처리)
