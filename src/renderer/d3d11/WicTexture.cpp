@@ -128,7 +128,9 @@ ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11De
     desc.Height = height;
     desc.MipLevels = 0;  // 0 = 전체 밉 체인
     desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    // _SRGB: 샘플링할 때 하드웨어가 선형 값으로 바꿔 줌 (셰이더는 선형 공간에서 계산, ADR-0012).
+    // 밉맵도 선형 공간에서 평균해 작은 밉이 어두워지지 않음. 모델 텍스처는 모두 색 텍스처
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;

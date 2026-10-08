@@ -36,3 +36,11 @@ TEST(MoveTowards, StepsByMaxDeltaWithoutOvershooting) {
     EXPECT_FLOAT_EQ(moveTowards(0.9f, 1.0f, 0.25f), 1.0f);  // 넘어가지 않음
     EXPECT_FLOAT_EQ(moveTowards(1.0f, 1.0f, 0.25f), 1.0f);
 }
+
+TEST(SrgbToLinear, MatchesStandardCurve) {
+    using deskpet::core::srgbToLinear;
+    EXPECT_FLOAT_EQ(srgbToLinear(0.0f), 0.0f);
+    EXPECT_FLOAT_EQ(srgbToLinear(1.0f), 1.0f);
+    EXPECT_NEAR(srgbToLinear(0.5f), 0.214041f, 1e-5f);
+    EXPECT_NEAR(srgbToLinear(0.04f), 0.04f / 12.92f, 1e-7f);  // 어두운 구간은 직선
+}

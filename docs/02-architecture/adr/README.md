@@ -25,3 +25,4 @@ ADR(Architecture Decision Record)은 **중요한 기술 결정과 그 이유**�
 | [0009](0009-multiple-model-formats.md) | VRM 외에 PMX·FBX 모델 형식 지원 | 승인 |
 | [0010](0010-procedural-animation.md) | 코드로 계산하는 휴머노이드 애니메이션과 GPU 스키닝 | 승인 |
 | [0011](0011-fullscreen-overlay.md) | 화면 전체 오버레이 창 + 픽셀 단위 클릭 통과 | 승인 |
+| [0012](0012-mtoon-linear-color.md) | MToon 셰이딩과 선형 색공간 (셰이더에서 sRGB 변환) | 승인 |

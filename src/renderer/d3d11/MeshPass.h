@@ -49,6 +49,9 @@ private:
     void drawOutline(const D3D11Context& ctx, const model::Model& model,
                      const GpuPrimitive& primitive);
     [[nodiscard]] float outlineWidthFor(const model::Material* material) const;
+    [[nodiscard]] ID3D11ShaderResourceView* textureView(int index) const;
+
+    static constexpr UINT kMaterialTextures = 4;  // 기본색, 그림자, MatCap, 발광 (t0 ~ t3)
 
     // 디바이스 독립
     ComPtr<IWICImagingFactory> wic_;

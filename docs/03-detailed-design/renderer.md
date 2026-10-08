@@ -191,17 +191,18 @@ public:
 | 항목 | 내용 |
 |---|---|
 | 셰이더 빌드 의존성 | `MeshPass.cpp`에 생성 헤더(`g_MeshVS.h`, `g_MeshPS.h`)를 `OBJECT_DEPENDS`로 명시. 컴파일러 포함 목록만으로는 생성 헤더 변경을 놓쳐, 셰이더를 고쳐도 옛 바이트코드가 실행 파일에 남는 일이 있었음 |
-| 셰이더 | `Mesh.hlsl`. 행렬은 `row_major`로 선언해 C++ 행 벡터 규약을 그대로 사용 (`mul(v, M)`). VS: 표정 오프셋을 더한 뒤 선형 블렌드 스키닝(`Σ wᵢ·Sᵢ`를 한 번 곱함), 법선은 같은 행렬의 3×3, 외곽선 패스면 법선 방향으로 `outlineWidth`만큼 밀어냄. PS: `PSMain`(툰), `PSOutline`(외곽선 색, 마스크 재질은 텍스처 알파로 잘라냄) |
+| 셰이더 | `Mesh.hlsl`. 행렬은 `row_major`로 선언해 C++ 행 벡터 규약을 그대로 사용 (`mul(v, M)`). VS: 표정 오프셋을 더한 뒤 선형 블렌드 스키닝(`Σ wᵢ·Sᵢ`를 한 번 곱함), 법선은 같은 행렬의 3×3, 외곽선 패스면 법선 방향으로 `outlineWidth`만큼 밀어냄. PS: `PSMain`(MToon), `PSOutline`(외곽선 색, 마스크 재질은 텍스처 알파로 잘라냄) |
 | 스킨 행렬 | `StructuredBuffer<SkinMatrix>`(VS t0, 구조체로 감싸 `row_major` 적용). 상수 버퍼는 4096 float4(행렬 1024개) 제한이 있어 구조화 버퍼 사용. `DYNAMIC`, 매 그리기 프레임 `Map(WRITE_DISCARD)`. 본이 없어도 1개 만들고 `boneCount = 0`이면 스키닝 생략 |
 | 표정 | 두 번째 정점 스트림(`POSITION1`, float3 × 정점 수, `DYNAMIC`). 표정 가중치가 바뀐 프레임에만 CPU에서 `Σ 가중치 × 델타`를 다시 계산해 올림 (깜빡임은 가끔이라 비용이 작음). 큰 정점 버퍼는 `IMMUTABLE`로 유지 |
-| 상수 버퍼 | b0 `FrameConstants`(뷰×투영, 빛 방향), b1 `MaterialConstants`(기본색, 알파 컷오프, 텍스처 유무, 불투명 강제, 외곽선 굵기·색). **VS·PS 모두에 b0·b1 바인딩** (VS가 외곽선 굵기를 읽음). `DYNAMIC` + `Map(WRITE_DISCARD)` |
+| 상수 버퍼 | b0 `FrameConstants`(뷰×투영, 빛 방향, 시점 방향), b1 `MaterialConstants`(기본색, 알파 컷오프, 텍스처 유무, 불투명 강제, 외곽선 굵기·색, MToon 값 — 128바이트, float3 뒤에 float 하나씩 붙여 16바이트 경계 맞춤). **VS·PS 모두에 b0·b1 바인딩** (VS가 외곽선 굵기를 읽음). `DYNAMIC` + `Map(WRITE_DISCARD)` |
 | 정점 | `model::Vertex` 56바이트 (위치 12, 법선 12, UV 8, 본 인덱스 `R16G16B16A16_UINT` 8, 가중치 16). `static_assert`로 레이아웃 고정 |
-| 업로드 | `scene.character.model` 주소가 바뀔 때 1회. 정점·인덱스는 `IMMUTABLE`. 텍스처는 WIC → 긴 변 512 이하로 축소(Fant) → **RGBA8로 다시 변환**(스케일러가 BGRA로 바꿔 내보낼 수 있어 R/B가 뒤바뀌는 것 방지) → **텍스처 패딩**(UV 섬 바깥 16텍셀을 섬 색으로, [model.md §4.8](model.md)) → `GenerateMips` |
+| 업로드 | `scene.character.model` 주소가 바뀔 때 1회. 정점·인덱스는 `IMMUTABLE`. 텍스처는 WIC → 긴 변 512 이하로 축소(Fant) → **RGBA8로 다시 변환**(스케일러가 BGRA로 바꿔 내보낼 수 있어 R/B가 뒤바뀌는 것 방지) → **텍스처 패딩**(UV 섬 바깥 16텍셀을 섬 색으로, [model.md §4.8](model.md)) → `R8G8B8A8_UNORM_SRGB`로 만들어 `GenerateMips` (샘플링·밉 평균이 선형 공간) |
 | 컬링 | `FrontCounterClockwise = TRUE`(glTF는 CCW가 앞면). `doubleSided`면 컬링 없음 |
 | 그리기 순서 | OPAQUE·MASK(깊이 쓰기) → **외곽선**(깊이 쓰기) → BLEND(깊이 읽기만). 외곽선이 반투명보다 먼저여야 반투명 뒤로 비쳐 보임 |
 | 외곽선 (반전 헐) | 법선 방향으로 부풀린 같은 메시를 `CULL_FRONT`로 다시 그림 → 뒷면만 남아 원래 몸 바깥으로 삐져나온 테두리만 보임. 굵기는 재질의 `outlineWidth`(m, VRM MToon·PMX 에지)라 캐릭터 크기·창 크기에 비례. `[renderer] outline`: `model`(모델이 지정한 재질만, 기본) / `all`(정보 없는 불투명 재질도 4mm) / `off`. 반투명 재질은 제외 |
 | 블렌드 | premultiplied: `ONE, INV_SRC_ALPHA` (색·알파 모두). PS가 `rgb *= a` 출력 |
-| 셰이딩 | 2단 툰(밝음 1.0 / 그림자 0.75). 감마 공간 그대로 계산 (선형 색공간은 M5) |
+| 셰이딩 (ADR-0012) | MToon (VRM 1.0 정의): 밝기 = linearstep(−1 + toony, 1 − toony, N·L + shift)로 그림자 색(× 그림자 텍스처) ↔ 기본색, + 림(rimColor × (1 − N·V + lift)^power + MatCap) × lerp(1, 밝기, rimLightingMix), + 발광. 텍스처 t0 기본색 / t1 그림자 / t2 MatCap / t3 발광. MToon이 아닌 재질은 그림자 = 기본색 × 0.53, 경계 ±0.05 (unlit이면 그림자 없음). MatCap UV = 시점 기준 법선 (오른쪽 = 위 × 시점, 위 = 시점 × 오른쪽). 빛 하나(흰색, 강도 1), GI 없음 |
+| 색공간 (ADR-0012) | 텍스처는 `_SRGB` 뷰로 읽어 선형 값으로 계산하고, PS 마지막에 `linearToSrgb(색) × 알파`. 렌더 타깃을 `_SRGB`로 두면 하드웨어가 알파를 곱한 값을 변환해 반투명 가장자리가 밝게 뜸 (DWM은 sRGB 색 × 알파를 기대). 외곽선 색도 같은 변환 |
 | 깊이 버퍼 | `D32_FLOAT`, `ctx.sampleCount`와 같은 샘플 수(다르면 그리기 실패). 창 크기나 샘플 수가 바뀌면 다시 만듦. 실행 후 렌더 타깃에서 분리(다음 D2D 패스용) |
 | 실패 처리 | 업로드 실패는 로그 후 그리지 않음(매 프레임 재시도 안 함). 텍스처 디코딩 실패는 흰색 |
 
@@ -249,10 +250,10 @@ namespace deskpet::renderer::d3d11 {
 | ~~`TODO(M1)`~~ | ✅ 화면 변화가 없을 때 Present 생략 (DEBT-02, §4.2) |
 | ~~`TODO(M2)`~~ | ✅ M1a: HLSL 빌드 시 컴파일 (`fxc /Fh` → 헤더 내장) |
 | ~~`TODO(M2)`~~ | ✅ M1a: `MeshPass` (정점/인덱스 버퍼, 상수 버퍼, 깊이, premultiplied alpha) |
-| ~~`TODO(M3)`~~ | ✅ M1a: WIC 텍스처 로딩 + 밉맵. sRGB(선형 색공간) 처리는 M5로 이동 |
+| ~~`TODO(M3)`~~ | ✅ M1a: WIC 텍스처 로딩 + 밉맵. ✅ M5: sRGB(선형 색공간) |
 | `TODO(M6)` | (선택) WARP 오프스크린 스냅샷 테스트 |
 | ~~`TODO(M4)`~~ | ✅ 구조화 버퍼 GPU 스키닝, 표정 모프 스트림 (ADR-0010) |
 | ~~`TODO(M5)`~~ | ✅ MSAA (멀티샘플 텍스처 → resolve, §4.2) |
 | `TODO` | (선택) alpha-to-coverage로 컷아웃 경계 안티앨리어싱 |
 | ~~`TODO(M5)`~~ | ✅ 아웃라인 패스 (반전 헐, §4.3 MeshPass) |
-| `TODO(M5)` | MToon 셰이더 |
+| ~~`TODO(M5)`~~ | ✅ MToon 셰이더 (ADR-0012). 남은 것: VRM 1.0 `shadingShiftTexture`·`rimMultiplyTexture`, GI |

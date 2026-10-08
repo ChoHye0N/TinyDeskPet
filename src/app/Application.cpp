@@ -670,6 +670,9 @@ renderer::RenderScene Application::buildScene() const {
         scene.character.model = model_.get();
         // 착지 반동은 슬라임처럼 늘이지 않고 관절로 웅크림 (anim의 applyCrouch)
         scene.character.viewProjection = turn * camera_ * boxToOverlay();
+        // 카메라(+Z)를 모델 공간으로: 몸을 돌린 만큼 반대로 돌림 (림·MatCap용)
+        scene.character.viewDirection =
+            core::Quat::axisAngle({0.0f, 1.0f, 0.0f}, -turnRadians_).rotate({0.0f, 0.0f, 1.0f});
         scene.character.skinMatrices = animation_.skin;
         scene.character.expressionWeights = animation_.expressions;
         scene.sceneRegion = sceneRegionFor(scene.character.viewProjection);
