@@ -81,10 +81,13 @@ void setRestDirections(MotionClip& clip,
                        const std::array<std::optional<core::Vec3>, kHumanBoneCount>& positions) {
     for (std::size_t i = 0; i < kHumanBoneCount; ++i) {
         const auto child = static_cast<std::size_t>(limbChild(static_cast<HumanBone>(i)));
-        if (child == 0 || !positions[i] || !positions[child]) {
+        // 지역 변수로 받아 검사: 배열 원소는 clang-tidy가 검사한 값과 같은 것으로 추적하지 못함
+        const std::optional<core::Vec3> from = positions[i];
+        const std::optional<core::Vec3> to = child != 0 ? positions[child] : std::nullopt;
+        if (!from || !to) {
             continue;
         }
-        const core::Vec3 d = *positions[child] - *positions[i];
+        const core::Vec3 d = *to - *from;
         if (core::dot(d, d) > 1e-12f) {
             clip.restDirections[i] = core::normalize(d);
         }
