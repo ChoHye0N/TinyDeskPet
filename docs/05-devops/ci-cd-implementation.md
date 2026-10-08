@@ -165,10 +165,10 @@ Ninja 생성기는 `cl.exe`와 Windows SDK 경로가 환경 변수에 있어야 
 
 | 아티팩트 | 조건 | 보관 |
 |---|---|---|
-| `DeskPet-win64-<커밋 SHA>` (zip) | Windows Release 잡 성공 시 | 14일 |
+| `DeskPet-win64-<커밋 SHA>` (zip) | main 푸시·수동 실행에서 Windows Release 잡 성공 시 (PR에서는 만들지 않음) | 14일 |
 | `*-test-logs` | 잡 실패 시 | 7일 |
 
-PR마다 실제로 실행해 볼 수 있는 zip이 만들어지므로, 머지 전에 Windows에서 직접 확인할 수 있습니다.
+main에 들어온 커밋마다 실행해 볼 수 있는 zip이 남습니다. PR마다 쌓이던 zip은 쓰지 않아 없앴습니다.
 
 ## 5. `release.yml` — 지속적 배포
 
@@ -208,9 +208,9 @@ sequenceDiagram
 
 - GitHub의 CodeQL이 코드를 데이터베이스로 바꾼 뒤 "신뢰할 수 없는 입력이 버퍼 크기 계산에 쓰인다" 같은 패턴을 질의로 찾아냅니다.
 - `build-mode: manual` — CodeQL이 우리의 실제 빌드(`cmake --build`)를 관찰해 Windows 전용 코드까지 분석합니다.
-- 결과는 저장소 **Security → Code scanning**에 표시되고, PR에는 새로 생긴 경고만 주석으로 달립니다.
-- 매주 월요일에 다시 돌려 새로 추가된 분석 규칙을 적용합니다.
-- 공개 저장소는 무료입니다. 비공개 저장소는 GitHub Advanced Security가 필요하므로, 비공개로 운영한다면 이 워크플로를 삭제하거나 `workflow_dispatch`만 남기세요.
+- 결과는 저장소 **Security → Code scanning**에 표시됩니다.
+- 실행 시점: main 푸시, 매주 월요일(새로 추가된 분석 규칙 적용), 수동. **PR에서는 돌리지 않습니다** — 필수 검사가 아니라 병합을 막지 못하고(자동 병합은 CI 필수 검사만 기다림), PR마다 Windows Release 빌드를 한 번 더 하는 중복이기 때문입니다.
+- 공개 저장소라 무료입니다. 예전에는 비공개 기간에 분석을 건너뛰는 `visibility` 작업이 있었지만, 공개 전환 후 필요 없어 삭제했습니다 (학습 노트 #10).
 
 ## 7. `dependabot.yml` — 의존성 업데이트
 
