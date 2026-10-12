@@ -4,7 +4,17 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를, 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
 릴리스 워크플로는 아래에서 해당 버전의 섹션을 읽어 GitHub Release 본문으로 사용합니다.
-작업 중인 변경은 `## [Unreleased]
+작업 중인 변경은 `## [Unreleased]`에 쌓아 두고, 릴리스할 때 버전 번호로 바꿉니다.
+
+## [Unreleased]
+
+## [1.0.1] - 2026-10-12
+
+### Fixed
+
+- 시작 직후와 크기를 바꾼 직후 머리카락·옷자락이 한 프레임씩 펼쳐진 모양(바인드 포즈)으로 번쩍이던 문제. 화면 프레임이 물리 계산 간격(1/60초) 사이에 끼어 시간이 흐르지 않은 프레임에서 흔들림 계산을 건너뛰었기 때문
+- 릴리스 워크플로가 Windows 러너에서 한글 출력 때문에 실패하던 문제 (`PYTHONUTF8=1`)
+- CHANGELOG 머리말이 잘려 `[Unreleased]` 섹션이 사라졌던 문제
 
 ## [1.0.0] - 2026-10-12
 
@@ -61,5 +71,6 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v1.0.0
