@@ -149,7 +149,7 @@ jobs:
         if: matrix.config == 'release' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: DeskPet-win64-${{ github.sha }}
+          name: TinyDeskPet-win64-${{ github.sha }}
           path: build/ci-windows/package/*.zip
           retention-days: 14
           if-no-files-found: error

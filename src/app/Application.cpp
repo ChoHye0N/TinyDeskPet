@@ -281,7 +281,7 @@ bool Application::initialize() {
     overlay_ = window_->workAreaAt(saved.value_or(core::PointI{0, 0}));
 
     platform::WindowDesc desc;
-    desc.title = "DeskPet";
+    desc.title = "TinyDeskPet";
     desc.position = {overlay_.left, overlay_.top};
     desc.size = {overlay_.width(), overlay_.height()};
     desc.alwaysOnTop = config_.window.alwaysOnTop;
@@ -315,7 +315,7 @@ bool Application::initialize() {
         resetCharacterPosition();
     }
     window_->show();
-    if (!window_->showTrayIcon("DeskPet")) {
+    if (!window_->showTrayIcon("TinyDeskPet")) {
         core::logging::warn("트레이 아이콘을 만들 수 없습니다");
     }
 
@@ -429,7 +429,8 @@ void Application::handleEvent(const core::Event& event) {
 
 void Application::onContextMenu(core::PointI screen) {
     std::vector<platform::MenuItem> items = {
-        makeMenuItem(MenuCommand::About, std::format("DeskPet {}", DESKPET_VERSION_STRING), false),
+        makeMenuItem(MenuCommand::About, std::format("TinyDeskPet {}", DESKPET_VERSION_STRING),
+                     false),
         platform::MenuItem::makeSeparator(),
     };
     appendModelMenu(items);

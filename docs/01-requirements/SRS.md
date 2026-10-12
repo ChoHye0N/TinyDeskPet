@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 문서 ID | DP-SRS-001 |
-| 프로젝트 | DeskPet — Windows 데스크톱 컴패니언 |
+| 프로젝트 | TinyDeskPet — Windows 데스크톱 컴패니언 |
 | 버전 | 0.1.0 |
 | 상태 | 승인 (M0 기준선) |
 | 작성일 | 2026-10-01 |
@@ -20,7 +20,7 @@
 
 ### 1.1 목적
 
-이 문서는 DeskPet이 **무엇을 해야 하는지**를 정의합니다. 구현 방법은 [아키텍처 설계서](../02-architecture/SAD.md)와 [상세 설계서](../03-detailed-design/README.md)에서 다룹니다.
+이 문서는 TinyDeskPet이 **무엇을 해야 하는지**를 정의합니다. 구현 방법은 [아키텍처 설계서](../02-architecture/SAD.md)와 [상세 설계서](../03-detailed-design/README.md)에서 다룹니다.
 
 ### 1.2 제품 비전
 
@@ -198,7 +198,7 @@ flowchart TD
 | FR-20, FR-21 | [character.md](../03-detailed-design/character.md) | `CharacterController::pose` | `tests/character/CharacterControllerTests.cpp` |
 | FR-30 | [core.md](../03-detailed-design/core.md) | `core/Config.cpp` | `tests/core/ConfigTests.cpp` |
 | FR-31 | [core.md](../03-detailed-design/core.md) | `core/Log.cpp` | `tests/core/LogTests.cpp` |
-| FR-32 | [ci-cd-implementation.md](../05-devops/ci-cd-implementation.md) | `cmake/Version.h.in`, `cmake/DeskPet.rc.in` | CI `release` 워크플로 |
+| FR-32 | [ci-cd-implementation.md](../05-devops/ci-cd-implementation.md) | `cmake/Version.h.in`, `cmake/TinyDeskPet.rc.in` | CI `release` 워크플로 |
 | FR-33 | [renderer.md](../03-detailed-design/renderer.md) | `D3D11Renderer::handleDeviceLost` | 수동 |
 | NFR-PORT-01 | [SAD.md](../02-architecture/SAD.md) §4 | `CMakeLists.txt` 타깃 분리 | CI `linux` 잡 |
 | NFR-MAINT-02, 03 | [ci-cd-implementation.md](../05-devops/ci-cd-implementation.md) | `.github/workflows/ci.yml` | CI |

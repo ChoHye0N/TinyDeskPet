@@ -23,7 +23,7 @@
 | character | [character.md](character.md) | ✅ | `deskpet_character` |
 | platform | [platform.md](platform.md) | API ✅ / 구현 ❌ | `deskpet_platform_api`, `deskpet_platform_win32` |
 | renderer | [renderer.md](renderer.md) | API ✅ / 구현 ❌ | `deskpet_renderer_api`, `deskpet_renderer_d3d11` |
-| app | [app.md](app.md) | ✅ (진입점 제외) | `deskpet_app`, `DeskPet` |
+| app | [app.md](app.md) | ✅ (진입점 제외) | `deskpet_app`, `TinyDeskPet` |
 
 ## 공통 규칙
 

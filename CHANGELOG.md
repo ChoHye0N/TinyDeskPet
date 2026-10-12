@@ -17,6 +17,7 @@
 
 ### Changed
 
+- 프로그램 이름을 저장소 이름과 같은 **TinyDeskPet**으로 변경: 실행 파일 `TinyDeskPet.exe`, 배포 zip `TinyDeskPet-<버전>-win64.zip`, 창·트레이·메뉴 표시와 문서. 설정·로그 파일 이름(`deskpet.ini`, `deskpet.log`)은 그대로라 기존 설정을 옮겨 쓸 수 있음
 - 모션 클립은 동작이 시작될 때 처음부터 재생 (전에는 누적 시간 기준이라 중간부터 나올 수 있었음)
 
 ### Fixed

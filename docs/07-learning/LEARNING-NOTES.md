@@ -62,7 +62,7 @@ core  로그·설정(INI)·시간·수학(Vec/Mat4/Quat)·이벤트
 | 바뀐 곳만 합성 | 영역을 매 프레임 본 위치로 줄이고, 지난 영역만 `ClearView`, 플립 모델(백버퍼 2개)이라 직전·이번 변경 영역을 백버퍼에 복사, `Present1` dirty rect로 DWM 합성 범위를 줄임 → GPU 14.3% → 10.8% (작은 창 9.0%). 잔상이 없는지 연속 캡처로 확인 |
 | 직접 드래그 | `SetCapture` + `GetMessagePos`(메시지 발생 시점 화면 좌표) (ADR-0003) |
 | 트레이 | `Shell_NotifyIconW` + `NOTIFYICON_VERSION_4`, 탐색기 재시작(`TaskbarCreated`) 시 재등록 |
-| 단일 인스턴스 | 이름 있는 뮤텍스 `Local\DeskPet.SingleInstance`, `ERROR_ALREADY_EXISTS`면 종료 |
+| 단일 인스턴스 | 이름 있는 뮤텍스 `Local\TinyDeskPet.SingleInstance`, `ERROR_ALREADY_EXISTS`면 종료 |
 | 고 DPI | 매니페스트 PerMonitorV2, `GetDpiForWindow`, `WM_DPICHANGED` → 창 크기 = 설정 × 배율 |
 | 크기 조절 | 창 크기 = 설정 × DPI × 사용자 배율. 그리는 쪽이 창에 맞춰 그리므로 창만 바꾸면 됨. DPI 변경과 같은 갱신 경로(`resizeWindow`)를 재사용해 창·렌더러·카메라·벽을 한 번에 |
 | 전력 절약 | 장면이 직전과 같으면 Present 생략 + `MsgWaitForMultipleObjectsEx`로 입력이 올 때까지 대기 |

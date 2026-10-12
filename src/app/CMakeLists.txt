@@ -22,23 +22,23 @@ deskpet_apply_compile_options(deskpet_app)
 # Windows 실행 파일
 if(WIN32)
   configure_file(
-    "${PROJECT_SOURCE_DIR}/cmake/DeskPet.rc.in"
-    "${DESKPET_GENERATED_DIR}/DeskPet.rc"
+    "${PROJECT_SOURCE_DIR}/cmake/TinyDeskPet.rc.in"
+    "${DESKPET_GENERATED_DIR}/TinyDeskPet.rc"
     @ONLY)
 
-  add_executable(DeskPet WIN32
+  add_executable(TinyDeskPet WIN32
     main_win32.cpp
-    win32/DeskPet.manifest                # DPI 인식, UTF-8 코드 페이지
-    "${DESKPET_GENERATED_DIR}/DeskPet.rc") # 버전 정보 리소스
+    win32/TinyDeskPet.manifest                # DPI 인식, UTF-8 코드 페이지
+    "${DESKPET_GENERATED_DIR}/TinyDeskPet.rc") # 버전 정보 리소스
 
-  target_link_libraries(DeskPet PRIVATE
+  target_link_libraries(TinyDeskPet PRIVATE
     deskpet::app
     deskpet::platform_win32
     deskpet::renderer_d3d11)
-  deskpet_apply_compile_options(DeskPet)
+  deskpet_apply_compile_options(TinyDeskPet)
 
   # Visual Studio 디버거의 작업 디렉터리를 소스의 config 폴더로 (deskpet.ini를 찾을 수 있게)
-  set_target_properties(DeskPet PROPERTIES
+  set_target_properties(TinyDeskPet PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/config")
 
   # 기본 설정 파일과 모델 폴더(assets/models, 커밋되지 않음)를 실행 파일 옆에 복사 (ADR-0008).
@@ -46,10 +46,10 @@ if(WIN32)
   add_custom_target(deskpet_copy_runtime_files ALL
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${PROJECT_SOURCE_DIR}/config/deskpet.ini"
-            "$<TARGET_FILE_DIR:DeskPet>/deskpet.ini"
+            "$<TARGET_FILE_DIR:TinyDeskPet>/deskpet.ini"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
             "${PROJECT_SOURCE_DIR}/assets/models"
-            "$<TARGET_FILE_DIR:DeskPet>/models"
+            "$<TARGET_FILE_DIR:TinyDeskPet>/models"
     COMMENT "deskpet.ini, assets/models 복사")
-  add_dependencies(DeskPet deskpet_copy_runtime_files)
+  add_dependencies(TinyDeskPet deskpet_copy_runtime_files)
 endif()

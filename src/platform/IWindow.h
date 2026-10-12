@@ -14,7 +14,7 @@
 namespace deskpet::platform {
 
 struct WindowDesc {
-    std::string title = "DeskPet";  // UTF-8
+    std::string title = "TinyDeskPet";  // UTF-8
     core::SizeI size{200, 200};
     core::PointI position{0, 0};  // 화면 좌표, 창 좌상단
     bool alwaysOnTop = true;

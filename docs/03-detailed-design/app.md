@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| CMake 타깃 | `deskpet_app` (STATIC, 플랫폼 독립), `DeskPet` (WIN32 실행 파일) |
+| CMake 타깃 | `deskpet_app` (STATIC, 플랫폼 독립), `TinyDeskPet` (WIN32 실행 파일) |
 | 네임스페이스 | `deskpet::app` |
 | 의존 | `deskpet_character`, `deskpet_platform_api`, `deskpet_renderer_api` (+ 실행 파일은 Win32/D3D11 구현) |
 | 관련 요구사항 | FR-05, FR-13, FR-14, FR-15, FR-30, FR-31 |
@@ -21,8 +21,8 @@
 | `src/app/Application.h/.cpp` | 메인 루프 (플랫폼 독립, 테스트 대상) |
 | `src/app/CameraFit.h/.cpp` | 모델 경계 상자를 창에 맞추는 카메라 (§4.7) |
 | `src/app/main_win32.cpp` | Windows 진입점 (`wWinMain`): 설정·로그 준비, 구체 객체 조립 |
-| `src/app/win32/DeskPet.manifest` | DPI 인식(PerMonitorV2), UTF-8 코드 페이지, 지원 OS 선언 |
-| `cmake/DeskPet.rc.in` | 실행 파일 버전 정보 리소스 템플릿 |
+| `src/app/win32/TinyDeskPet.manifest` | DPI 인식(PerMonitorV2), UTF-8 코드 페이지, 지원 OS 선언 |
+| `cmake/TinyDeskPet.rc.in` | 실행 파일 버전 정보 리소스 템플릿 |
 
 ## 3. 공개 인터페이스
 
@@ -67,7 +67,7 @@ public:
 | 3 | `renderer->initialize(window->nativeHandle(), 창 크기, options)` | `InitializationFailed` |
 | 4 | `refreshBounds()` → 저장된 위치 복원(§4.8), 없거나 화면 밖이면 `resetCharacterPosition()` | — |
 | 5 | `applyHitRegion()` — 슬라임 타원 / 모델 사각형(+외곽선 여유 3px) | — |
-| 6 | `window->show()`, `showTrayIcon("DeskPet")`(실패해도 계속), 시간 기준점 기록 | — |
+| 6 | `window->show()`, `showTrayIcon("TinyDeskPet")`(실패해도 계속), 시간 기준점 기록 | — |
 
 ### 4.2 메인 루프 (`tick`, 한 프레임)
 
@@ -107,7 +107,7 @@ if result == Fatal: exitCode = RendererFailed; break
 
 | id | 라벨 | 활성 조건 | 동작 |
 |---|---|---|---|
-| `About` | `DeskPet 0.1.0` (버전 문자열) | 항상 비활성 (정보 표시용) | — |
+| `About` | `TinyDeskPet 0.1.0` (버전 문자열) | 항상 비활성 (정보 표시용) | — |
 | — | 구분선 | | |
 | `ModelInfo` | `이름 — 작가` (이름이 없으면 파일 이름, 읽는 중이면 "모델 불러오는 중…") | 항상 비활성. 모델이 없으면 항목 없음 | — (FR-23) |
 | `ModelLicense` | `라이선스: …` | 항상 비활성. 라이선스 정보가 없으면 항목 없음 | — |
@@ -206,7 +206,7 @@ flowchart LR
 
 | 동작 | 내용 |
 |---|---|
-| 단일 인스턴스 (FR-19) | 설정·로그보다 먼저 `CreateMutexW("Local\\DeskPet.SingleInstance")`. `ERROR_ALREADY_EXISTS`면 조용히 0으로 종료 (두 번째 실행이 첫 실행의 로그를 밀어내지 않도록 로그보다 먼저) |
+| 단일 인스턴스 (FR-19) | 설정·로그보다 먼저 `CreateMutexW("Local\\TinyDeskPet.SingleInstance")`. `ERROR_ALREADY_EXISTS`면 조용히 0으로 종료 (두 번째 실행이 첫 실행의 로그를 밀어내지 않도록 로그보다 먼저) |
 | 로그 | `core::LogFile` — 이전 실행 로그는 `deskpet.log.1`, 4MB 한도 |
 | 마지막 위치 저장 | 종료 코드 0이면 `[state] last_x = 발 x, last_y = 바닥` 을 `deskpet.ini`에 기록 (`core::saveConfigValues`, 주석 유지). 공중에서 종료해도 높이는 바닥으로 |
 

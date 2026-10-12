@@ -21,7 +21,7 @@
 
 ## 1. 목적
 
-이 문서는 DeskPet의 **전체 구조**와 그 구조를 선택한 **이유**를 설명합니다. 개별 클래스의 함수 명세는 [상세 설계](../03-detailed-design/README.md)를 참고하세요.
+이 문서는 TinyDeskPet의 **전체 구조**와 그 구조를 선택한 **이유**를 설명합니다. 개별 클래스의 함수 명세는 [상세 설계](../03-detailed-design/README.md)를 참고하세요.
 
 ## 2. 아키텍처 목표
 
@@ -37,23 +37,23 @@
 
 ## 3. 시스템 컨텍스트
 
-DeskPet과 외부 요소의 관계입니다 (C4 모델 Level 1).
+TinyDeskPet과 외부 요소의 관계입니다 (C4 모델 Level 1).
 
 ```mermaid
 flowchart LR
     User(["사용자"])
     subgraph PC["사용자 PC (Windows 10/11)"]
-        DeskPet["DeskPet.exe"]
+        TinyDeskPet["TinyDeskPet.exe"]
         DWM["Desktop Window Manager<br/>(화면 합성)"]
         GPU["GPU 드라이버<br/>(D3D11)"]
         FS[("실행 파일 폴더<br/>deskpet.ini · 모델 파일")]
     end
-    User -- "마우스 입력" --> DeskPet
-    DeskPet -- "창 메시지 수신 / 창 이동" --> DWM
-    DeskPet -- "그리기 명령" --> GPU
+    User -- "마우스 입력" --> TinyDeskPet
+    TinyDeskPet -- "창 메시지 수신 / 창 이동" --> DWM
+    TinyDeskPet -- "그리기 명령" --> GPU
     GPU -- "스왑체인 버퍼" --> DWM
     DWM -- "합성된 화면" --> User
-    DeskPet -- "설정·모델 읽기" --> FS
+    TinyDeskPet -- "설정·모델 읽기" --> FS
 ```
 
 ## 4. 논리 구조: 레이어와 모듈
@@ -342,11 +342,11 @@ sequenceDiagram
 
 ### 7.1 투명 창 합성 경로
 
-레이어드 윈도우(`UpdateLayeredWindow`)는 매 프레임 GPU 결과를 CPU 메모리로 복사합니다. DeskPet은 DirectComposition으로 **GPU 안에서** 합성합니다 ([ADR-0001](adr/0001-directcomposition-for-transparency.md)).
+레이어드 윈도우(`UpdateLayeredWindow`)는 매 프레임 GPU 결과를 CPU 메모리로 복사합니다. TinyDeskPet은 DirectComposition으로 **GPU 안에서** 합성합니다 ([ADR-0001](adr/0001-directcomposition-for-transparency.md)).
 
 ```mermaid
 flowchart LR
-    subgraph DeskPet
+    subgraph TinyDeskPet
         D3D["ID3D11Device<br/>(BGRA 지원)"]
         SC["컴포지션 스왑체인<br/>B8G8R8A8 · Premultiplied Alpha<br/>Flip Sequential · 버퍼 2개"]
         V["IDCompositionVisual"]
@@ -431,7 +431,7 @@ flowchart BT
     app["deskpet_app<br/>(STATIC)"]
     win32["deskpet_platform_win32<br/>(STATIC)"]
     d3d11["deskpet_renderer_d3d11<br/>(STATIC)"]
-    exe["DeskPet.exe<br/>(WIN32 실행 파일)"]
+    exe["TinyDeskPet.exe<br/>(WIN32 실행 파일)"]
     tests["deskpet_tests<br/>(GoogleTest)"]
 
     character --> core
@@ -457,10 +457,10 @@ flowchart BT
 릴리스 산출물은 설치가 필요 없는 zip입니다 (NFR-USE-01).
 
 ```
-DeskPet-0.1.0-win64.zip
-└── DeskPet-0.1.0-win64/
+TinyDeskPet-0.1.0-win64.zip
+└── TinyDeskPet-0.1.0-win64/
     ├── bin/
-    │   ├── DeskPet.exe        ← 버전 정보 리소스 포함, MSVC 런타임 정적 링크
+    │   ├── TinyDeskPet.exe    ← 버전 정보 리소스 포함, MSVC 런타임 정적 링크
     │   └── deskpet.ini        ← 기본 설정 (주석 포함)
     ├── README.md
     ├── CHANGELOG.md

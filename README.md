@@ -1,4 +1,4 @@
-# DeskPet
+# TinyDeskPet
 
 [![CI](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/ci.yml/badge.svg)](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/codeql.yml/badge.svg)](https://github.com/ChoHye0N/TinyDeskPet/actions/workflows/codeql.yml)
@@ -56,7 +56,7 @@ flowchart LR
 
 1. Visual Studio → **폴더 열기** → 이 저장소 폴더 선택
 2. 상단 구성 목록에서 **Windows x64 (MSVC)** 선택 (`CMakePresets.json`을 자동 인식)
-3. 시작 항목에서 **DeskPet.exe** 선택 → F5
+3. 시작 항목에서 **TinyDeskPet.exe** 선택 → F5
 
 ### 명령줄에서
 
@@ -68,8 +68,8 @@ cmake --workflow --preset windows-release
 
 구성 → 빌드 → 테스트 → zip 패키지까지 한 번에 실행됩니다. 결과물:
 
-- 실행 파일: `build\windows-msvc\bin\Release\DeskPet.exe`
-- 배포 zip: `build\windows-msvc\package\DeskPet-<버전>-win64.zip`
+- 실행 파일: `build\windows-msvc\bin\Release\TinyDeskPet.exe`
+- 배포 zip: `build\windows-msvc\package\TinyDeskPet-<버전>-win64.zip`
 
 모델 파일은 저장소에 없습니다. `assets/models/`에 넣고 `deskpet.ini`의 `[model] path`로 지정하세요 ([assets/README.md](assets/README.md)). 그 밖의 빌드 방법과 문제 해결은 [기여 가이드](CONTRIBUTING.md)를 보세요.
 
