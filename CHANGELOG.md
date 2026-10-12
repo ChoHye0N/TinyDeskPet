@@ -4,41 +4,50 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를, 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
 릴리스 워크플로는 아래에서 해당 버전의 섹션을 읽어 GitHub Release 본문으로 사용합니다.
-작업 중인 변경은 `## [Unreleased]`에 쌓아 두고, 릴리스할 때 버전 번호로 바꿉니다.
+작업 중인 변경은 `## [Unreleased]
 
-## [Unreleased]
+## [1.0.0] - 2026-10-12
+
+첫 공개 릴리스입니다. 0.1.0의 슬라임 캐릭터에서 3D 휴머노이드(VRM·PMX·FBX) 데스크톱 펫으로 바뀌었습니다.
 
 ### Added
 
-- VRM 모델 표시 (ADR-0008): cgltf 기반 VRM 0.x/1.0 로더(`model` 모듈), D3D11 `MeshPass`(깊이, premultiplied alpha, 2단 툰), HLSL 빌드 시 컴파일, WIC 텍스처 + 밉맵, 모델에 맞춘 카메라. 기본 모델 Seed-san (`[model] path`)
-- 던지기(FR-16): 놓기 직전 드래그 속도로 날아가고, 공기 저항·바닥 마찰로 멈춤
-- 화면 경계(FR-17): 가상 데스크톱 좌우 벽에서 반사
-- 걷기 상태: 무작위로 좌우로 걷고, 모델은 걷는 방향으로 몸을 돌림
-- 시스템 트레이 아이콘(FR-18): 캐릭터와 같은 메뉴 + 숨기기/보이기
-- 단일 인스턴스(FR-19)
-- 고 DPI 배율 반영과 모니터 간 DPI 변경 처리 (DEBT-01)
-- 마지막 위치 저장·복원 (`deskpet.ini [state]`, 주석 유지 쓰기)
-- 로그 회전: 직전 실행 로그를 `deskpet.log.1`로 보존, 4MB 한도
-- 다중 모델 형식 (ADR-0009): PMX 2.0/2.1(MMD), FBX(바이너리·ASCII, ufbx) 로더. 외부 텍스처 파일과 TGA 지원
-- 휴머노이드 본 이름 통일: VRM humanBones, MMD 표준 본, Mixamo 이름 → 공통 `HumanBone`
-- 애니메이션 (ADR-0010): 팔 내림, 대기 숨쉬기, 걷기(팔다리 교차), 매달림, 공중, 착지 무릎 굽힘. GPU 스키닝(구조화 버퍼)과 표정(깜빡임·기쁨·놀람). VRM·PMX·FBX 공통
-- `[animation] idle_motion` 설정 (끄면 대기 중 GPU 0%)
-- Release 빌드도 PDB 생성 (크래시 주소 분석용)
+- **모델**: VRM 0.x/1.0·glTF·GLB(cgltf), PMX 2.0/2.1(MMD), FBX(바이너리·ASCII, ufbx) 로더를 하나의 모델 표현으로 통일 (ADR-0008, ADR-0009). 외부 텍스처와 TGA, 형식별 휴머노이드 본 이름(VRM·MMD·Mixamo) 매핑
+- **모델 정보와 교체**: 메뉴에 이름·작가·라이선스 표시(VRM meta, PMX 이름, FR-23), "모델 열기…"로 다른 모델 선택(다음 실행에도 유지)
+- **작업 스레드 로딩**: 파싱·자세 경계 상자·텍스처 디코딩을 작업 스레드에서 처리. 창은 바로 뜨고 모델을 바꿀 때 화면이 멈추지 않음 (렌더 스레드 멈춤 0.7초 → 4ms)
+- **렌더링**: MToon 툰 셰이딩(그림자 색·텍스처, 림, MatCap, 발광)과 선형 색공간 (ADR-0012), MSAA, 반전 헐 외곽선(MToon·PMX 에지 설정), GPU 스키닝, 표정(깜빡임·기쁨·놀람)
+- **애니메이션**: 대기·걷기·매달림·공중·착지 자세를 코드로 계산 (ADR-0010), 상태 전환 0.2초 보간, 착지 웅크림과 발 고정
+- **모션 파일**: 동작별로 VRMA·VMD(MMD)·FBX(Mixamo) 모션 재생, 모델의 T/A포즈 차이 자동 보정, VMD 다리 IK (ADR-0013, `[animation] *_clip`)
+- **머리카락·옷 흔들림**: VRM SpringBone (Verlet 적분, 구 충돌체, 화면 이동 관성, 흔들림 범위 제한)
+- **커서 바라보기**: 커서가 가까이 오면 목·머리·눈을 나눠 돌려 바라봄 (`[animation] look_at`)
+- **화면 전체 오버레이와 픽셀 단위 클릭 통과**: 캐릭터가 작업 영역 전체를 덮는 투명 창 안에서 움직이고, 캐릭터가 아닌 픽셀은 클릭이 아래 창으로 감 (ADR-0011, FR-04)
+- **다른 창 위를 걷기**: 창 제목 표시줄에 착지하고 걷다가 끝을 넘거나 창이 닫히면 떨어짐 (`[character] walk_on_windows`)
+- **상호작용**: 던지기(FR-16), 화면 좌우 벽 반사(FR-17), 무작위 걷기, 크기 조절 50~200%(FR-06), 시스템 트레이 아이콘·숨기기(FR-18), 단일 인스턴스(FR-19)
+- **환경 대응**: 고 DPI와 모니터 간 DPI 변경, 여러 모니터 경계, 전체 화면 앱(게임·영상·발표)이 있으면 자동 숨김
+- **설정·기록**: 마지막 위치·크기 저장과 복원, 로그 회전(`deskpet.log.1`, 4MB), Release 빌드 PDB
+- 단위 테스트 288개 (core, model, anim, character, app, renderer)
 
 ### Changed
 
 - 화면 변화가 없으면 Present를 생략하고 입력을 기다림 (DEBT-02, 대기 중 GPU 0%)
-- 기본 창 크기 200×200 → 320×340
-- `deskpet.ini`와 모델 폴더를 매 빌드마다 실행 파일 옆으로 복사
+- 3D·MSAA는 캐릭터 주변 영역만 그리고, 바뀐 곳만 지우고 합성 (오버레이 전환 뒤 GPU 18.4% → 10.8%)
+- 우클릭 메뉴에서 점프 삭제 (더블클릭으로 점프)
+- CI: CodeQL은 main 푸시·주간에만, 배포 zip은 main에서만 생성
 
 ### Fixed
 
-- 텍스처를 512로 축소할 때 WIC 스케일러가 BGRA로 내보내 R/B 채널이 뒤바뀌던 문제 (피부가 파랗게 보임)
-- 모델이 있을 때도 숨긴 슬라임의 숨쉬기 값이 장면을 바꿔 Present 생략이 동작하지 않던 문제
-- 텍스처 이음매(몸통 중앙, 입 테두리 등)에 얇은 선이 보이던 문제: UV 섬 바깥 여백을 섬 색으로 채우는 텍스처 패딩 추가
-- 셰이더(.hlsl)만 고치면 `MeshPass.cpp`가 다시 컴파일되지 않아 옛 셰이더가 실행 파일에 남던 빌드 의존성 문제
+- 텍스처 축소 시 R/B 채널이 뒤바뀌어 피부가 파랗게 보이던 문제
+- 텍스처 이음매(몸통 중앙, 입 테두리 등)의 얇은 선: UV 섬 바깥 여백을 섬 색으로 채움
+- 걸을 때 모델 일부가 창 밖으로 잘리던 문제, 머리카락이 창 밖으로 잘리던 문제
+- 캐릭터가 움직이는 범위가 모니터와 맞지 않던 문제
+- 착지 동작이 몸 전체를 늘이던 문제 (관절 웅크림으로)
+- 셰이더만 고치면 옛 셰이더가 실행 파일에 남던 빌드 의존성 문제
+- 헤더 의존성 누락으로 Debug 빌드에서 스택이 손상되던 문제 (한국어 Visual Studio의 `/showIncludes` 접두어)
+- 저장 위치를 복원할 때 화면 맨 위 창에 서 버리던 문제
 
 ## [0.1.0] - 2026-10-01
+
+내부 기준선입니다 (태그·배포 없음).
 
 ### Added
 
@@ -52,5 +61,5 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v1.0.0
