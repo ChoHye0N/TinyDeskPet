@@ -52,8 +52,21 @@ private:
 
     void addChain(int root, int group, const std::vector<std::vector<int>>& children,
                   std::vector<bool>& used);
+    // 본 하나를 계산할 때의 기준: 부모 누적 회전, 머리(본 위치), 몸 자세 그대로의 끝 방향
+    struct JointFrame {
+        core::Quat parentRotation;
+        core::Vec3 head;
+        core::Vec3 restDir;
+    };
+
     void step(const Skeleton& skeleton, std::vector<core::Quat>& rotations, float dt,
               core::Vec3 rootOffset);
+    // 시간이 흐르지 않은 프레임: 끝 위치를 그대로 두고 그쪽으로 본만 돌림
+    void hold(const Skeleton& skeleton, std::vector<core::Quat>& rotations, core::Vec3 rootOffset);
+    [[nodiscard]] JointFrame frameOf(const Joint& joint, const Skeleton& skeleton,
+                                     const std::vector<core::Quat>& rotations) const;
+    void orient(const Joint& joint, const JointFrame& frame, core::Vec3 dir,
+                std::vector<core::Quat>& rotations);
 
     const model::Model& model_;
     std::vector<Joint> joints_;  // 부모가 먼저 오는 순서
