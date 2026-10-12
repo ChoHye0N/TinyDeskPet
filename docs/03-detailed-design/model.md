@@ -171,7 +171,7 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | 메시 | 루트가 아닌 노드의 메시마다, 머티리얼 파트별로 `ufbx_triangulate_face`(오목 다각형 포함) → 삼각형 꼭짓점마다 정점 생성 (중복 제거 없음). 위치는 `geometry_to_world`, 법선은 `ufbx_matrix_for_normals` |
 | 머티리얼 | ufbx가 정리한 PBR 값: `base_color × base_factor`, `opacity` < 1 → Blend, 텍스처 → Mask. `features.double_sided` |
 | 텍스처 | 내장(`content`)이면 그대로, 아니면 `relative_filename` → 실패하면 파일 이름만으로 모델 폴더에서 찾음 (다른 PC에서 만든 절대 경로 대비) |
-| 본 | `bone` 속성이 있는 노드 + 스킨 클러스터가 가리키는 노드. 부모는 가장 가까운 본 조상. 위치는 클러스터의 `bind_to_world`(바인드 포즈)를 우선, 없으면 `node_to_world`. Mixamo 이름으로 휴머노이드 매핑. 메시보다 먼저 읽음 |
+| 본 | `bone` 속성이 있는 노드 + 스킨 클러스터가 가리키는 노드. 부모는 가장 가까운 본 조상. 위치는 클러스터의 `bind_to_world`(바인드 포즈)를 우선, 없으면 `node_to_world`. Mixamo·3ds Max Biped 이름으로 휴머노이드 매핑. 메시보다 먼저 읽음 |
 | 스킨 가중치 | 첫 번째 스킨 디포머의 정점별 (클러스터, 가중치) → 본 번호. 면 꼭짓점 번호는 `vertex_indices`로 정점 번호로 바꿔 조회. 스킨 없는 메시는 움직이지 않음 |
 | 표정 | 아직 읽지 않음 (FBX 블렌드 셰이프 이름이 제각각) |
 
@@ -202,7 +202,7 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 |---|---|---|
 | VRMA | glTF/GLB + `VRMC_vrm_animation` (없으면 오류) | `humanoid.humanBones`로 노드 → 본. 첫 애니메이션의 회전 채널만 (LINEAR = slerp, STEP, CUBICSPLINE은 값만). 노드 회전은 TRS, W = W부모·L (부모 먼저 순서는 직접 계산). 좌표는 VRM 1.0과 같음 |
 | VMD | `Vocaloid Motion Data 0002`(모델 이름 20바이트) / `... file`(10바이트) | 본 키 111바이트(이름 15 Shift-JIS, 프레임, 이동, 회전, 보간 64). 표준 MMD 뼈대(全ての親 → センター → グルーブ → 腰 → 上半身·下半身 …, 腕捩·手捩 포함)로 W = W부모·q. 보간은 키의 베지어 4개(X·Y·Z·회전, 바이트 [c], [c+4], [c+8], [c+12]). 足ＩＫ 키가 있는 쪽 다리는 2관절 IK(표준 길이, 무릎은 下半身 앞, 비틀림은 골반을 따름, 발 = IK 본 회전). z 반전: 회전 (x, y, z, w) → (−x, −y, z, w). 팔 기본 자세 37° 아래(A포즈). 손가락·눈 등 모르는 본은 건너뜀. 30분 초과 프레임 무시 |
-| FBX | ufbx (`ignore_geometry`) | 첫 애니메이션 스택. 구간이 없으면 키프레임 범위. 본 이름은 Mixamo 관례. `ufbx_evaluate_transform`의 로컬 회전을 부모부터 곱해 W, 기본 자세 = 애니메이션 없는 노드 값 |
+| FBX | ufbx (`ignore_geometry`) | 첫 애니메이션 스택. 구간이 없으면 키프레임 범위. 본 이름은 Mixamo·3ds Max Biped 관례. `ufbx_evaluate_transform`의 로컬 회전을 부모부터 곱해 W, 기본 자세 = 애니메이션 없는 노드 값 |
 
 ### 4.7 오류
 
@@ -275,7 +275,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
 | `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
-| `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑, 팔다리 다음 본 |
+| `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑, 3ds Max Biped(`Bip01`·`Bip001` 접두사, `_` 구분, 루트·무기·손가락은 제외), 팔다리 다음 본 |
 | `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 확장 없으면 오류. FBX(ASCII): 회전 곡선 재샘플링, 애니메이션 없으면 오류 |
 
 수동 확인: VRM 0.x 모델, VRM Add-on for Blender로 SpringBone(구·캡슐)을 넣은 VRM 1.0 모델(로그 "흔들림 N(충돌체 M)"), ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).

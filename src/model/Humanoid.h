@@ -46,7 +46,8 @@ enum class HumanBone : std::uint8_t {
 // MMD 표준 본 이름 (UTF-8, "下半身", "左腕" …)
 [[nodiscard]] HumanBone humanBoneFromMmdName(std::string_view name);
 
-// Mixamo 등 FBX 관례 ("mixamorig:LeftArm", "LeftArm" …). ':' 앞 접두사는 무시
+// FBX 관례: Mixamo ("mixamorig:LeftArm", "LeftArm" …, ':' 앞 접두사는 무시),
+// 3ds Max Biped ("Bip001 L UpperArm", "Bip01_L_UpperArm" …)
 [[nodiscard]] HumanBone humanBoneFromFbxName(std::string_view name);
 
 // 팔다리 본의 다음 본 (어깨 → 위팔 → 아래팔 → 손, 허벅지 → 정강이 → 발 → 발가락).

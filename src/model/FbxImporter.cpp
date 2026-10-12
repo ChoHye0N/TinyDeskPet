@@ -275,7 +275,7 @@ public:
             }
         }
         if (std::ranges::all_of(human, [](const ufbx_node* n) { return n == nullptr; })) {
-            error = "휴머노이드 본(Mixamo 이름 등)이 없습니다";
+            error = "휴머노이드 본(Mixamo·3ds Max Biped 이름 등)이 없습니다";
             return std::nullopt;
         }
 

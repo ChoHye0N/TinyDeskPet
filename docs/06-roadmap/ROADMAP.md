@@ -68,7 +68,7 @@ flowchart LR
 | PMX 2.0/2.1 로더 (직접 구현: UTF-16, 가변 인덱스, 본 플래그별 가변 필드) | ✅ |
 | FBX 로더 (ufbx: 축·단위 변환, 다각형 삼각화, 내장/외부 텍스처) | ✅ |
 | 외부 텍스처 파일, TGA 디코딩(stb_image) | ✅ |
-| 휴머노이드 본 이름 통일 (VRM humanBones / MMD 표준 본 / Mixamo) — M4 애니메이션의 기반 | ✅ |
+| 휴머노이드 본 이름 통일 (VRM humanBones / MMD 표준 본 / Mixamo / 3ds Max Biped) — M4 애니메이션의 기반 | ✅ |
 | 실제 모델 확인: VRM, FBX(ufbx 테스트 데이터 Kenney 캐릭터) | ✅ |
 | 실제 PMX 모델로 확인 | ⬜ (사용자 모델 필요) |
 

@@ -28,6 +28,22 @@ TEST(Humanoid, FbxMixamoNames_IgnorePrefix) {
     EXPECT_EQ(humanBoneFromFbxName("Camera"), HumanBone::None);
 }
 
+TEST(Humanoid, FbxBipedNames_IgnoreNumberedPrefixAndUnderscores) {
+    // 3ds Max Biped. 게임에서 추출한 모델에 흔하고, 내보내기 도구에 따라 공백이 '_'가 됨
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 Pelvis"), HumanBone::Hips);
+    EXPECT_EQ(humanBoneFromFbxName("Bip01 L UpperArm"), HumanBone::LeftUpperArm);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001_R_Forearm"), HumanBone::RightLowerArm);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 Spine1"), HumanBone::Chest);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Clavicle"), HumanBone::LeftShoulder);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 R Calf"), HumanBone::RightLowerLeg);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Toe0"), HumanBone::LeftToes);
+    // 몸 전체 이동용 루트(Bip001)는 hips가 아님 (Pelvis가 hips). 비슷한 이름의 다른 본도 아님
+    EXPECT_EQ(humanBoneFromFbxName("Bip001"), HumanBone::None);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001_Weapon"), HumanBone::None);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Finger0"), HumanBone::None);  // 손가락은 미지원
+    EXPECT_EQ(humanBoneFromFbxName("Biped L Thigh"), HumanBone::None);
+}
+
 TEST(Humanoid, LimbChild_IsNextBoneAlongArmsAndLegs) {
     using deskpet::model::limbChild;
     EXPECT_EQ(limbChild(HumanBone::LeftShoulder), HumanBone::LeftUpperArm);
