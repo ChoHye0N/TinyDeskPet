@@ -643,8 +643,11 @@ private:
             }
             forEachObject(*colliders, [&](std::string_view collider) {
                 spheres.push_back(static_cast<int>(model_.springColliders.size()));
-                model_.springColliders.push_back({*node, flipV0(vec3Member(collider, "offset", {})),
-                                                  floatMember(collider, "radius").value_or(0.0f)});
+                SpringCollider sphere;
+                sphere.bone = *node;
+                sphere.offset = flipV0(vec3Member(collider, "offset", {}));
+                sphere.radius = floatMember(collider, "radius").value_or(0.0f);
+                model_.springColliders.push_back(sphere);
             });
         });
         return groupSpheres;

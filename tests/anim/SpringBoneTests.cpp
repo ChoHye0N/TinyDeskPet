@@ -116,7 +116,7 @@ TEST(SpringBone, Collider_PushesTailOutOfSphere) {
     const Vec3 center = free.run(120)[3];
     const Vec3 offset = center - model.bones[0].position;
 
-    model.springColliders.push_back({0, offset, 0.05f});
+    model.springColliders.push_back({0, offset, 0.05f, false, {}});
     model.springGroups[0].colliders = {0};
     Rig blocked(model);
     // 밀어낸 뒤 본 길이로 되돌리므로 hitRadius 여유까지는 보장하지 않지만 구 안으로는 안 들어감
