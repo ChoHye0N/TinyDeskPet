@@ -178,3 +178,9 @@ TEST(PmxImporter, VertexMorphs_BecomeExpressions) {
     EXPECT_EQ(model.expression(deskpet::model::Expression::Surprised).vertices.size(), 1U);
     EXPECT_TRUE(model.expression(deskpet::model::Expression::Happy).vertices.empty());
 }
+
+TEST(PmxImporter, ModelName_IsReadAsMeta) {
+    const LoadResult result = load(buildTestPmx(0, 2));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_EQ(result.model->meta.name, "テスト");  // 일본어 이름 (없으면 영어 이름)
+}

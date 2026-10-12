@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -27,6 +28,7 @@ struct FakeWindowState {
     std::deque<std::vector<core::Event>> frames;  // pollEvents 호출마다 앞에서 하나씩 꺼냄
     int pollsBeforeQuit = 1000;  // 이 횟수만큼 poll하면 QuitRequested 발생
     int menuChoice = 0;          // showContextMenu가 돌려줄 id
+    std::optional<std::filesystem::path> openFileResult;  // 파일 열기 대화상자 결과 (없음 = 취소)
     float dpiScale = 1.0f;
     core::RectI desktopBounds{0, 0, 1920, 1080};
     bool trayResult = true;
@@ -48,6 +50,7 @@ struct FakeWindowState {
     bool clickThrough = false;  // true면 클릭이 아래 창으로 통과
     int clickThroughChanges = 0;
     int menuShownCount = 0;
+    int openFileDialogCount = 0;
     std::vector<platform::MenuItem> lastMenu;
 };
 
@@ -136,6 +139,11 @@ public:
         ++state_.menuShownCount;
         state_.lastMenu = items;
         return state_.menuChoice;
+    }
+
+    std::optional<std::filesystem::path> showOpenModelDialog() override {
+        ++state_.openFileDialogCount;
+        return state_.openFileResult;
     }
 
     [[nodiscard]] void* nativeHandle() const override { return &state_; }

@@ -76,6 +76,9 @@ struct Texture {
     int width = 0;
     int height = 0;
     std::vector<std::uint8_t> rgba;
+    // true면 rgba가 렌더러가 바로 올릴 최종 픽셀 (축소·여백 채우기 끝, 렌더러가 작업 스레드에서
+    // 미리 처리). 로더는 false로 둠
+    bool prepared = false;
 
     [[nodiscard]] bool empty() const noexcept { return encoded.empty() && rgba.empty(); }
 };
@@ -139,9 +142,18 @@ enum class VrmVersion : std::uint8_t { None, V0, V1 };  // None = VRM 확장 없
 
 enum class ModelFormat : std::uint8_t { Unknown, Gltf, Pmx, Fbx };  // Gltf = glTF/GLB/VRM
 
+// 모델 정보 (FR-23). 메뉴에 이름·작가·라이선스를 보여 이용 조건을 확인할 수 있게 함. 모두 UTF-8,
+// 없으면 빈 문자열 (VRM: meta, PMX: 모델 이름, FBX·일반 glTF: 없음)
+struct ModelMeta {
+    std::string name;
+    std::string author;
+    std::string license;
+};
+
 struct Model {
     ModelFormat format = ModelFormat::Unknown;
     VrmVersion version = VrmVersion::None;
+    ModelMeta meta;
     std::vector<Vertex> vertices;  // 바인드 포즈를 적용한 모델 공간 좌표
     std::vector<std::uint32_t> indices;
     std::vector<Primitive> primitives;

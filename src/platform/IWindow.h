@@ -6,6 +6,8 @@
 #include "core/Events.h"
 #include "core/Math.h"
 
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -85,6 +87,9 @@ public:
     // 선택한 항목의 id를 반환합니다. 취소하면 0.
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0;
+
+    // 모델 파일 열기 대화상자 (VRM·glTF·PMX·FBX). 취소하면 없음. 닫힐 때까지 기다림 (모달)
+    [[nodiscard]] virtual std::optional<std::filesystem::path> showOpenModelDialog() = 0;
 
     // 렌더러에 넘길 OS 창 핸들 (Win32에서는 HWND)
     [[nodiscard]] virtual void* nativeHandle() const = 0;

@@ -242,8 +242,10 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
     textures_.resize(model.textures.size());
     for (std::size_t i = 0; i < model.textures.size(); ++i) {
         const model::Texture& texture = model.textures[i];
+        // 작업 스레드에서 이미 준비된 텍스처는 여백 채우기가 끝나 UV 섬이 필요 없음
         const std::vector<model::UvTriangle> islands =
-            model::collectUvTriangles(model, static_cast<int>(i));
+            texture.prepared ? std::vector<model::UvTriangle>{}
+                             : model::collectUvTriangles(model, static_cast<int>(i));
         textures_[i] = createTexture(wic_.Get(), ctx.device, ctx.context, texture, islands);
         if (!textures_[i]) {
             core::logging::warn("텍스처 {} ({}) {} → 흰색으로 대체", i, texture.name,

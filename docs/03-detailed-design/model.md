@@ -221,6 +221,15 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 
 `secondaryAnimation` 안에는 `colliderGroups`가 두 단계(최상위, `boneGroups[]` 안)에 있어서, 처음 나온 키를 찾는 스캐너로는 엉뚱한 배열을 읽습니다. 바로 아래 단계만 찾는 `childSpan`을 씁니다.
 
+### 모델 정보 (`ModelMeta`, FR-23)
+
+| 형식 | 출처 |
+|---|---|
+| VRM 1.0 | `VRMC_vrm.meta`: `name`, `authors[]`("A, B"로 합침), `licenseUrl` (VRM 공개 라이선스 1.0 URL이면 "VRM Public License 1.0") |
+| VRM 0.x | `VRM.meta`: `title`, `author`, `licenseName` ("Other"면 `otherLicenseUrl`) |
+| PMX | 헤더의 모델 이름 (일본어, 비었으면 영어) |
+| FBX, 일반 glTF | 없음 (앱이 파일 이름을 보여 줌) |
+
 ### MToon 정보 (ADR-0012)
 
 `Material`의 MToon 값은 VRM 1.0 정의 하나로 통일하고, 색은 모두 선형 공간입니다. 렌더러는 `mtoon = false`면 기본 2단 툰으로 그립니다.

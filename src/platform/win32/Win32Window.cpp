@@ -4,11 +4,13 @@
 #include "platform/win32/Win32Strings.h"
 
 #include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
 #include <iterator>
 #include <shellapi.h>  // Shell_NotifyIconW
+#include <shobjidl.h>  // IFileOpenDialog
 #include <string_view>
 
 namespace deskpet::platform::win32 {
@@ -271,6 +273,36 @@ int Win32Window::showContextMenu(const std::vector<MenuItem>& items, core::Point
     DestroyMenu(menu);
 
     return static_cast<int>(selected);
+}
+
+// 공용 파일 대화상자 (IFileOpenDialog). COM이 이 스레드에서 STA로 초기화되어 있어야 함
+// (main_win32.cpp의 ComScope). 모달이라 닫힐 때까지 메시지 루프가 대화상자 안에서 돎
+std::optional<std::filesystem::path> Win32Window::showOpenModelDialog() {
+    Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&dialog)))) {
+        core::logging::warn("파일 열기 대화상자를 만들 수 없습니다");
+        return std::nullopt;
+    }
+    const std::array<COMDLG_FILTERSPEC, 2> filters = {{
+        {L"모델 파일 (VRM, glTF, PMX, FBX)", L"*.vrm;*.glb;*.gltf;*.pmx;*.fbx"},
+        {L"모든 파일", L"*.*"},
+    }};
+    dialog->SetFileTypes(static_cast<UINT>(filters.size()), filters.data());
+    dialog->SetTitle(L"모델 열기");
+    // 항상 위 오버레이가 대화상자를 가리지 않도록 소유 창으로 지정
+    if (FAILED(dialog->Show(hwnd_))) {
+        return std::nullopt;  // 취소도 실패(HRESULT_FROM_WIN32(ERROR_CANCELLED))로 옴
+    }
+    Microsoft::WRL::ComPtr<IShellItem> item;
+    PWSTR path = nullptr;
+    if (FAILED(dialog->GetResult(&item)) ||
+        FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+        return std::nullopt;
+    }
+    std::filesystem::path result(path);
+    CoTaskMemFree(path);
+    return result;
 }
 
 LRESULT CALLBACK Win32Window::windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {

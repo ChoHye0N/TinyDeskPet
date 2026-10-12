@@ -230,9 +230,12 @@ private:
             !validIndexSize(header_.morphIndexSize) || !validIndexSize(header_.rigidIndexSize)) {
             return corrupted(error, "헤더 설정값");
         }
-        for (int i = 0; i < 4; ++i) {
-            (void)reader_.text(header_.encoding);  // 모델 이름·설명 (일본어/영어)
-        }
+        // 모델 이름(일본어, 영어)과 설명(일본어, 영어). 이름은 일본어가 비었을 때만 영어
+        std::string name = reader_.text(header_.encoding);
+        std::string englishName = reader_.text(header_.encoding);
+        (void)reader_.text(header_.encoding);
+        (void)reader_.text(header_.encoding);
+        model_.meta.name = name.empty() ? std::move(englishName) : std::move(name);
         return !reader_.failed() || corrupted(error, "모델 정보");
     }
 
