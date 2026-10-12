@@ -109,8 +109,8 @@ flowchart LR
     V["VERSION<br/>0.1.0"] --> P["project(VERSION 0.1.0)"]
     G["git rev-parse --short HEAD"] --> H
     P --> H["generated/deskpet/Version.h<br/>DESKPET_VERSION_STRING<br/>DESKPET_GIT_HASH"]
-    P --> RC["generated/DeskPet.rc<br/>(exe 속성 > 자세히)"]
-    P --> Z["DeskPet-0.1.0-win64.zip"]
+    P --> RC["generated/TinyDeskPet.rc<br/>(exe 속성 > 자세히)"]
+    P --> Z["TinyDeskPet-0.1.0-win64.zip"]
     H --> Menu["우클릭 메뉴 · 로그 첫 줄"]
 ```
 
@@ -165,7 +165,7 @@ Ninja 생성기는 `cl.exe`와 Windows SDK 경로가 환경 변수에 있어야 
 
 | 아티팩트 | 조건 | 보관 |
 |---|---|---|
-| `DeskPet-win64-<커밋 SHA>` (zip) | main 푸시·수동 실행에서 Windows Release 잡 성공 시 (PR에서는 만들지 않음) | 14일 |
+| `TinyDeskPet-win64-<커밋 SHA>` (zip) | main 푸시·수동 실행에서 Windows Release 잡 성공 시 (PR에서는 만들지 않음) | 14일 |
 | `*-test-logs` | 잡 실패 시 | 7일 |
 
 main에 들어온 커밋마다 실행해 볼 수 있는 zip이 남습니다. PR마다 쌓이던 zip은 쓰지 않아 없앴습니다.

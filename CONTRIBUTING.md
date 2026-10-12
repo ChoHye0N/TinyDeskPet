@@ -19,7 +19,7 @@ git config core.hooksPath .githooks     # 커밋 전 포맷 자동 검사
 
 ## 2. 빌드와 실행
 
-**Visual Studio**: 폴더 열기 → 구성 **Windows x64 (MSVC)** → 시작 항목 **DeskPet.exe** → F5. 테스트는 테스트 탐색기.
+**Visual Studio**: 폴더 열기 → 구성 **Windows x64 (MSVC)** → 시작 항목 **TinyDeskPet.exe** → F5. 테스트는 테스트 탐색기.
 
 **명령줄**: 반드시 **x64 Native Tools Command Prompt for VS**에서 실행합니다. 일반 "Developer Command Prompt"는 32비트라 configure가 멈춥니다.
 
@@ -69,7 +69,7 @@ git config core.hooksPath .githooks     # 커밋 전 포맷 자동 검사
 [ ] 2. CHANGELOG.md: [Unreleased] → [X.Y.Z] - YYYY-MM-DD, 하단 비교 링크 추가
 [ ] 3. PR → CI 통과 → Squash 병합
 [ ] 4. git switch main && git pull
-[ ] 5. git tag -a vX.Y.Z -m "DeskPet X.Y.Z" && git push origin vX.Y.Z
+[ ] 5. git tag -a vX.Y.Z -m "TinyDeskPet X.Y.Z" && git push origin vX.Y.Z
 [ ] 6. Actions → Release 성공 확인, Releases에서 zip을 받아 깨끗한 폴더에서 실행
 ```
 

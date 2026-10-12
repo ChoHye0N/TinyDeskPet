@@ -435,7 +435,7 @@ TEST_F(ApplicationTest, Startup_ShowsTrayIcon) {
     window_.pollsBeforeQuit = 1;
     auto app = makeApp();
     (void)app->run();
-    EXPECT_EQ(window_.trayTooltip, "DeskPet");
+    EXPECT_EQ(window_.trayTooltip, "TinyDeskPet");
 }
 
 TEST_F(ApplicationTest, TrayMenu_SharesContextMenuItems) {

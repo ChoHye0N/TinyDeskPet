@@ -19,7 +19,7 @@ labels: bug
 
 ## 환경
 
-- DeskPet 버전: <!-- 메뉴 맨 위 또는 exe 속성 > 자세히 -->
+- TinyDeskPet 버전: <!-- 메뉴 맨 위 또는 exe 속성 > 자세히 -->
 - Windows 버전:
 - GPU / 드라이버:
 - 모니터 구성 (해상도, 배율, 개수):

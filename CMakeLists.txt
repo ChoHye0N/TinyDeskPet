@@ -1,5 +1,5 @@
 # =============================================================================
-# DeskPet — 루트 CMake 스크립트
+# TinyDeskPet — 루트 CMake 스크립트
 # 구조 설명: docs/02-architecture/SAD.md §10, docs/05-devops/ci-cd-implementation.md
 # =============================================================================
 cmake_minimum_required(VERSION 3.25)
@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.25)
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" DESKPET_VERSION LIMIT_COUNT 1)
 string(STRIP "${DESKPET_VERSION}" DESKPET_VERSION)
 
-project(DeskPet
+project(TinyDeskPet
   VERSION ${DESKPET_VERSION}
   DESCRIPTION "Lightweight desktop companion built with C++20, Direct3D 11 and DirectComposition"
   LANGUAGES C CXX)  # C: ufbx.c (ADR-0009)
@@ -81,5 +81,5 @@ endif()
 
 include(Packaging)
 
-message(STATUS "DeskPet ${PROJECT_VERSION} (${DESKPET_GIT_HASH}) | tests=${DESKPET_BUILD_TESTS} "
+message(STATUS "TinyDeskPet ${PROJECT_VERSION} (${DESKPET_GIT_HASH}) | tests=${DESKPET_BUILD_TESTS} "
                "werror=${DESKPET_WARNINGS_AS_ERRORS} sanitizers=${DESKPET_ENABLE_SANITIZERS}")

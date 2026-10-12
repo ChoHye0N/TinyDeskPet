@@ -17,7 +17,7 @@
 namespace deskpet::platform::win32 {
 namespace {
 
-constexpr wchar_t kClassName[] = L"DeskPetWindow";
+constexpr wchar_t kClassName[] = L"TinyDeskPetWindow";
 
 // 트레이 아이콘 알림은 우리가 정한 사용자 메시지로 창에 전달됩니다 (WM_APP 이상은 앱 전용 범위).
 constexpr UINT kTrayMessage = WM_APP + 1;

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  DeskPet 애플리케이션 매니페스트 (링커가 실행 파일에 포함)
+  TinyDeskPet 애플리케이션 매니페스트 (링커가 실행 파일에 포함)
   - dpiAwareness PerMonitorV2: 모든 좌표를 물리 픽셀로 받음 (SAD §8)
   - activeCodePage UTF-8: 프로세스의 ANSI 코드 페이지를 UTF-8로 (Windows 10 1903+)
   - supportedOS: Windows 10/11 동작 선언 (호환성 셈 방지)
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="DeskPet" version="1.0.0.0"/>
+  <assemblyIdentity type="win32" name="TinyDeskPet" version="1.0.0.0"/>
 
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>

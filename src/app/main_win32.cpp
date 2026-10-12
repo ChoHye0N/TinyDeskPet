@@ -76,7 +76,7 @@ void setupLogging(const core::LogConfig& config, const fs::path& logFile) {
 // "Local\\" 접두사: 같은 로그인 세션 안에서만 유일 (다른 사용자 세션의 실행은 막지 않음)
 class SingleInstance {
 public:
-    SingleInstance() : handle_(CreateMutexW(nullptr, FALSE, L"Local\\DeskPet.SingleInstance")) {
+    SingleInstance() : handle_(CreateMutexW(nullptr, FALSE, L"Local\\TinyDeskPet.SingleInstance")) {
         alreadyRunning_ = handle_ != nullptr && GetLastError() == ERROR_ALREADY_EXISTS;
     }
     ~SingleInstance() {
@@ -248,7 +248,7 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
 
 void showError(const std::string& message) {
     const std::wstring text = platform::win32::widen(message);
-    MessageBoxW(nullptr, text.c_str(), L"DeskPet", MB_ICONERROR | MB_OK);
+    MessageBoxW(nullptr, text.c_str(), L"TinyDeskPet", MB_ICONERROR | MB_OK);
 }
 
 int runApplication(HINSTANCE instance) {
@@ -265,7 +265,7 @@ int runApplication(HINSTANCE instance) {
     core::ConfigLoadResult loaded = core::loadConfigFile(configFile);
     setupLogging(loaded.config.log, logFile);
 
-    logging::info("DeskPet {} ({}) 시작", DESKPET_VERSION_STRING, DESKPET_GIT_HASH);
+    logging::info("TinyDeskPet {} ({}) 시작", DESKPET_VERSION_STRING, DESKPET_GIT_HASH);
     for (const std::string& warning : loaded.warnings) {
         logging::warn("설정: {}", warning);
     }
@@ -300,7 +300,7 @@ int runApplication(HINSTANCE instance) {
     if (exitCode != 0) {
         const std::u8string logPath = logFile.u8string();
         showError(
-            std::format("DeskPet을 실행하지 못했습니다 (코드 {}).\n자세한 내용은 로그를 "
+            std::format("TinyDeskPet을 실행하지 못했습니다 (코드 {}).\n자세한 내용은 로그를 "
                         "확인하세요:\n{}",
                         exitCode, std::string(logPath.begin(), logPath.end())));
     }
