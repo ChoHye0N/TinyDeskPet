@@ -15,6 +15,9 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
+#include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -30,6 +33,9 @@ enum class MenuCommand : std::uint8_t {
     ScaleInfo = 6,      // "크기 100%" (정보 표시용, 비활성)
     ScaleUp = 7,        // 크게 (FR-06)
     ScaleDown = 8,      // 작게
+    ModelInfo = 9,      // "이름 — 작가" (정보 표시용, 비활성, FR-23)
+    ModelLicense = 10,  // "라이선스: …" (정보 표시용, 비활성)
+    OpenModel = 11,     // 모델 열기… (파일 대화상자)
 };
 
 // 캐릭터 크기 조절 범위 (%, FR-06)
@@ -67,6 +73,17 @@ public:
     using MotionClips = std::array<std::shared_ptr<const model::MotionClip>, anim::kMotionCount>;
     void setMotionClips(MotionClips clips);
 
+    // 모델 파일을 읽는 함수 (실패하면 nullptr). 작업 스레드에서 불리므로 스레드 안전해야 함
+    using ModelLoader =
+        std::function<std::shared_ptr<const model::Model>(const std::filesystem::path&)>;
+    void setModelLoader(ModelLoader loader);
+    // 작업 스레드에서 읽고(자세 경계 상자까지), 끝나면 다음 프레임에 교체. 실패하면 지금 모델 유지.
+    // 첫 모델을 읽는 동안은 아무것도 그리지 않음 (슬라임이 잠깐 보였다 바뀌지 않게)
+    void loadModelAsync(std::filesystem::path path);
+    void waitForModelLoad();  // 읽는 중이면 끝날 때까지 기다림
+    // 마지막으로 읽기에 성공한 모델 파일 (setModel로 받은 모델이면 비어 있음)
+    [[nodiscard]] const std::filesystem::path& modelPath() const noexcept { return modelPath_; }
+
     [[nodiscard]] const character::CharacterController& character() const noexcept {
         return character_;
     }
@@ -98,7 +115,10 @@ private:
     void setScalePercent(int percent);
     void resizeCharacter();  // boxSize_를 targetBoxSize()로 바꾸고 카메라·벽을 갱신
     [[nodiscard]] core::SizeI targetBoxSize() const;
-    void applyAnimation();  // 클립 연결, 자세 경계 상자·카메라·벽 다시 계산
+    void applyAnimation();    // 클립 연결, 자세 경계 상자·카메라·벽 다시 계산
+    void applyLoadedModel();  // 작업 스레드가 끝났으면 결과로 교체
+    void openModelFile();     // 메뉴 "모델 열기…"
+    void appendModelMenu(std::vector<platform::MenuItem>& items) const;
     [[nodiscard]] std::optional<core::Vec3> lookTarget() const;  // 커서 → 모델 공간 목표
     void refitCamera();
     void setVisible(bool visible);
@@ -128,6 +148,16 @@ private:
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;
     MotionClips clips_;
+
+    // 작업 스레드 로딩 결과: 모델과, 같은 클립으로 미리 계산한 자세 경계 상자
+    struct LoadedModel {
+        std::filesystem::path path;
+        std::shared_ptr<const model::Model> model;
+        model::Bounds displayBounds;
+    };
+    ModelLoader modelLoader_;
+    std::future<LoadedModel> pendingModel_;
+    std::filesystem::path modelPath_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용
     model::Bounds displayBounds_;  // 카메라·클릭 영역 기준 (애니메이션 자세 포함)
     float metersPerPixel_ = 0.0f;  // 발 평면(z = 0)에서 창 1px = 모델 공간 몇 m (흔들림 관성용)

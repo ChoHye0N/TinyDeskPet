@@ -11,11 +11,13 @@
 #include "platform/win32/Win32Strings.h"
 #include "platform/win32/Win32Window.h"
 #include "renderer/d3d11/D3D11Renderer.h"
+#include "renderer/d3d11/WicTexture.h"
 
 #include <windows.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -95,12 +97,17 @@ private:
 };
 
 // 다음 실행 때 같은 자리·같은 크기로 나타나도록 발 위치와 크기를 deskpet.ini [state]에 기록
-void saveState(const fs::path& configFile, core::Vec2 feet, int scalePercent) {
-    const std::vector<core::IniValue> values = {
+// modelPath: 메뉴로 다른 모델을 열었으면 그 경로 (UTF-8, 비면 저장 안 함)
+void saveState(const fs::path& configFile, core::Vec2 feet, int scalePercent,
+               const std::string& modelPath) {
+    std::vector<core::IniValue> values = {
         {"state", "last_x", std::to_string(std::lround(feet.x))},
         {"state", "last_y", std::to_string(std::lround(feet.y))},
         {"state", "scale", std::to_string(scalePercent)},
     };
+    if (!modelPath.empty()) {
+        values.push_back({"model", "path", modelPath});
+    }
     if (!core::saveConfigValues(configFile, values)) {
         logging::warn("마지막 위치·크기를 저장하지 못했습니다 (쓰기 권한 확인)");
     }
@@ -128,17 +135,47 @@ fs::path resolvePath(const std::string& configured, const fs::path& baseDir) {
     return path.is_relative() ? baseDir / path : path;
 }
 
-// 실패해도 종료하지 않고 슬라임으로 계속합니다 (ADR-0008).
-std::shared_ptr<const model::Model> loadModel(const core::ModelConfig& config,
-                                              const fs::path& baseDir) {
-    if (config.path.empty()) {
+// 작업 스레드용 COM (텍스처 디코딩 WIC). std::async는 스레드를 재사용할 수 있어 이미 다른 방식으로
+// 초기화되어 있을 수 있음 (RPC_E_CHANGED_MODE) → 그래도 쓸 수 있고, 해제는 우리가 성공했을 때만
+struct WorkerCom {
+    WorkerCom() : result(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) {}
+    ~WorkerCom() {
+        if (SUCCEEDED(result)) {
+            CoUninitialize();
+        }
+    }
+    WorkerCom(const WorkerCom&) = delete;
+    WorkerCom& operator=(const WorkerCom&) = delete;
+    WorkerCom(WorkerCom&&) = delete;
+    WorkerCom& operator=(WorkerCom&&) = delete;
+
+    [[nodiscard]] bool usable() const { return SUCCEEDED(result) || result == RPC_E_CHANGED_MODE; }
+
+    HRESULT result;
+};
+
+std::string toUtf8(const fs::path& path) {
+    const std::u8string u8 = path.u8string();
+    return {u8.begin(), u8.end()};
+}
+
+// 실패하면 nullptr (앱은 지금 모델 또는 슬라임으로 계속, ADR-0008). Application이 작업 스레드에서
+// 부름: 파일 읽기와 파싱만 하고 COM·창은 건드리지 않음 (로그는 스레드 안전)
+std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
+    const auto started = std::chrono::steady_clock::now();
+    const std::string name = toUtf8(path.filename());
+    model::LoadResult result = model::loadModelFile(path);
+    if (!result.model) {
+        logging::warn("모델을 불러오지 못했습니다 ({}): {}", name, result.error);
         return nullptr;
     }
-    model::LoadResult result = model::loadModelFile(resolvePath(config.path, baseDir));
-    if (!result.model) {
-        logging::warn("모델을 불러오지 못해 슬라임으로 표시합니다 ({}): {}", config.path,
-                      result.error);
-        return nullptr;
+    // 텍스처 디코딩·축소도 여기서 (렌더 스레드에서 하면 큰 모델은 0.7초가량 화면이 멈춤)
+    int preparedTextures = 0;
+    {
+        const WorkerCom com;
+        if (com.usable()) {
+            preparedTextures = renderer::d3d11::prepareTextures(*result.model);
+        }
     }
     const model::Model& m = *result.model;
     const char* format = "glTF";
@@ -153,10 +190,16 @@ std::shared_ptr<const model::Model> loadModel(const core::ModelConfig& config,
     }
     const auto humanoid = std::ranges::count_if(
         m.bones, [](const model::Bone& b) { return b.human != model::HumanBone::None; });
+    const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
     logging::info(
-        "모델 로드: {} ({}, 정점 {}, 머티리얼 {}, 텍스처 {}, 본 {}(휴머노이드 {}), 높이 {:.2f}m)",
-        config.path, format, m.vertices.size(), m.materials.size(), m.textures.size(),
-        m.bones.size(), humanoid, m.bounds.size().y);
+        "모델 로드: {} ({}, 정점 {}, 머티리얼 {}, 텍스처 {}(준비 {}), 본 {}(휴머노이드 {}), "
+        "높이 {:.2f}m, {:.2f}초)",
+        name, format, m.vertices.size(), m.materials.size(), m.textures.size(), preparedTextures,
+        m.bones.size(), humanoid, m.bounds.size().y, elapsed.count());
+    if (!m.meta.name.empty()) {
+        logging::info("모델 정보: {} / 작가 {} / 라이선스 {}", m.meta.name, m.meta.author,
+                      m.meta.license);
+    }
     return std::make_shared<const model::Model>(std::move(*result.model));
 }
 
@@ -225,16 +268,24 @@ int runApplication(HINSTANCE instance) {
                                  std::make_unique<platform::win32::Win32Window>(instance),
                                  std::make_unique<renderer::d3d11::D3D11Renderer>());
     application.setMotionClips(loadMotionClips(loaded.config.animation, baseDir));
-    if (auto model = loadModel(loaded.config.model, baseDir)) {
-        application.setModel(std::move(model));
+    // 큰 모델은 읽는 데 1초 넘게 걸리므로 작업 스레드에서 (그동안 창·메뉴는 바로 동작)
+    application.setModelLoader(&loadModel);
+    const fs::path configuredModel = loaded.config.model.path.empty()
+                                         ? fs::path{}
+                                         : resolvePath(loaded.config.model.path, baseDir);
+    if (!configuredModel.empty()) {
+        application.loadModelAsync(configuredModel);
     }
 
     const int exitCode = application.run();
     if (exitCode == 0) {
         // 공중에서 종료했어도 높이는 바닥으로 저장 (화면 위쪽 밖 좌표는 복원 시 버려지므로)
         const auto& character = application.character();
+        // 메뉴로 다른 모델을 열었으면 다음 실행에도 그 모델로
+        const fs::path& opened = application.modelPath();
+        const bool changed = !opened.empty() && opened != configuredModel;
         saveState(configFile, {character.position().x, character.ground()},
-                  application.scalePercent());
+                  application.scalePercent(), changed ? toUtf8(opened) : std::string{});
     }
     if (exitCode != 0) {
         const std::u8string logPath = logFile.u8string();

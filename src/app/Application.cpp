@@ -5,9 +5,11 @@
 #include "deskpet/Version.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -71,7 +73,10 @@ Application::Application(core::AppConfig config, std::unique_ptr<platform::IWind
     boxSize_ = targetBoxSize();
 }
 
-Application::~Application() = default;
+// 작업 스레드가 this를 쓰지 않지만(클립·로더를 복사), 결과를 버리기 전에 끝나길 기다림
+Application::~Application() {
+    waitForModelLoad();
+}
 
 void Application::setModel(std::shared_ptr<const model::Model> model) {
     model_ = std::move(model);
@@ -88,6 +93,63 @@ void Application::setMotionClips(MotionClips clips) {
         animator_.emplace(*model_);  // 전환·흔들림 상태도 처음부터
     }
     applyAnimation();
+}
+
+void Application::setModelLoader(ModelLoader loader) {
+    modelLoader_ = std::move(loader);
+}
+
+void Application::loadModelAsync(std::filesystem::path path) {
+    if (!modelLoader_) {
+        return;
+    }
+    waitForModelLoad();  // 앞선 요청이 있으면 그 결과는 버림 (마지막 요청만 반영)
+    pendingModel_ = std::async(
+        std::launch::async, [loader = modelLoader_, clips = clips_, path = std::move(path)] {
+            LoadedModel loaded{path, loader(path), {}};
+            if (loaded.model) {
+                // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은 클립으로 계산해야 맞음
+                anim::ProceduralAnimator animator(*loaded.model);
+                for (std::size_t m = 0; m < clips.size(); ++m) {
+                    animator.setClip(static_cast<anim::Motion>(m), clips[m]);
+                }
+                loaded.displayBounds = animator.displayBounds(kWalkTurnRadians);
+            }
+            return loaded;
+        });
+}
+
+void Application::waitForModelLoad() {
+    if (pendingModel_.valid()) {
+        pendingModel_.wait();
+    }
+}
+
+void Application::applyLoadedModel() {
+    if (!pendingModel_.valid() ||
+        pendingModel_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        return;
+    }
+    LoadedModel loaded = pendingModel_.get();
+    if (!loaded.model) {
+        return;  // 실패 이유는 로더가 로그에 남김. 지금 모델 유지
+    }
+    model_ = std::move(loaded.model);
+    modelPath_ = std::move(loaded.path);
+    animator_.emplace(*model_);
+    for (std::size_t m = 0; m < clips_.size(); ++m) {
+        animator_->setClip(static_cast<anim::Motion>(m), clips_[m]);
+    }
+    displayBounds_ = loaded.displayBounds;
+    hasLastFeet_ = false;  // 흔들림 관성이 이전 모델 기준으로 튀지 않게
+    refitCamera();
+    refreshBounds();
+}
+
+void Application::openModelFile() {
+    if (std::optional<std::filesystem::path> path = window_->showOpenModelDialog()) {
+        loadModelAsync(std::move(*path));
+    }
 }
 
 void Application::applyAnimation() {
@@ -279,6 +341,7 @@ bool Application::tick() {
     if (quitRequested_) {
         return false;
     }
+    applyLoadedModel();
     updateFullscreenHiding();
     if (hidden_ || autoHidden_) {
         // 숨김 중에는 갱신·렌더링 없이 메뉴(트레이) 입력만 기다림
@@ -364,21 +427,50 @@ void Application::handleEvent(const core::Event& event) {
 // ---------------------------------------------------------------------------
 
 void Application::onContextMenu(core::PointI screen) {
-    const std::vector<platform::MenuItem> items = {
+    std::vector<platform::MenuItem> items = {
         makeMenuItem(MenuCommand::About, std::format("DeskPet {}", DESKPET_VERSION_STRING), false),
         platform::MenuItem::makeSeparator(),
-        makeMenuItem(MenuCommand::ScaleInfo, std::format("크기 {}%", scalePercent_), false),
-        makeMenuItem(MenuCommand::ScaleUp, "크게", scalePercent_ < kMaxScalePercent),
-        makeMenuItem(MenuCommand::ScaleDown, "작게", scalePercent_ > kMinScalePercent),
-        platform::MenuItem::makeSeparator(),
-        makeMenuItem(MenuCommand::ResetPosition, "위치 초기화"),
-        makeMenuItem(MenuCommand::ToggleVisible, hidden_ ? "보이기" : "숨기기"),
-        platform::MenuItem::makeSeparator(),
-        makeMenuItem(MenuCommand::Quit, "종료"),
     };
+    appendModelMenu(items);
+    items.insert(
+        items.end(),
+        {
+            platform::MenuItem::makeSeparator(),
+            makeMenuItem(MenuCommand::ScaleInfo, std::format("크기 {}%", scalePercent_), false),
+            makeMenuItem(MenuCommand::ScaleUp, "크게", scalePercent_ < kMaxScalePercent),
+            makeMenuItem(MenuCommand::ScaleDown, "작게", scalePercent_ > kMinScalePercent),
+            platform::MenuItem::makeSeparator(),
+            makeMenuItem(MenuCommand::ResetPosition, "위치 초기화"),
+            makeMenuItem(MenuCommand::ToggleVisible, hidden_ ? "보이기" : "숨기기"),
+            platform::MenuItem::makeSeparator(),
+            makeMenuItem(MenuCommand::Quit, "종료"),
+        });
     // 캐릭터 우클릭과 트레이 아이콘이 같은 메뉴를 씀 (FR-18)
 
     executeMenuCommand(window_->showContextMenu(items, screen));
+}
+
+// 모델 정보(이름 — 작가, 라이선스)와 "모델 열기…". 제작자가 정한 이용 조건을 확인할 수 있게 함
+// (FR-23). 정보가 없는 항목은 빼고, 이름이 없으면 파일 이름
+void Application::appendModelMenu(std::vector<platform::MenuItem>& items) const {
+    if (pendingModel_.valid()) {
+        items.push_back(makeMenuItem(MenuCommand::ModelInfo, "모델 불러오는 중…", false));
+    } else if (model_) {
+        const model::ModelMeta& meta = model_->meta;
+        std::string name = meta.name;
+        if (name.empty()) {
+            const std::u8string stem = modelPath_.stem().u8string();
+            name = stem.empty() ? "모델" : std::string(stem.begin(), stem.end());
+        }
+        items.push_back(makeMenuItem(
+            MenuCommand::ModelInfo,
+            meta.author.empty() ? name : std::format("{} — {}", name, meta.author), false));
+        if (!meta.license.empty()) {
+            items.push_back(makeMenuItem(MenuCommand::ModelLicense,
+                                         std::format("라이선스: {}", meta.license), false));
+        }
+    }
+    items.push_back(makeMenuItem(MenuCommand::OpenModel, "모델 열기…"));
 }
 
 void Application::executeMenuCommand(int commandId) {
@@ -388,7 +480,10 @@ void Application::executeMenuCommand(int commandId) {
         case MenuCommand::ResetPosition: resetCharacterPosition(); break;
         case MenuCommand::Quit: requestQuit(); break;
         case MenuCommand::ToggleVisible: setVisible(hidden_); break;
+        case MenuCommand::OpenModel: openModelFile(); break;
         case MenuCommand::About:
+        case MenuCommand::ModelInfo:
+        case MenuCommand::ModelLicense:
         case MenuCommand::ScaleInfo:
         default: break;  // 0(취소) 포함
     }
@@ -716,6 +811,11 @@ renderer::RenderScene Application::buildScene() const {
     body.radiusY = radiusY;
     body.eyesClosed = pose.eyesClosed;
 
+    if (!model_ && pendingModel_.valid()) {
+        // 첫 모델을 읽는 중: 슬라임이 잠깐 보였다가 모델로 바뀌면 어색하므로 아무것도 그리지 않음
+        body = {};
+        body.visible = false;
+    }
     if (model_) {
         // 숨긴 슬라임 값도 기본값으로 고정: 숨쉬기로 매 프레임 바뀌면 장면 비교가 항상 "다름"이
         // 되어 렌더러가 Present를 생략하지 못함 (DEBT-02)

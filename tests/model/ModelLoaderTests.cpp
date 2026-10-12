@@ -527,3 +527,45 @@ TEST(ModelLoader, PlainGltfMaterial_IsNotMToonButReadsEmissiveAndUnlit) {
     EXPECT_EQ(m.emissiveTexture, -1);
     EXPECT_EQ(m.matcapTexture, -1);
 }
+
+// ---------------------------------------------------------------------------
+// VRM 메타 (이름·작가·라이선스, FR-23)
+// ---------------------------------------------------------------------------
+
+TEST(ModelLoader, Vrm0Meta_ReadsTitleAuthorAndLicense) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t) + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{"meta":{"title":"Kei","version":"1.0",)"
+        R"("author":"Someone","licenseName":"CC_BY","otherLicenseUrl":""}}})";
+    const LoadResult result = load(b.build(json));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_EQ(result.model->meta.name, "Kei");
+    EXPECT_EQ(result.model->meta.author, "Someone");
+    EXPECT_EQ(result.model->meta.license, "CC_BY");
+}
+
+TEST(ModelLoader, Vrm1Meta_JoinsAuthorsAndNamesKnownLicense) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t) + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRMC_vrm"],"extensions":{"VRMC_vrm":{"specVersion":"1.0",)"
+        R"("humanoid":{"humanBones":{}},"meta":{"name":"Alicia","authors":["A","B"],)"
+        R"("licenseUrl":"https://vrm.dev/licenses/1.0/"}}})";
+    const LoadResult result = load(b.build(json));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_EQ(result.model->meta.name, "Alicia");
+    EXPECT_EQ(result.model->meta.author, "A, B");
+    EXPECT_EQ(result.model->meta.license, "VRM Public License 1.0");
+}
+
+TEST(ModelLoader, PlainGltf_HasEmptyMeta) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(b.build(meshJson(t) + "," + kSingleNodeScene));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_TRUE(result.model->meta.name.empty());
+    EXPECT_TRUE(result.model->meta.author.empty());
+}

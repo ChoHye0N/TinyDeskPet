@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -392,6 +393,7 @@ public:
         }
         readExpressions();
         readVrm0SpringBones();
+        readMeta();
         model_.bounds = computeBounds(model_.vertices);
         const float height = model_.bounds.max.y - model_.bounds.min.y;
         for (const cgltf_size index : screenOutlines_) {
@@ -487,6 +489,60 @@ private:
     [[nodiscard]] int textureInfo(std::string_view json, std::string_view key) const {
         const auto info = valueSpan(json, key);
         return info ? imageOfTexture(intMember(*info, "index")) : -1;
+    }
+
+    // VRM 0.x: extensions.VRM.meta {title, author, licenseName}
+    // VRM 1.0: extensions.VRMC_vrm.meta {name, authors[], licenseUrl}
+    void readMeta() {
+        ModelMeta& meta = model_.meta;
+        if (const std::string_view v1 = extensionJson(data_, "VRMC_vrm"); !v1.empty()) {
+            const auto object = childSpan(v1, "meta");
+            if (!object) {
+                return;
+            }
+            meta.name = std::string(stringMember(*object, "name").value_or(""));
+            meta.author = joinStrings(valueSpan(*object, "authors"));
+            meta.license = licenseName(stringMember(*object, "licenseUrl").value_or(""));
+        } else if (const std::string_view v0 = extensionJson(data_, "VRM"); !v0.empty()) {
+            const auto object = childSpan(v0, "meta");
+            if (!object) {
+                return;
+            }
+            meta.name = std::string(stringMember(*object, "title").value_or(""));
+            meta.author = std::string(stringMember(*object, "author").value_or(""));
+            meta.license = std::string(stringMember(*object, "licenseName").value_or(""));
+            if (meta.license == "Other") {  // 0.x "Other"는 otherLicenseUrl에 실제 조건
+                meta.license = std::string(stringMember(*object, "otherLicenseUrl").value_or(""));
+            }
+        }
+    }
+
+    // ["A", "B"] → "A, B"
+    static std::string joinStrings(std::optional<std::string_view> array) {
+        std::string joined;
+        if (!array) {
+            return joined;
+        }
+        for (std::size_t pos = array->find('"'); pos != std::string_view::npos;) {
+            const std::size_t end = array->find('"', pos + 1);
+            if (end == std::string_view::npos) {
+                break;
+            }
+            if (!joined.empty()) {
+                joined += ", ";
+            }
+            joined += array->substr(pos + 1, end - pos - 1);
+            pos = array->find('"', end + 1);
+        }
+        return joined;
+    }
+
+    // VRM 1.0 라이선스는 URL. 알려진 VRM 공개 라이선스는 이름으로
+    static std::string licenseName(std::string_view url) {
+        if (url.find("vrm.dev/licenses/1.0") != std::string_view::npos) {
+            return "VRM Public License 1.0";
+        }
+        return std::string(url);
     }
 
     // VRM 1.0: materials[i].extensions.VRMC_materials_mtoon (값이 이미 VRM 1.0 정의·선형 색)

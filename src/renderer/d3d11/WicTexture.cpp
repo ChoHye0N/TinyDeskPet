@@ -3,6 +3,8 @@
 #include "renderer/d3d11/DxCheck.h"
 
 #include <algorithm>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace deskpet::renderer::d3d11 {
@@ -69,33 +71,42 @@ ComPtr<IWICBitmapSource> wrapPixels(IWICImagingFactory* wic, const model::Textur
 
 }  // namespace
 
-ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11Device* device,
-                                               ID3D11DeviceContext* context,
-                                               const model::Texture& image,
-                                               std::span<const model::UvTriangle> islands) {
+namespace {
+
+struct Pixels {
+    UINT width = 0;
+    UINT height = 0;
+    std::vector<BYTE> rgba;
+};
+
+// CPU 단계: 디코딩 → 긴 변 512 이하로 축소 → RGBA8 → UV 섬 바깥 여백 채우기. GPU를 쓰지 않으므로
+// 작업 스레드에서도 부를 수 있음 (그 스레드에서 COM 초기화 필요)
+std::optional<Pixels> preparePixels(IWICImagingFactory* wic, const model::Texture& image,
+                                    std::span<const model::UvTriangle> islands) {
     const ComPtr<IWICBitmapSource> decoded =
         image.rgba.empty() ? decode(wic, image.encoded) : wrapPixels(wic, image);
     if (!decoded) {
-        return nullptr;
+        return std::nullopt;
     }
 
-    UINT width = 0;
-    UINT height = 0;
-    if (!check(decoded->GetSize(&width, &height), "이미지 크기") || width == 0 || height == 0) {
-        return nullptr;
+    Pixels out;
+    if (!check(decoded->GetSize(&out.width, &out.height), "이미지 크기") || out.width == 0 ||
+        out.height == 0) {
+        return std::nullopt;
     }
 
     IWICBitmapSource* source = decoded.Get();
     ComPtr<IWICBitmapScaler> scaler;
-    if (width > kMaxTextureSize || height > kMaxTextureSize) {
-        const double scale =
-            static_cast<double>(kMaxTextureSize) / static_cast<double>(std::max(width, height));
-        width = std::max(1U, static_cast<UINT>(width * scale));
-        height = std::max(1U, static_cast<UINT>(height * scale));
+    if (out.width > kMaxTextureSize || out.height > kMaxTextureSize) {
+        const double scale = static_cast<double>(kMaxTextureSize) /
+                             static_cast<double>(std::max(out.width, out.height));
+        out.width = std::max(1U, static_cast<UINT>(out.width * scale));
+        out.height = std::max(1U, static_cast<UINT>(out.height * scale));
         if (!check(wic->CreateBitmapScaler(&scaler), "스케일러 생성") ||
-            !check(scaler->Initialize(decoded.Get(), width, height, WICBitmapInterpolationModeFant),
+            !check(scaler->Initialize(decoded.Get(), out.width, out.height,
+                                      WICBitmapInterpolationModeFant),
                    "이미지 축소")) {
-            return nullptr;
+            return std::nullopt;
         }
         source = scaler.Get();
     }
@@ -107,20 +118,26 @@ ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11De
         !check(toRgba->Initialize(source, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
                                   nullptr, 0.0, WICBitmapPaletteTypeCustom),
                "RGBA 변환")) {
-        return nullptr;
+        return std::nullopt;
     }
     source = toRgba.Get();
 
-    const UINT stride = width * 4;
-    std::vector<BYTE> pixels(static_cast<std::size_t>(stride) * height);
-    if (!check(source->CopyPixels(nullptr, stride, static_cast<UINT>(pixels.size()), pixels.data()),
+    const UINT stride = out.width * 4;
+    out.rgba.resize(static_cast<std::size_t>(stride) * out.height);
+    if (!check(source->CopyPixels(nullptr, stride, static_cast<UINT>(out.rgba.size()),
+                                  out.rgba.data()),
                "CopyPixels")) {
-        return nullptr;
+        return std::nullopt;
     }
     // 밉맵을 만들기 전에 해야 작은 밉 단계에도 여백 색(보통 검정)이 섞이지 않음
-    model::padUvIslands(pixels, static_cast<int>(width), static_cast<int>(height), islands,
-                        kPaddingTexels);
+    model::padUvIslands(out.rgba, static_cast<int>(out.width), static_cast<int>(out.height),
+                        islands, kPaddingTexels);
+    return out;
+}
 
+// GPU 단계: 텍스처 생성 + 0번 밉 업로드 + 밉맵 생성 (즉시 컨텍스트라 렌더 스레드에서만)
+ComPtr<ID3D11ShaderResourceView> upload(ID3D11Device* device, ID3D11DeviceContext* context,
+                                        UINT width, UINT height, const BYTE* rgba) {
     // GenerateMips를 쓰려면 RENDER_TARGET 바인딩과 GENERATE_MIPS 플래그가 필요합니다.
     // 밉맵이 없으면 큰 텍스처를 작은 창에 그릴 때 지글거림(앨리어싱)이 심합니다.
     D3D11_TEXTURE2D_DESC desc{};
@@ -143,9 +160,60 @@ ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11De
         return nullptr;
     }
     // 밉 체인이 있는 텍스처는 생성 시 초기 데이터로 0번 밉만 줄 수 없어 UpdateSubresource로 올림
-    context->UpdateSubresource(texture.Get(), 0, nullptr, pixels.data(), stride, 0);
+    context->UpdateSubresource(texture.Get(), 0, nullptr, rgba, width * 4, 0);
     context->GenerateMips(view.Get());
     return view;
+}
+
+}  // namespace
+
+ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11Device* device,
+                                               ID3D11DeviceContext* context,
+                                               const model::Texture& image,
+                                               std::span<const model::UvTriangle> islands) {
+    if (image.prepared) {  // 작업 스레드에서 이미 CPU 단계를 끝냄 (prepareTextures)
+        const auto width = static_cast<UINT>(image.width);
+        const auto height = static_cast<UINT>(image.height);
+        if (width == 0 || height == 0 ||
+            image.rgba.size() != static_cast<std::size_t>(width) * height * 4U) {
+            return nullptr;
+        }
+        return upload(device, context, width, height, image.rgba.data());
+    }
+    const std::optional<Pixels> pixels = preparePixels(wic, image, islands);
+    if (!pixels) {
+        return nullptr;
+    }
+    return upload(device, context, pixels->width, pixels->height, pixels->rgba.data());
+}
+
+int prepareTextures(model::Model& model) {
+    ComPtr<IWICImagingFactory> wic;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&wic)))) {
+        return 0;  // 이 스레드에 COM이 없음 → 렌더러가 그릴 때 처리
+    }
+    int prepared = 0;
+    for (std::size_t i = 0; i < model.textures.size(); ++i) {
+        model::Texture& texture = model.textures[i];
+        if (texture.prepared || texture.empty()) {
+            continue;
+        }
+        const std::vector<model::UvTriangle> islands =
+            model::collectUvTriangles(model, static_cast<int>(i));
+        std::optional<Pixels> pixels = preparePixels(wic.Get(), texture, islands);
+        if (!pixels) {
+            continue;  // 렌더러가 다시 시도하고 실패를 로그에 남김
+        }
+        texture.width = static_cast<int>(pixels->width);
+        texture.height = static_cast<int>(pixels->height);
+        texture.rgba = std::move(pixels->rgba);
+        texture.encoded.clear();
+        texture.encoded.shrink_to_fit();
+        texture.prepared = true;
+        ++prepared;
+    }
+    return prepared;
 }
 
 }  // namespace deskpet::renderer::d3d11

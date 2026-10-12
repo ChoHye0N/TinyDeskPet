@@ -6,12 +6,16 @@ add_library(deskpet_app STATIC
   CameraFit.cpp)
 add_library(deskpet::app ALIAS deskpet_app)
 
+# 모델을 작업 스레드에서 읽음 (std::async). Linux GCC는 pthread를 명시해야 링크됨
+find_package(Threads REQUIRED)
+
 target_link_libraries(deskpet_app PUBLIC
   deskpet::character
   deskpet::model
   deskpet::anim
   deskpet::platform_api
-  deskpet::renderer_api)
+  deskpet::renderer_api
+  Threads::Threads)
 deskpet_apply_compile_options(deskpet_app)
 
 # Windows 실행 파일

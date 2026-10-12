@@ -34,6 +34,7 @@ public:
     void setClickThrough(bool enabled) override;
     [[nodiscard]] core::PointI cursorPosition() const override;
     [[nodiscard]] bool fullscreenAppActive(core::PointI screen) const override;
+    [[nodiscard]] std::optional<std::filesystem::path> showOpenModelDialog() override;
     [[nodiscard]] int showContextMenu(const std::vector<MenuItem>& items,
                                       core::PointI screen) override;
 

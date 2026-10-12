@@ -5,7 +5,13 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <future>
 #include <memory>
+#include <string>
+#include <thread>
+#include <vector>
 
 using deskpet::app::Application;
 using deskpet::app::ExitCode;
@@ -919,4 +925,139 @@ TEST_F(ApplicationTest, CursorFarAway_KeepsHeadForward) {
     app->setModel(makeSkinnedModel());
     (void)app->run();
     EXPECT_NEAR(headYawTowardScreenRight(renderer_), 0.0f, 1e-4f);
+}
+
+// ---------------------------------------------------------------------------
+// 모델 정보·모델 열기·작업 스레드 로딩 (FR-23, M6)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::shared_ptr<const deskpet::model::Model> makeNamedModel(const std::string& name) {
+    auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    model->meta.name = name;
+    model->meta.author = "Author";
+    model->meta.license = "CC_BY";
+    return model;
+}
+
+const auto kRightClick = [] {
+    return std::vector<deskpet::core::Event>{
+        core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}};
+};
+
+}  // namespace
+
+TEST_F(ApplicationTest, ContextMenu_ShowsModelInfoAndOpenItem) {
+    window_.frames.push_back(kRightClick());
+    window_.pollsBeforeQuit = 2;
+    auto app = makeApp();
+    app->setModel(makeNamedModel("Kei"));
+    (void)app->run();
+
+    const auto* info = findMenuItem(window_.lastMenu, MenuCommand::ModelInfo);
+    ASSERT_NE(info, nullptr);
+    EXPECT_EQ(info->label, "Kei — Author");
+    EXPECT_FALSE(info->enabled);
+    const auto* license = findMenuItem(window_.lastMenu, MenuCommand::ModelLicense);
+    ASSERT_NE(license, nullptr);
+    EXPECT_EQ(license->label, "라이선스: CC_BY");
+    const auto* open = findMenuItem(window_.lastMenu, MenuCommand::OpenModel);
+    ASSERT_NE(open, nullptr);
+    EXPECT_TRUE(open->enabled);
+}
+
+TEST_F(ApplicationTest, ContextMenu_WithoutModelShowsOnlyOpenItem) {
+    window_.frames.push_back(kRightClick());
+    window_.pollsBeforeQuit = 2;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_EQ(findMenuItem(window_.lastMenu, MenuCommand::ModelInfo), nullptr);
+    EXPECT_EQ(findMenuItem(window_.lastMenu, MenuCommand::ModelLicense), nullptr);
+    EXPECT_NE(findMenuItem(window_.lastMenu, MenuCommand::OpenModel), nullptr);
+}
+
+TEST_F(ApplicationTest, LoadModelAsync_ShowsModelOnceLoaded) {
+    const auto model = makeNamedModel("Async");
+    std::filesystem::path requested;
+    auto app = makeApp();
+    app->setModelLoader([&](const std::filesystem::path& path) {
+        requested = path;
+        return model;
+    });
+    app->loadModelAsync("models/async.vrm");
+    app->waitForModelLoad();
+    window_.pollsBeforeQuit = 2;
+    (void)app->run();
+
+    EXPECT_EQ(requested, std::filesystem::path("models/async.vrm"));
+    EXPECT_EQ(renderer_.lastScene.character.model, model.get());
+    EXPECT_FALSE(renderer_.lastScene.placeholder.visible);
+    EXPECT_EQ(app->modelPath(), std::filesystem::path("models/async.vrm"));
+}
+
+TEST_F(ApplicationTest, WhileFirstModelLoads_NothingIsDrawn) {
+    // 시작할 때 모델을 읽는 동안 슬라임이 잠깐 보였다가 바뀌지 않도록 아무것도 그리지 않음
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    auto app = makeApp();
+    app->setModelLoader([released](const std::filesystem::path&) {
+        released.wait();
+        return makeNamedModel("Slow");
+    });
+    app->loadModelAsync("models/slow.vrm");
+    window_.pollsBeforeQuit = 3;
+    (void)app->run();
+    EXPECT_FALSE(renderer_.lastScene.placeholder.visible);
+    EXPECT_EQ(renderer_.lastScene.character.model, nullptr);
+    release.set_value();  // 소멸자가 작업을 기다리므로 풀어 줌
+}
+
+TEST_F(ApplicationTest, FailedLoad_KeepsCurrentModel) {
+    const auto current = makeNamedModel("Current");
+    auto app = makeApp();
+    app->setModel(current);
+    app->setModelLoader([](const std::filesystem::path&) {
+        return std::shared_ptr<const deskpet::model::Model>{};
+    });
+    app->loadModelAsync("models/broken.vrm");
+    app->waitForModelLoad();
+    window_.pollsBeforeQuit = 2;
+    (void)app->run();
+    EXPECT_EQ(renderer_.lastScene.character.model, current.get());
+    EXPECT_TRUE(app->modelPath().empty());
+}
+
+TEST_F(ApplicationTest, OpenModelMenu_LoadsChosenFile) {
+    const auto chosen = makeNamedModel("Chosen");
+    window_.openFileResult = std::filesystem::path("C:/models/chosen.pmx");
+    window_.frames.push_back(kRightClick());
+    window_.menuChoice = static_cast<int>(MenuCommand::OpenModel);
+    // 작업 스레드가 끝날 시간을 줌 (가짜 시간은 기다리지 않으므로 실제로 잠깐 쉼)
+    window_.onPoll = [](int, deskpet::testing::FakeWindowState&) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    };
+    window_.pollsBeforeQuit = 200;
+    auto app = makeApp();
+    app->setModelLoader([&](const std::filesystem::path&) { return chosen; });
+    (void)app->run();
+
+    EXPECT_EQ(window_.openFileDialogCount, 1);
+    EXPECT_EQ(renderer_.lastScene.character.model, chosen.get());
+    EXPECT_EQ(app->modelPath(), std::filesystem::path("C:/models/chosen.pmx"));
+}
+
+TEST_F(ApplicationTest, OpenModelCancelled_DoesNothing) {
+    window_.frames.push_back(kRightClick());
+    window_.menuChoice = static_cast<int>(MenuCommand::OpenModel);
+    window_.pollsBeforeQuit = 3;
+    int loads = 0;
+    auto app = makeApp();
+    app->setModelLoader([&](const std::filesystem::path&) {
+        ++loads;
+        return std::shared_ptr<const deskpet::model::Model>{};
+    });
+    (void)app->run();
+    EXPECT_EQ(window_.openFileDialogCount, 1);
+    EXPECT_EQ(loads, 0);
 }
