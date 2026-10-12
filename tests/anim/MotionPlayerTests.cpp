@@ -121,6 +121,32 @@ TEST(MotionPlayer, SameRestPose_NeedsNoCorrection) {
     expectNear(direction(pose(skeleton, player, 0.0f), kUpperArmL, kLowerArmL), {1.0f, 0.0f, 0.0f});
 }
 
+TEST(MotionPlayer, NamedTracks_DriveBonesWithTheSameName) {
+    // 휴머노이드가 아닌 본(꼬리)은 이름이 같은 트랙으로 움직이고, 모델에 없는 이름은 버림.
+    // 휴머노이드 본과 이름이 같은 트랙("head")은 휴머노이드 트랙이 우선
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone tail;
+    tail.name = "tail";
+    tail.parent = static_cast<int>(kHips);
+    tail.position = {0.0f, 0.9f, -0.1f};
+    model.bones.push_back(tail);
+    const std::size_t kTail = model.bones.size() - 1;
+    const Skeleton skeleton(model);
+
+    const Quat wag = Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(30.0f));
+    const Quat nod = Quat::axisAngle({1.0f, 0.0f, 0.0f}, radians(20.0f));
+    auto clip = poseClip({{HumanBone::Head, nod}});
+    clip->boneTracks = {{"tail", {wag}},
+                        {"ribbon", {wag}},
+                        {"head", {Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(50.0f))}}};
+    const MotionPlayer player(skeleton, clip);
+    const Posed p = pose(skeleton, player, 0.0f);
+
+    const Vec3 z{0.0f, 0.0f, 1.0f};
+    expectNear(p.accumulated[kTail].rotate(z), wag.rotate(z));
+    expectNear(p.accumulated[kHead].rotate(z), nod.rotate(z));
+}
+
 TEST(MotionPlayer, Frames_AreInterpolatedAndLooped) {
     const auto model = deskpet::test::makeSkeletonModel();
     const Skeleton skeleton(model);

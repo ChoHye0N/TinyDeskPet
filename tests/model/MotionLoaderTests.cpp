@@ -305,6 +305,40 @@ TEST(VrmaMotion, ParentRestRotation_IsExpressedInModelAxes) {
                        Quat::axisAngle({1.0f, 0.0f, 0.0f}, radians(90.0f)));
 }
 
+TEST(VrmaMotion, NonHumanoidNodes_MovingOnTheirOwn_BecomeNamedTracks) {
+    // hips ─ tail(스스로 Y축 90°), skirt(가만히), leftUpperArm(Z축 90°) ─ sleeve(가만히)
+    // tail만 이름 트랙. skirt·sleeve는 부모를 그대로 따라가므로 트랙이 없어도 같음
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const float s = std::sin(radians(45.0f));
+    const int armRotations = b.addFloats({0, 0, 0, 1, 0, 0, s, s}, "VEC4");
+    const int tailRotations = b.addFloats({0, 0, 0, 1, 0, s, 0, s}, "VEC4");
+    const std::string json = b.build(
+        R"("nodes":[{"name":"hips","translation":[0,1,0],"children":[1,2,3]},)"
+        R"({"name":"tail","translation":[0,0,-0.1]},{"name":"skirt","translation":[0,-0.1,0]},)"
+        R"({"name":"leftUpperArm","translation":[0.2,0.3,0],"children":[4]},)"
+        R"({"name":"sleeve","translation":[0.1,0,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("animations":[{"channels":[{"sampler":0,"target":{"node":3,"path":"rotation"}},)"
+        R"({"sampler":1,"target":{"node":1,"path":"rotation"}}],"samplers":[)"
+        R"({"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(armRotations) +
+        R"(},)"
+        R"({"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(tailRotations) +
+        R"(}]}],)"
+        R"("extensionsUsed":["VRMC_vrm_animation"],"extensions":{"VRMC_vrm_animation":{)"
+        R"("specVersion":"1.0","humanoid":{"humanBones":{"hips":{"node":0},)"
+        R"("leftUpperArm":{"node":3}}}}})");
+    const MotionLoadResult result = loadText(json, ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const auto& tracks = result.clip->boneTracks;
+    ASSERT_EQ(tracks.size(), 1U);
+    EXPECT_EQ(tracks[0].name, "tail");
+    ASSERT_EQ(tracks[0].rotations.size(), 31U);
+    expectSameRotation(tracks[0].rotations[30],
+                       Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(90.0f)));
+}
+
 TEST(VrmaMotion, PlainGltfWithoutExtension_ReturnsError) {
     GltfBuilder b;
     const MotionLoadResult result = loadText(b.build(R"("nodes":[{"name":"a"}])"), ".glb");

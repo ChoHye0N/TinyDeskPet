@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace deskpet::model {
@@ -90,6 +92,32 @@ void setRestDirections(MotionClip& clip,
         const core::Vec3 d = *to - *from;
         if (core::dot(d, d) > 1e-12f) {
             clip.restDirections[i] = core::normalize(d);
+        }
+    }
+}
+
+void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
+                   const std::vector<std::vector<core::Quat>>& deltas) {
+    // 같은 회전이면 쿼터니언 내적의 절댓값이 1 (q와 −q는 같은 회전). 0.1°쯤까지는 같은 것으로
+    constexpr float kSameRotation = 1.0f - 1e-6f;
+    std::unordered_set<std::string_view> added;
+    for (std::size_t n = 0; n < nodes.size() && n < deltas.size(); ++n) {
+        const SourceNode& node = nodes[n];
+        if (node.humanoid || node.name.empty() || deltas[n].empty() || added.contains(node.name)) {
+            continue;
+        }
+        const auto parent = static_cast<std::size_t>(node.parent);
+        const std::vector<core::Quat>* up =
+            node.parent >= 0 && parent < deltas.size() ? &deltas[parent] : nullptr;
+        bool moves = false;
+        for (std::size_t f = 0; f < deltas[n].size() && !moves; ++f) {
+            const core::Quat a = deltas[n][f];
+            const core::Quat b = up != nullptr && f < up->size() ? (*up)[f] : core::Quat{};
+            moves = std::abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) < kSameRotation;
+        }
+        if (moves) {
+            added.insert(node.name);
+            clip.boneTracks.push_back({std::string(node.name), deltas[n]});
         }
     }
 }

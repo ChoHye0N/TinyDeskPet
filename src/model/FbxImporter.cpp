@@ -309,18 +309,30 @@ public:
                 positions[b] = toVec3(human[b]->node_to_world.cols[3]);
             }
         }
+        // 노드마다 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전). 휴머노이드가 아닌 본도
+        // 부모와 비교하려고 전부 계산
+        std::vector<std::vector<core::Quat>> deltas(scene_.nodes.count);
         for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
             const double time = begin + static_cast<double>(frame) / MotionClip::kFramesPerSecond;
             const std::vector<core::Quat> world = worldRotations(stack.anim, time);
-            for (std::size_t b = 0; b < human.size(); ++b) {
-                if (human[b] != nullptr) {
-                    const std::size_t n = human[b]->typed_id;
-                    // 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전)
-                    clip.tracks[b].push_back(world[n] * rest[n].conjugate());
-                }
+            for (std::size_t n = 0; n < world.size(); ++n) {
+                deltas[n].push_back(world[n] * rest[n].conjugate());
+            }
+        }
+        std::vector<motion::SourceNode> nodes(scene_.nodes.count);
+        for (const ufbx_node* node : scene_.nodes) {
+            motion::SourceNode& source = nodes[node->typed_id];
+            source.name = std::string_view(node->name.data, node->name.length);
+            source.parent = node->parent != nullptr ? static_cast<int>(node->parent->typed_id) : -1;
+        }
+        for (std::size_t b = 0; b < human.size(); ++b) {
+            if (human[b] != nullptr) {
+                clip.tracks[b] = deltas[human[b]->typed_id];
+                nodes[human[b]->typed_id].humanoid = true;
             }
         }
         motion::setRestDirections(clip, positions);
+        motion::addBoneTracks(clip, nodes, deltas);
         return clip;
     }
 

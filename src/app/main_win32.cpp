@@ -229,9 +229,9 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
             continue;
         }
         const model::MotionClip& clip = *result.clip;
-        logging::info("모션 로드: {} = {} ({}, {:.2f}초, 본 {}개)", kNames[m], *configured,
-                      kFormats[static_cast<std::size_t>(clip.format)], clip.duration(),
-                      clip.trackCount());
+        logging::info("모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개)", kNames[m],
+                      *configured, kFormats[static_cast<std::size_t>(clip.format)], clip.duration(),
+                      clip.trackCount(), clip.boneTracks.size());
         clips[m] = std::make_shared<const model::MotionClip>(std::move(*result.clip));
     }
     return clips;

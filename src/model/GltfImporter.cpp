@@ -1194,26 +1194,32 @@ public:
         clip.frameCount =
             static_cast<std::size_t>(std::floor(duration_ * MotionClip::kFramesPerSecond + 1e-3f)) +
             1;
+        // 노드마다 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전). 휴머노이드가 아닌 노드도
+        // 부모와 비교하려고 전부 계산
         std::vector<core::Quat> rest = worldRotations(-1.0f);
         std::vector<core::Quat> world;
+        std::vector<std::vector<core::Quat>> deltas(data_.nodes_count);
         for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
             world = worldRotations(static_cast<float>(frame) / MotionClip::kFramesPerSecond);
-            for (std::size_t n = 0; n < human_.size(); ++n) {
-                if (human_[n] != HumanBone::None) {
-                    // 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전)
-                    clip.track(human_[n]).push_back(world[n] * rest[n].conjugate());
-                }
+            for (std::size_t n = 0; n < world.size(); ++n) {
+                deltas[n].push_back(world[n] * rest[n].conjugate());
             }
         }
         std::array<std::optional<Vec3>, kHumanBoneCount> positions{};
+        std::vector<motion::SourceNode> nodes(data_.nodes_count);
         for (std::size_t n = 0; n < human_.size(); ++n) {
+            const cgltf_node& node = data_.nodes[n];
+            nodes[n] = {node.name != nullptr ? std::string_view(node.name) : std::string_view{},
+                        indexOf(node.parent), human_[n] != HumanBone::None};
             if (human_[n] != HumanBone::None) {
-                const Mat4 m = worldMatrix(data_.nodes[n]);
+                clip.track(human_[n]) = deltas[n];
+                const Mat4 m = worldMatrix(node);
                 positions[static_cast<std::size_t>(human_[n])] =
                     Vec3{m.m[3][0], m.m[3][1], m.m[3][2]};
             }
         }
         motion::setRestDirections(clip, positions);
+        motion::addBoneTracks(clip, nodes, deltas);
         return clip;
     }
 
@@ -1291,6 +1297,10 @@ private:
                 break;  // 순환 (손상된 파일): 남은 노드는 무시
             }
         }
+    }
+
+    [[nodiscard]] int indexOf(const cgltf_node* node) const {
+        return node != nullptr ? static_cast<int>(node - data_.nodes) : -1;
     }
 
     [[nodiscard]] static core::Quat sample(const Channel& channel, float time) {
