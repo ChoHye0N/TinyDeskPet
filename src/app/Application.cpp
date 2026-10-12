@@ -1,6 +1,7 @@
 #include "app/Application.h"
 
 #include "app/CameraFit.h"
+#include "app/Ground.h"
 #include "core/Log.h"
 #include "deskpet/Version.h"
 
@@ -520,18 +521,39 @@ bool Application::restoreSavedPosition() {
     }
 
     const core::Vec2 feet{static_cast<float>(saved->x), static_cast<float>(saved->y)};
+    // 바닥을 먼저 정하고 옮김: 옮긴 뒤 바닥을 구하면 teleport가 옛 바닥에 발을 붙여 버려
+    // 엉뚱한 위치(창 윗변 등) 기준으로 바닥을 찾게 됨. 공중에서 시작하므로 발 아래만 봄
+    character_.setGround(groundAt(feet, 0.0f));
     character_.teleport(feet);
     updateOverlay();
-    refreshGround();            // 그 모니터의 바닥
-    character_.teleport(feet);  // 새 바닥 기준으로 서 있을지 떨어질지 다시 판정
     return true;
 }
 
 void Application::refreshGround() {
-    // 발이 있는 모니터의 작업 영역 바닥 (걷기·던지기로 다른 모니터에 넘어갔을 수 있음)
-    const core::Vec2 feet = character_.position();
+    // 서 있는 동안은 밟고 있는 창이 조금 올라가도 따라감. 떨어지는 중에는 발 아래 창만
+    // (창 앞에 있다가 떨어졌을 때 그 창 위로 순간 이동하지 않게)
+    constexpr float kStepUpPixels = 24.0f;
+    const bool standing = character_.state() == character::State::Idle ||
+                          character_.state() == character::State::Walk;
     character_.setGround(
-        static_cast<float>(window_->workAreaAt({roundToInt(feet.x), roundToInt(feet.y)}).bottom));
+        groundAt(character_.position(), standing ? kStepUpPixels * dpiScale_ : 0.0f));
+}
+
+// feet 아래 바닥: 그 모니터의 작업 영역 바닥(걷기·던지기로 다른 모니터에 넘어갔을 수 있음)과
+// 다른 창의 윗변 중 가장 높은 것
+float Application::groundAt(core::Vec2 feet, float stepUp) {
+    const auto floor =
+        static_cast<float>(window_->workAreaAt({roundToInt(feet.x), roundToInt(feet.y)}).bottom);
+    if (!config_.character.walkOnWindows) {
+        return floor;
+    }
+    // 다른 창 위에 설 수 있음. 창 목록은 0.1초마다만 다시 읽음 (모든 창을 훑으므로)
+    constexpr double kSurfaceInterval = 0.1;
+    if (lastTime_ >= nextSurfaceCheck_) {
+        surfaces_ = window_->windowSurfaces();
+        nextSurfaceCheck_ = lastTime_ + kSurfaceInterval;
+    }
+    return groundBelow(feet, stepUp, floor, surfaces_);
 }
 
 void Application::refreshBounds() {

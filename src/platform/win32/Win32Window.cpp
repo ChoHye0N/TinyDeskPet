@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <dwmapi.h>  // DwmGetWindowAttribute
 #include <iterator>
 #include <shellapi.h>  // Shell_NotifyIconW
 #include <shobjidl.h>  // IFileOpenDialog
@@ -273,6 +274,63 @@ int Win32Window::showContextMenu(const std::vector<MenuItem>& items, core::Point
     DestroyMenu(menu);
 
     return static_cast<int>(selected);
+}
+
+namespace {
+
+// 발판이 될 수 있는 창인지. 사람이 보고 쓰는 일반 창만 (EnumWindows는 숨은 창·도구 창·
+// 바탕화면·작업 표시줄·다른 오버레이까지 모두 줌)
+bool isSurfaceWindow(HWND hwnd, HWND self) {
+    if (hwnd == self || IsWindowVisible(hwnd) == FALSE || IsIconic(hwnd) != FALSE) {
+        return false;
+    }
+    const auto exStyle = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
+    if ((exStyle & (WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE)) != 0) {
+        return false;  // 툴팁·메뉴, 클릭 통과 오버레이(다른 펫 포함), 알림 창
+    }
+    // 가상 데스크톱의 다른 화면에 있거나 일시 중단된 UWP 창은 "보임"이지만 실제로는 가려져 있음
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof cloaked)) &&
+        cloaked != 0) {
+        return false;
+    }
+    std::array<wchar_t, 64> className{};
+    GetClassNameW(hwnd, className.data(), static_cast<int>(className.size()));
+    const std::wstring_view name(className.data());
+    return name != L"Progman" && name != L"WorkerW" && name != L"Shell_TrayWnd" &&
+           name != L"Shell_SecondaryTrayWnd";
+}
+
+}  // namespace
+
+std::vector<core::RectI> Win32Window::windowSurfaces() const {
+    struct Context {
+        HWND self;
+        std::vector<core::RectI> rects;
+    } context{hwnd_, {}};
+    // EnumWindows는 최상위 창을 z 순서 위 → 아래로 돌려줌
+    EnumWindows(
+        [](HWND hwnd, LPARAM param) -> BOOL {
+            auto& ctx = *reinterpret_cast<Context*>(param);
+            if (!isSurfaceWindow(hwnd, ctx.self)) {
+                return TRUE;
+            }
+            // GetWindowRect는 보이지 않는 크기 조절 테두리(그림자)까지 포함해 몇 px 큼 →
+            // DWM이 실제로 그리는 테두리 사용
+            RECT rect{};
+            if (FAILED(
+                    DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof rect))) {
+                GetWindowRect(hwnd, &rect);
+            }
+            constexpr LONG kMinWidth = 120;  // 작은 팝업은 발판으로 쓰지 않음
+            constexpr LONG kMinHeight = 40;
+            if (rect.right - rect.left >= kMinWidth && rect.bottom - rect.top >= kMinHeight) {
+                ctx.rects.push_back({rect.left, rect.top, rect.right, rect.bottom});
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&context));
+    return context.rects;
 }
 
 // 공용 파일 대화상자 (IFileOpenDialog). COM이 이 스레드에서 STA로 초기화되어 있어야 함

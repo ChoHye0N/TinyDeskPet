@@ -256,3 +256,10 @@ TEST(Config, AnimationLookAt_DefaultsOnAndCanBeDisabled) {
     EXPECT_TRUE(result.warnings.empty());
     EXPECT_FALSE(result.config.animation.lookAt);
 }
+
+TEST(Config, WalkOnWindows_DefaultsOnAndCanBeDisabled) {
+    EXPECT_TRUE(parseConfig("").config.character.walkOnWindows);
+    const auto result = parseConfig("[character]\nwalk_on_windows = false\n");
+    EXPECT_TRUE(result.warnings.empty());
+    EXPECT_FALSE(result.config.character.walkOnWindows);
+}

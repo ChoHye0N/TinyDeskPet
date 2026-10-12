@@ -38,6 +38,7 @@ add_executable(deskpet_tests
   renderer/SampleCountTests.cpp
   app/ApplicationTests.cpp
   app/CameraFitTests.cpp
+  app/GroundTests.cpp
   app/Fakes.h)
 
 target_link_libraries(deskpet_tests PRIVATE deskpet::app GTest::gtest_main)

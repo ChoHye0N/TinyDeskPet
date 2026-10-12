@@ -88,6 +88,10 @@ public:
     [[nodiscard]] virtual int showContextMenu(const std::vector<MenuItem>& items,
                                               core::PointI screen) = 0;
 
+    // 다른 창들의 화면 사각형 (보이는 테두리 기준), 앞(z 순서 위) → 뒤. 자기 창, 최소화·숨김,
+    // 도구 창, 바탕화면·작업 표시줄은 제외. 캐릭터가 창 윗변 위에 서고 걷는 데 씀
+    [[nodiscard]] virtual std::vector<core::RectI> windowSurfaces() const = 0;
+
     // 모델 파일 열기 대화상자 (VRM·glTF·PMX·FBX). 취소하면 없음. 닫힐 때까지 기다림 (모달)
     [[nodiscard]] virtual std::optional<std::filesystem::path> showOpenModelDialog() = 0;
 

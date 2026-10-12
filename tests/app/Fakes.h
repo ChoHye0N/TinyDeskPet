@@ -29,6 +29,7 @@ struct FakeWindowState {
     int pollsBeforeQuit = 1000;  // 이 횟수만큼 poll하면 QuitRequested 발생
     int menuChoice = 0;          // showContextMenu가 돌려줄 id
     std::optional<std::filesystem::path> openFileResult;  // 파일 열기 대화상자 결과 (없음 = 취소)
+    std::vector<core::RectI> surfaces;                    // 다른 창들 (앞 → 뒤)
     float dpiScale = 1.0f;
     core::RectI desktopBounds{0, 0, 1920, 1080};
     bool trayResult = true;
@@ -139,6 +140,10 @@ public:
         ++state_.menuShownCount;
         state_.lastMenu = items;
         return state_.menuChoice;
+    }
+
+    [[nodiscard]] std::vector<core::RectI> windowSurfaces() const override {
+        return state_.surfaces;
     }
 
     std::optional<std::filesystem::path> showOpenModelDialog() override {

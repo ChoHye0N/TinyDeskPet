@@ -150,6 +150,8 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) {
              return assignFloat(v, 1.0f, 100000.0f, c.character.maxFallSpeed);
          }},
+        {"character.walk_on_windows",
+         [](std::string_view v, AppConfig& c) { return assignBool(v, c.character.walkOnWindows); }},
         {"renderer.vsync",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.vsync); }},
         {"renderer.debug_layer",

@@ -1061,3 +1061,67 @@ TEST_F(ApplicationTest, OpenModelCancelled_DoesNothing) {
     EXPECT_EQ(window_.openFileDialogCount, 1);
     EXPECT_EQ(loads, 0);
 }
+
+// ---------------------------------------------------------------------------
+// 다른 창 위를 걷기 (M6)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 발 (1700, 540)에서 떨어뜨림 (DragAndRelease_FallsBackToGround와 같은 입력)
+void dropFromAbove(FakeWindowState& window) {
+    window.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    window.frames.push_back({core::PointerMoveEvent{{1700.0f, 500.0f}}});
+    for (int i = 0; i < 12; ++i) {
+        window.frames.push_back({});
+    }
+    window.frames.push_back({core::PointerUpEvent{{1700.0f, 500.0f}, core::MouseButton::Left}});
+    window.pollsBeforeQuit = 180;
+}
+
+}  // namespace
+
+TEST_F(ApplicationTest, DroppedAboveWindow_LandsOnItsTopEdge) {
+    window_.surfaces = {{1500, 700, 1900, 1000}};
+    dropFromAbove(window_);
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_EQ(app->character().state(), State::Idle);
+    EXPECT_FLOAT_EQ(app->character().position().y, 700.0f);
+}
+
+TEST_F(ApplicationTest, WindowClosedUnderCharacter_FallsToFloor) {
+    window_.surfaces = {{1500, 700, 1900, 1000}};
+    dropFromAbove(window_);
+    window_.pollsBeforeQuit = 300;
+    window_.onPoll = [](int poll, FakeWindowState& w) {
+        if (poll == 180) {
+            w.surfaces.clear();  // 2초 뒤 창이 닫힘
+        }
+    };
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_FLOAT_EQ(app->character().position().y, 1040.0f);
+}
+
+TEST_F(ApplicationTest, WalkOnWindowsDisabled_IgnoresWindows) {
+    config_.character.walkOnWindows = false;
+    window_.surfaces = {{1500, 700, 1900, 1000}};
+    dropFromAbove(window_);
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_FLOAT_EQ(app->character().position().y, 1040.0f);
+}
+
+TEST_F(ApplicationTest, SavedPositionAboveWindow_FallsOntoThatWindow) {
+    // 저장 위치를 복원할 때 바닥을 먼저 구해야 함. 예전엔 옛 바닥(0)에 발을 붙인 뒤 바닥을
+    // 찾아, 화면 맨 위 창 윗변에 서 버렸음
+    config_.state.lastX = 1700;
+    config_.state.lastY = 300;
+    window_.surfaces = {{1000, 0, 1900, 200}, {1500, 700, 1900, 1000}};  // 위쪽 창, 발 아래 창
+    window_.pollsBeforeQuit = 120;
+    auto app = makeApp();
+    (void)app->run();
+    EXPECT_EQ(app->character().state(), State::Idle);
+    EXPECT_FLOAT_EQ(app->character().position().y, 700.0f);
+}
