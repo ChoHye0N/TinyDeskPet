@@ -31,6 +31,8 @@ struct AnimationInput {
     bool blink = false;   // 눈 감는 순간
     bool idleMotion = true;  // false면 대기 중 숨쉬기 동작을 끔 → 화면이 멈춰 Present 생략 가능
     core::Vec3 movement;  // 이번 프레임에 캐릭터가 화면에서 움직인 거리 (모델 공간 m) → 흔들림 관성
+    // 바라볼 점 (모델 공간 m, 보통 커서). 없으면 정면 (LookAt)
+    std::optional<core::Vec3> lookTarget;
 };
 
 using Expressions = std::array<float, static_cast<std::size_t>(model::Expression::Count)>;
@@ -44,6 +46,10 @@ class ProceduralAnimator {
 public:
     // 동작이 바뀔 때 이전 자세에서 새 자세로 넘어가는 시간 (s)
     static constexpr float kTransitionSeconds = 0.2f;
+    // 바라보기 각도 제한 (도): 좌우, 위, 아래. 넘는 목표는 이 각도까지만 돌림
+    static constexpr float kLookMaxYawDegrees = 55.0f;
+    static constexpr float kLookMaxUpDegrees = 25.0f;
+    static constexpr float kLookMaxDownDegrees = 20.0f;
 
     explicit ProceduralAnimator(const model::Model& model);
 
@@ -77,6 +83,12 @@ private:
     void poseLeg(int upper, int lower, float swing, float knee) const;
     void computeRotations(const AnimationInput& input) const;  // 착지 반동 제외 → rotations_
     void applyCrouch(float amount) const;                      // 착지 웅크림 (0 ~ 1)
+    struct LookAngles {
+        float yaw = 0.0f;    // + = 캐릭터 왼쪽(+X)
+        float pitch = 0.0f;  // + = 위
+    };
+    [[nodiscard]] LookAngles lookAnglesFor(const AnimationInput& input) const;
+    void applyLook(LookAngles look) const;  // 목·머리·눈에 나눠 돌림
     [[nodiscard]] core::Vec3 groundOffset(Motion motion) const;
     void writeOutput(const AnimationInput& input, const Expressions& base, AnimationOutput& out,
                      core::Vec3 rootOffset) const;
@@ -107,6 +119,8 @@ private:
     float landingTime_ = -1.0f;
     float landingStrength_ = 0.0f;
     float lastSquash_ = 0.0f;
+
+    LookAngles look_;  // 지금 바라보는 각도 (animate 전용, 목표로 서서히 다가감)
 };
 
 }  // namespace deskpet::anim

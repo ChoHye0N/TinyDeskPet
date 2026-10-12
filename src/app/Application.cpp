@@ -131,6 +131,7 @@ void Application::updateAnimation(float dt) {
     input.squash = pose.squash;
     input.blink = pose.eyesClosed;
     input.idleMotion = config_.animation.idleMotion;
+    input.lookTarget = lookTarget();
 
     // 흔들림 관성: 이번 프레임에 화면에서 움직인 거리 → 모델 공간 m.
     // 화면 y는 아래가 +, 모델 y는 위가 +. 걸을 때 돌린 몸의 반대로 돌려 모델 축에 맞춤
@@ -150,6 +151,44 @@ void Application::updateAnimation(float dt) {
     // 걷는 방향으로 몸 돌리기: 목표 각도로 일정한 속도로 돌아감 (즉시 바뀌면 튀어 보임)
     const float targetTurn = static_cast<float>(pose.facing) * kWalkTurnRadians;
     turnRadians_ = core::moveTowards(turnRadians_, targetTurn, kTurnSpeed * dt);
+}
+
+// 커서를 바라볼 목표 (모델 공간). 화면에서 머리 → 커서 차이를 발 평면의 m로 바꾸고, 커서는
+// 화면 앞쪽(카메라 쪽)에 있다고 보고 모델 키의 0.6배만큼 앞에 둠. 멀리 있으면 정면을 봄
+std::optional<core::Vec3> Application::lookTarget() const {
+    constexpr float kRadiusBoxHeights = 3.0f;  // 이 거리(상자 높이 배수) 안의 커서만 바라봄
+    constexpr float kDepthHeights = 0.6f;
+    const int head = model_ ? model_->findBone(model::HumanBone::Head) : -1;
+    if (!config_.animation.lookAt || hidden_ || autoHidden_ || head < 0 ||
+        metersPerPixel_ <= 0.0f) {
+        return std::nullopt;
+    }
+    const auto h = static_cast<std::size_t>(head);
+    core::Vec3 headModel = model_->bones[h].position;
+    if (h < animation_.skin.size()) {
+        headModel = core::transformPoint(headModel, animation_.skin[h]);  // 직전 프레임 자세
+    }
+    const core::Mat4 viewProjection =
+        core::Mat4::rotationY(turnRadians_) * camera_ * boxToOverlay();
+    const core::Vec4 clip = core::transform(headModel, viewProjection);
+    if (clip.w <= 0.0f) {
+        return std::nullopt;
+    }
+    const float headX = static_cast<float>(overlay_.left) +
+                        (clip.x / clip.w + 1.0f) * 0.5f * static_cast<float>(overlay_.width());
+    const float headY = static_cast<float>(overlay_.top) +
+                        (1.0f - clip.y / clip.w) * 0.5f * static_cast<float>(overlay_.height());
+    const core::PointI cursor = window_->cursorPosition();
+    const float dx = static_cast<float>(cursor.x) - headX;
+    const float dy = static_cast<float>(cursor.y) - headY;
+    const float radius = kRadiusBoxHeights * static_cast<float>(boxSize_.height);
+    if (dx * dx + dy * dy > radius * radius) {
+        return std::nullopt;
+    }
+    // 화면 기준 (오른쪽 +X, 위 +Y, 카메라 쪽 +Z) → 몸을 돌린 만큼 반대로 돌려 모델 축으로
+    const float depth = kDepthHeights * displayBounds_.size().y;
+    const core::Vec3 offset{dx * metersPerPixel_, -dy * metersPerPixel_, depth};
+    return headModel + core::Quat::axisAngle({0.0f, 1.0f, 0.0f}, -turnRadians_).rotate(offset);
 }
 
 int Application::run() {

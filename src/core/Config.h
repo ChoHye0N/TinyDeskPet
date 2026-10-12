@@ -51,6 +51,7 @@ struct ModelConfig {
 struct AnimationConfig {
     bool idleMotion =
         true;  // 대기 중 숨쉬기 동작. 끄면 대기 중 화면이 멈춰 GPU를 쉬게 함 (DEBT-02)
+    bool lookAt = true;  // 커서가 가까이 있으면 머리를 돌려 바라봄
     // 동작별 모션 파일 (VRMA, VMD, FBX). 비면 코드로 만든 동작 (ADR-0013). 상대 경로는 실행 파일
     // 폴더 기준
     std::string idleClip;

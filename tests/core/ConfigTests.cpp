@@ -249,3 +249,10 @@ TEST(Config, StateScale_IsOptionalPercentWithinRange) {
     EXPECT_EQ(result.warnings.size(), 1U);
     EXPECT_FALSE(result.config.state.scale.has_value());
 }
+
+TEST(Config, AnimationLookAt_DefaultsOnAndCanBeDisabled) {
+    EXPECT_TRUE(parseConfig("").config.animation.lookAt);
+    const auto result = parseConfig("[animation]\nlook_at = false\n");
+    EXPECT_TRUE(result.warnings.empty());
+    EXPECT_FALSE(result.config.animation.lookAt);
+}

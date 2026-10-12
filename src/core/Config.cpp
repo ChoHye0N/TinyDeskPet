@@ -165,6 +165,8 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          }},
         {"animation.idle_motion",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.animation.idleMotion); }},
+        {"animation.look_at",
+         [](std::string_view v, AppConfig& c) { return assignBool(v, c.animation.lookAt); }},
         {"animation.idle_clip",
          [](std::string_view v, AppConfig& c) {
              c.animation.idleClip = std::string(v);
