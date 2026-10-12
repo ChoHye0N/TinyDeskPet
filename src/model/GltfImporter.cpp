@@ -392,7 +392,11 @@ public:
             }
         }
         readExpressions();
-        readVrm0SpringBones();
+        if (model_.version == VrmVersion::V1) {
+            readVrm1SpringBones();
+        } else {
+            readVrm0SpringBones();
+        }
         readMeta();
         model_.bounds = computeBounds(model_.vertices);
         const float height = model_.bounds.max.y - model_.bounds.min.y;
@@ -671,6 +675,141 @@ private:
             }
         }
         return group;
+    }
+
+    // VRM 1.0: extensions.VRMC_springBone
+    //   colliders[{node, shape{sphere{offset[3], radius} | capsule{offset[3], radius, tail[3]}}}]
+    //   colliderGroups[{colliders[인덱스]}]
+    //   springs[{joints[{node, hitRadius, stiffness, gravityPower, gravityDir[3], dragForce}],
+    //            colliderGroups[인덱스]}]
+    // 0.x와 달리 노드에 회전이 있을 수 있어, 충돌체 오프셋(노드 로컬 좌표)을 바인드 포즈의 노드
+    // 변환으로 모델 공간 방향으로 바꿈. 정면은 이미 +Z라 부호 반전 없음
+    void readVrm1SpringBones() {
+        const std::string_view json = extensionJson(data_, "VRMC_springBone");
+        if (json.empty()) {
+            return;
+        }
+        std::vector<int> colliders;  // VRM 충돌체 번호 → Model::springColliders 인덱스 (-1 = 무시)
+        if (const auto list = childSpan(json, "colliders")) {
+            forEachObject(
+                *list, [&](std::string_view object) { colliders.push_back(readCollider(object)); });
+        }
+        std::vector<std::vector<int>> groupColliders;  // 충돌체 그룹 번호 → 충돌체 인덱스들
+        if (const auto groups = childSpan(json, "colliderGroups")) {
+            forEachObject(*groups, [&](std::string_view group) {
+                std::vector<int>& members = groupColliders.emplace_back();
+                if (const auto refs = childSpan(group, "colliders")) {
+                    for (const std::size_t index : indexArray(*refs, colliders.size())) {
+                        if (colliders[index] >= 0) {
+                            members.push_back(colliders[index]);
+                        }
+                    }
+                }
+            });
+        }
+        if (const auto springs = childSpan(json, "springs")) {
+            forEachObject(*springs,
+                          [&](std::string_view spring) { readSpring(spring, groupColliders); });
+        }
+    }
+
+    // 충돌체 하나 → Model::springColliders 인덱스, 노드나 모양이 잘못되면 -1
+    int readCollider(std::string_view object) {
+        const auto node = intMember(object, "node");
+        const auto shape = childSpan(object, "shape");
+        // optional을 직접 검사 (함수 안의 검사는 unchecked-optional-access가 추적 못 함)
+        if (!node || !shape || !validBone(node)) {
+            return -1;
+        }
+        const auto sphere = childSpan(*shape, "sphere");
+        const auto capsule = childSpan(*shape, "capsule");
+        const auto found = sphere ? sphere : capsule;
+        if (!found) {
+            return -1;
+        }
+        const std::string_view body = *found;
+        const Mat4 world = worldMatrix(data_.nodes[static_cast<std::size_t>(*node)]);
+        const auto toModel = [&](std::string_view key) {
+            return core::transformDirection(vec3Array(childSpan(body, key), {}), world);
+        };
+        SpringCollider collider;
+        collider.bone = *node;
+        collider.offset = toModel("offset");
+        collider.radius = floatMember(body, "radius").value_or(0.0f);
+        if (!sphere) {
+            collider.capsule = true;
+            collider.tail = toModel("tail");
+        }
+        model_.springColliders.push_back(collider);
+        return static_cast<int>(model_.springColliders.size()) - 1;
+    }
+
+    // 관절 i의 값은 i → i+1 구간에 쓰임 (마지막 관절의 값은 쓰지 않음). 값이 같은 구간이 이어지면
+    // SpringGroup 하나로 묶고, 바뀌는 관절에서 나눔 (앞 그룹의 마지막 관절 = 뒤 그룹의 첫 관절)
+    void readSpring(std::string_view spring, const std::vector<std::vector<int>>& groupColliders) {
+        std::vector<int> colliders;
+        if (const auto refs = childSpan(spring, "colliderGroups")) {
+            for (const std::size_t index : indexArray(*refs, groupColliders.size())) {
+                colliders.insert(colliders.end(), groupColliders[index].begin(),
+                                 groupColliders[index].end());
+            }
+        }
+        std::vector<int> bones;
+        std::vector<SpringGroup> values;
+        if (const auto joints = childSpan(spring, "joints")) {
+            forEachObject(*joints, [&](std::string_view joint) {
+                const auto node = intMember(joint, "node");
+                if (!node || !validBone(node)) {
+                    return;
+                }
+                SpringGroup v;  // VRM 1.0 기본값
+                v.stiffness = floatMember(joint, "stiffness").value_or(1.0f);
+                v.gravityPower = floatMember(joint, "gravityPower").value_or(0.0f);
+                v.gravityDir = vec3Array(childSpan(joint, "gravityDir"), {0.0f, -1.0f, 0.0f});
+                v.dragForce = floatMember(joint, "dragForce").value_or(0.5f);
+                v.hitRadius = floatMember(joint, "hitRadius").value_or(0.0f);
+                bones.push_back(*node);
+                values.push_back(v);
+            });
+        }
+        for (std::size_t first = 0; first + 1 < bones.size();) {
+            std::size_t last = first + 1;
+            while (last + 1 < bones.size() && sameSpringValues(values[last], values[first])) {
+                ++last;
+            }
+            SpringGroup group = values[first];
+            group.joints.assign(bones.begin() + static_cast<std::ptrdiff_t>(first),
+                                bones.begin() + static_cast<std::ptrdiff_t>(last) + 1);
+            group.colliders = colliders;
+            model_.springGroups.push_back(std::move(group));
+            first = last;
+        }
+    }
+
+    static bool sameSpringValues(const SpringGroup& a, const SpringGroup& b) {
+        return a.stiffness == b.stiffness && a.gravityPower == b.gravityPower &&
+               a.gravityDir == b.gravityDir && a.dragForce == b.dragForce &&
+               a.hitRadius == b.hitRadius;
+    }
+
+    // 번호 배열에서 0 ≤ 번호 < count인 것만 (음수 float를 size_t로 바꾸면 정의되지 않은 동작)
+    static std::vector<std::size_t> indexArray(std::string_view array, std::size_t count) {
+        std::vector<std::size_t> indices;
+        for (const float value : floatArray(array)) {
+            if (value >= 0.0f && value < static_cast<float>(count)) {
+                indices.push_back(static_cast<std::size_t>(value));
+            }
+        }
+        return indices;
+    }
+
+    // [x, y, z] 배열. 없거나 짧으면 fallback
+    static Vec3 vec3Array(std::optional<std::string_view> array, Vec3 fallback) {
+        if (!array) {
+            return fallback;
+        }
+        const std::vector<float> v = floatArray(*array);
+        return v.size() >= 3 ? Vec3{v[0], v[1], v[2]} : fallback;
     }
 
     // VRM 0.x: extensions.VRM.materialProperties[{name, shader, floatProperties,

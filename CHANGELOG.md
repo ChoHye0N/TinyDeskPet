@@ -8,6 +8,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **VRM 1.0 SpringBone** (`VRMC_springBone`): 관절 사슬과 관절별 값, 구·캡슐 충돌체. 지금까지는 VRM 0.x만 읽어 VRM 1.0 모델의 머리카락·옷이 흔들리지 않았음
+- 모델 로드 로그에 흔들림 그룹·충돌체 수
+
 ### Fixed
 
 - VRM Add-on for Blender로 MToon을 적용한 VRM 1.0 모델이 외곽선만 남고 하얗게 보이던 문제. 발광 세기(`KHR_materials_emissive_strength`)를 읽지 않아, 세기 0으로 꺼 둔 흰색 발광이 그대로 더해졌기 때문
