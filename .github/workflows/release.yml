@@ -24,6 +24,10 @@ jobs:
     name: Build & Publish ${{ github.ref_name }}
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      # Windows 러너의 파이썬 콘솔 인코딩은 cp1252라 스크립트의 한글 출력에서 UnicodeEncodeError
+      # (v1.0.0 첫 릴리스에서 발견). UTF-8 모드로 실행
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v7
 
