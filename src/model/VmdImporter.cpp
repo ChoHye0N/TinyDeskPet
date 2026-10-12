@@ -449,6 +449,8 @@ public:
         }
         const bool leftIk = !keys_[LLegIk].empty();
         const bool rightIk = !keys_[RLegIk].empty();
+        std::vector<Vec3> hips;  // 下半身 위치 (センター·グルーブ 이동이 여기에 반영됨)
+        hips.reserve(clip.frameCount);
         for (std::size_t i = 0; i < clip.frameCount; ++i) {
             const Frame f = pose(static_cast<float>(i), leftIk, rightIk);
             for (std::size_t b = 0; b < kBones.size(); ++b) {
@@ -456,6 +458,7 @@ public:
                     clip.track(kBones[b].human).push_back(toModelSpace(f.world[b]));
                 }
             }
+            hips.push_back(toModelSpace(f.position[LowerBody]));
         }
         std::array<std::optional<Vec3>, kHumanBoneCount> rest{};
         for (const BoneInfo& bone : kBones) {
@@ -464,6 +467,8 @@ public:
             }
         }
         motion::setRestDirections(clip, rest);
+        // MMD 단위 그대로 (재생할 때 엉덩이 높이 비율로 맞추므로 단위가 상쇄됨)
+        motion::setHipsTranslation(clip, hips, toModelSpace(kBones[LowerBody].rest));
         return clip;
     }
 

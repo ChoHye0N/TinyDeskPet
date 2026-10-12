@@ -166,3 +166,69 @@ TEST(MotionPlayer, Frames_AreInterpolatedAndLooped) {
     EXPECT_NEAR(yaw(1.5f / 30.0f), 15.0f, 1e-2f);  // 프레임 1과 2 사이
     EXPECT_NEAR(yaw(3.0f / 30.0f), 10.0f, 1e-2f);  // 길이(2프레임)를 넘으면 처음부터 반복
 }
+
+namespace {
+
+// 프레임 i에서 엉덩이를 Y축으로 i × 10° 돌리는 클립 (frames 프레임)
+std::shared_ptr<MotionClip> turningClip(std::size_t frames) {
+    auto clip = std::make_shared<MotionClip>();
+    clip->frameCount = frames;
+    for (std::size_t i = 0; i < frames; ++i) {
+        clip->track(HumanBone::Hips)
+            .push_back(Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(10.0f * static_cast<float>(i))));
+    }
+    return clip;
+}
+
+float hipsYaw(const Skeleton& skeleton, const MotionPlayer& player, float time) {
+    const Vec3 v = pose(skeleton, player, time).accumulated[kHips].rotate({0.0f, 0.0f, 1.0f});
+    return std::atan2(v.x, v.z) * 180.0f / kPi;
+}
+
+}  // namespace
+
+TEST(MotionPlayer, LoopStart_PlaysOnceThenRepeatsFromLoopStart) {
+    // 프레임 0 ~ 4 (0° ~ 40°), 반복은 프레임 2부터: 처음엔 끝까지, 그 뒤 2 → 4만 반복
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    auto clip = turningClip(5);
+    clip->loopStart = 2.0f / 30.0f;
+    const MotionPlayer player(skeleton, clip);
+    EXPECT_NEAR(hipsYaw(skeleton, player, 1.0f / 30.0f), 10.0f, 1e-2f);  // 첫 재생은 처음부터
+    EXPECT_NEAR(hipsYaw(skeleton, player, 4.0f / 30.0f), 40.0f, 1e-2f);  // 끝
+    EXPECT_NEAR(hipsYaw(skeleton, player, 5.5f / 30.0f), 35.0f, 1e-2f);  // 2 + 1.5프레임
+    EXPECT_NEAR(hipsYaw(skeleton, player, 6.5f / 30.0f), 25.0f, 1e-2f);  // 두 번째 반복
+}
+
+TEST(MotionPlayer, LoopStartPastEnd_HoldsLastPose) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    auto clip = turningClip(5);
+    clip->loopStart = 10.0f;
+    const MotionPlayer player(skeleton, clip);
+    EXPECT_NEAR(hipsYaw(skeleton, player, 2.0f / 30.0f), 20.0f, 1e-2f);
+    EXPECT_NEAR(hipsYaw(skeleton, player, 3.0f), 40.0f, 1e-2f);  // 끝난 뒤엔 마지막 자세
+}
+
+TEST(MotionPlayer, RootOffset_ScalesByHipsHeightAndKeepsOnlySway) {
+    // 원본 엉덩이 높이 2, 대상(테스트 모델) 1 → 이동을 절반으로. 원본은 앞(+X, +Z)으로 걸어가며
+    // 가운데 프레임에 X로 0.1 더 흔들리고 0.4 내려감
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    auto clip = turningClip(3);
+    clip->hipsHeight = 2.0f;
+    clip->hipsTranslation = {{0.0f, 0.0f, 0.0f}, {0.3f, -0.4f, 0.1f}, {0.4f, 0.0f, 0.2f}};
+    const MotionPlayer player(skeleton, clip);
+
+    // 수평: 걸어간 경로(시작 → 끝을 직선으로)를 빼고 흔들림만. 수직: 그대로 (둘 다 × 0.5)
+    expectNear(player.rootOffset(1.0f / 30.0f), {0.05f, -0.2f, 0.0f}, 1e-4f);
+    expectNear(player.rootOffset(0.0f), {0.0f, 0.0f, 0.0f}, 1e-4f);
+    expectNear(player.rootOffset(2.0f / 30.0f), {0.0f, 0.0f, 0.0f}, 1e-4f);  // 끝도 제자리
+}
+
+TEST(MotionPlayer, ClipWithoutHipsTranslation_HasNoRootOffset) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    const MotionPlayer player(skeleton, turningClip(3));
+    expectNear(player.rootOffset(1.0f / 30.0f), {0.0f, 0.0f, 0.0f});
+}

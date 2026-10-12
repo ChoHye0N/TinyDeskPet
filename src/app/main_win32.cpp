@@ -207,17 +207,22 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
 // 동작별 모션 파일 (ADR-0013). 실패한 동작은 코드로 만든 동작으로 계속
 app::Application::MotionClips loadMotionClips(const core::AnimationConfig& config,
                                               const fs::path& baseDir) {
-    const std::array<std::pair<anim::Motion, const std::string*>, anim::kMotionCount> entries = {{
-        {anim::Motion::Idle, &config.idleClip},
-        {anim::Motion::Walk, &config.walkClip},
-        {anim::Motion::Dragged, &config.draggedClip},
-        {anim::Motion::Airborne, &config.airborneClip},
+    struct Entry {
+        anim::Motion motion;
+        const std::string* path;
+        float loopStart;
+    };
+    const std::array<Entry, anim::kMotionCount> entries = {{
+        {anim::Motion::Idle, &config.idleClip, config.idleLoopStart},
+        {anim::Motion::Walk, &config.walkClip, config.walkLoopStart},
+        {anim::Motion::Dragged, &config.draggedClip, config.draggedLoopStart},
+        {anim::Motion::Airborne, &config.airborneClip, config.airborneLoopStart},
     }};
     constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
                                                                     "airborne"};
     constexpr std::array<const char*, 4> kFormats = {"?", "VRMA", "VMD", "FBX"};
     app::Application::MotionClips clips{};
-    for (const auto& [motion, configured] : entries) {
+    for (const auto& [motion, configured, loopStart] : entries) {
         const auto m = static_cast<std::size_t>(motion);
         if (configured->empty()) {
             continue;
@@ -228,11 +233,15 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
                           *configured, result.error);
             continue;
         }
-        const model::MotionClip& clip = *result.clip;
-        logging::info("모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개)", kNames[m],
-                      *configured, kFormats[static_cast<std::size_t>(clip.format)], clip.duration(),
-                      clip.trackCount(), clip.boneTracks.size());
-        clips[m] = std::make_shared<const model::MotionClip>(std::move(*result.clip));
+        model::MotionClip& clip = *result.clip;
+        clip.loopStart = loopStart;
+        logging::info(
+            "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, "
+            "엉덩이 이동 {}, 반복 {:.2f}초부터)",
+            kNames[m], *configured, kFormats[static_cast<std::size_t>(clip.format)],
+            clip.duration(), clip.trackCount(), clip.boneTracks.size(),
+            clip.hipsTranslation.empty() ? "없음" : "있음", clip.loopStart);
+        clips[m] = std::make_shared<const model::MotionClip>(std::move(clip));
     }
     return clips;
 }

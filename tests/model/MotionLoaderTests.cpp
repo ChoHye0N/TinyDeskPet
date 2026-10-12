@@ -198,6 +198,19 @@ TEST(VmdMotion, FingerKeys_BecomeFingerTracksFollowingTheHand) {
     EXPECT_GT(index.x, 0.5f);  // 팔과 같이 캐릭터 왼쪽으로 뻗음
 }
 
+TEST(VmdMotion, CenterKeys_MoveHipsInMmdUnits) {
+    // センター를 MMD 단위로 2 내리고 앞(MMD −Z)으로 1 → 下半身도 같이. 단위는 MMD 그대로 두고 원본
+    // 엉덩이 높이(下半身 11.6)와 함께 저장 (재생할 때 비율로 맞춤)
+    constexpr std::string_view kCenter = "\x83\x5A\x83\x93\x83\x5E\x81\x5B";  // センター
+    const MotionLoadResult result =
+        load(VmdBuilder().build({{kCenter, 0, {0.0f, -2.0f, -1.0f}, Quat{}}}));
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    EXPECT_NEAR(result.clip->hipsHeight, 11.6f, 1e-4f);
+    ASSERT_EQ(result.clip->hipsTranslation.size(), 1U);
+    EXPECT_NEAR(result.clip->hipsTranslation[0].y, -2.0f, 1e-4f);
+    EXPECT_NEAR(result.clip->hipsTranslation[0].z, 1.0f, 1e-4f);  // 공통 규약 정면 +Z
+}
+
 TEST(VmdMotion, RestDirections_AssumeMmdAPose) {
     const MotionLoadResult result = load(VmdBuilder().build({{kHead, 0, {}, Quat{}}}));
     ASSERT_TRUE(result.clip.has_value()) << result.error;
@@ -337,6 +350,35 @@ TEST(VrmaMotion, NonHumanoidNodes_MovingOnTheirOwn_BecomeNamedTracks) {
     ASSERT_EQ(tracks[0].rotations.size(), 31U);
     expectSameRotation(tracks[0].rotations[30],
                        Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(90.0f)));
+}
+
+TEST(VrmaMotion, HipsTranslationChannel_BecomesHipsTranslation) {
+    // 엉덩이를 1초 동안 높이 1 → 0.5로 (앉기). 원본 엉덩이 높이 1과 함께 저장
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int heights = b.addFloats({0, 1, 0, 0, 0.5f, 0}, "VEC3");
+    const std::string json = b.build(
+        R"("nodes":[{"name":"hips","translation":[0,1,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("animations":[{"channels":[{"sampler":0,"target":{"node":0,"path":"translation"}}],)"
+        R"("samplers":[{"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(heights) +
+        R"(}]}],)"
+        R"("extensionsUsed":["VRMC_vrm_animation"],"extensions":{"VRMC_vrm_animation":{)"
+        R"("specVersion":"1.0","humanoid":{"humanBones":{"hips":{"node":0}}}}})");
+    const MotionLoadResult result = loadText(json, ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const MotionClip& clip = *result.clip;
+    EXPECT_FLOAT_EQ(clip.hipsHeight, 1.0f);
+    ASSERT_EQ(clip.hipsTranslation.size(), 31U);
+    EXPECT_NEAR(clip.hipsTranslation[15].y, -0.25f, 1e-5f);
+    EXPECT_NEAR(clip.hipsTranslation[30].y, -0.5f, 1e-5f);
+}
+
+TEST(VrmaMotion, RotationOnly_HasNoHipsTranslation) {
+    GltfBuilder b;
+    const MotionLoadResult result = loadText(b.build(vrmaJson(b)), ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    EXPECT_TRUE(result.clip->hipsTranslation.empty());
 }
 
 TEST(VrmaMotion, PlainGltfWithoutExtension_ReturnsError) {

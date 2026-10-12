@@ -312,12 +312,20 @@ public:
         // 노드마다 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전). 휴머노이드가 아닌 본도
         // 부모와 비교하려고 전부 계산
         std::vector<std::vector<core::Quat>> deltas(scene_.nodes.count);
+        const ufbx_node* hips = human[static_cast<std::size_t>(HumanBone::Hips)];
+        std::vector<core::Vec3> hipsPositions;
         for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
             const double time = begin + static_cast<double>(frame) / MotionClip::kFramesPerSecond;
             const std::vector<core::Quat> world = worldRotations(stack.anim, time);
             for (std::size_t n = 0; n < world.size(); ++n) {
                 deltas[n].push_back(world[n] * rest[n].conjugate());
             }
+            if (hips != nullptr) {
+                hipsPositions.push_back(worldPosition(stack.anim, time, hips));
+            }
+        }
+        if (hips != nullptr) {
+            motion::setHipsTranslation(clip, hipsPositions, worldPosition(nullptr, 0.0, hips));
         }
         std::vector<motion::SourceNode> nodes(scene_.nodes.count);
         for (const ufbx_node* node : scene_.nodes) {
@@ -359,6 +367,20 @@ private:
             compute(compute, node);
         }
         return world;
+    }
+
+    // 노드의 월드 위치: 조상의 로컬 변환을 루트까지 곱함 (회전과 같은 방식이라 축이 맞음).
+    // anim이 nullptr이면 애니메이션 없는 값
+    [[nodiscard]] static core::Vec3 worldPosition(const ufbx_anim* anim, double time,
+                                                  const ufbx_node* node) {
+        ufbx_matrix world = ufbx_identity_matrix;
+        for (const ufbx_node* n = node; n != nullptr; n = n->parent) {
+            const ufbx_transform local =
+                anim != nullptr ? ufbx_evaluate_transform(anim, n, time) : n->local_transform;
+            const ufbx_matrix m = ufbx_transform_to_matrix(&local);
+            world = ufbx_matrix_mul(&m, &world);  // 부모 변환을 바깥에서 적용
+        }
+        return toVec3(world.cols[3]);
     }
 
     const ufbx_scene& scene_;

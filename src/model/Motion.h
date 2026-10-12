@@ -45,6 +45,14 @@ struct MotionClip {
     std::array<core::Vec3, kHumanBoneCount> restDirections{};
     // 부모와 다르게 움직이는 휴머노이드가 아닌 본만 (부모를 그대로 따라가는 본은 없어도 같음)
     std::vector<NamedTrack> boneTracks;
+    // 엉덩이(hips) 위치 변화 (ADR-0014): 프레임별 "원본 기본 자세 → 그 시각" (모델 축, 원본 단위).
+    // 비어 있으면 위치를 쓰지 않음. 재생할 때 대상 엉덩이 높이 / hipsHeight 배로 맞추므로 단위는
+    // 원본 그대로 둠 (VMD는 MMD 단위)
+    std::vector<core::Vec3> hipsTranslation;
+    float hipsHeight = 0.0f;  // 원본 기본 자세의 엉덩이 높이 (원본 단위, 바닥 = 0)
+    // 처음 한 번 끝까지 재생한 뒤 반복을 시작할 시각 (s). 0이면 처음부터 반복, 길이 이상이면 마지막
+    // 자세 유지. 파일이 아니라 설정([animation] *_loop_start)에서 옴
+    float loopStart = 0.0f;
 
     [[nodiscard]] float duration() const noexcept {
         return frameCount > 1 ? static_cast<float>(frameCount - 1) / kFramesPerSecond : 0.0f;
@@ -88,6 +96,10 @@ struct SourceNode {
 };
 void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
                    const std::vector<std::vector<core::Quat>>& deltas);
+
+// 엉덩이의 프레임별 위치(원본 단위)와 기본 자세 위치로 hipsTranslation·hipsHeight를 채움.
+// 한 번도 움직이지 않으면 비워 둠 (재생할 때 위치 계산을 건너뜀)
+void setHipsTranslation(MotionClip& clip, std::span<const core::Vec3> positions, core::Vec3 rest);
 
 }  // namespace motion
 

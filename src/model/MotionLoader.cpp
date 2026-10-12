@@ -122,6 +122,24 @@ void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
     }
 }
 
+void setHipsTranslation(MotionClip& clip, std::span<const core::Vec3> positions, core::Vec3 rest) {
+    // 원본 단위의 1e-4배 이하는 계산 오차로 보고 움직이지 않은 것으로 (m면 0.1mm, MMD면 0.01mm)
+    const float tolerance = std::max(std::abs(rest.y), 1.0f) * 1e-4f;
+    const bool moves = std::ranges::any_of(positions, [&](core::Vec3 p) {
+        const core::Vec3 d = p - rest;
+        return std::abs(d.x) > tolerance || std::abs(d.y) > tolerance || std::abs(d.z) > tolerance;
+    });
+    if (!moves || rest.y <= 0.0f) {
+        return;  // 이동 없음, 또는 엉덩이가 바닥 아래인 원본 (높이 비율을 잴 수 없음)
+    }
+    clip.hipsHeight = rest.y;
+    clip.hipsTranslation.clear();
+    clip.hipsTranslation.reserve(positions.size());
+    for (const core::Vec3 p : positions) {
+        clip.hipsTranslation.push_back(p - rest);
+    }
+}
+
 }  // namespace motion
 
 }  // namespace deskpet::model

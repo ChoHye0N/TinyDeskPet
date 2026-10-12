@@ -67,23 +67,57 @@ MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model
             corrections_[j] = corrections_[static_cast<std::size_t>(parent)];
         }
     }
+
+    // 엉덩이 이동: 원본과 대상의 엉덩이 높이 비율 (키가 다른 모델도 같은 비율로 앉고 뜀)
+    const int hips = skeleton.find(model::HumanBone::Hips);
+    const float targetHeight = hips >= 0 ? skeleton.bindPosition(hips).y : 0.0f;
+    if (!clip_->hipsTranslation.empty() && clip_->hipsHeight > 0.0f && targetHeight > 0.0f) {
+        hipsScale_ = targetHeight / clip_->hipsHeight;
+    }
+}
+
+MotionPlayer::FramePosition MotionPlayer::locate(float time) const {
+    const model::MotionClip& clip = *clip_;
+    FramePosition at;
+    if (clip.frameCount <= 1) {
+        return at;
+    }
+    const float length = clip.duration();
+    float t = std::max(time, 0.0f);
+    if (t > length) {
+        // 처음 한 번 끝까지 재생한 뒤로는 [loopStart, 끝]을 반복. 반복 구간이 없으면 마지막 자세
+        const float start = std::clamp(clip.loopStart, 0.0f, length);
+        t = length - start > 1e-6f ? start + std::fmod(t - start, length - start) : length;
+    }
+    const auto period = static_cast<float>(clip.frameCount - 1);
+    const float frame = std::min(t * model::MotionClip::kFramesPerSecond, period);
+    at.i0 = std::min(static_cast<std::size_t>(frame), clip.frameCount - 2);
+    at.i1 = at.i0 + 1;
+    at.weight = frame - static_cast<float>(at.i0);
+    at.phase = frame / period;
+    return at;
+}
+
+core::Vec3 MotionPlayer::rootOffset(float time) const {
+    if (hipsScale_ <= 0.0f) {
+        return {};
+    }
+    const std::vector<core::Vec3>& hips = clip_->hipsTranslation;
+    const FramePosition at = locate(time);
+    const std::size_t last = hips.size() - 1;
+    const core::Vec3 a = hips[std::min(at.i0, last)];
+    const core::Vec3 b = hips[std::min(at.i1, last)];
+    const core::Vec3 now = a + (b - a) * at.weight;
+    // 수평: 시작 위치와 시작 → 끝 이동을 빼 반복해도 제자리 (흔들림만 남음). 수직: 그대로
+    const core::Vec3 path = hips.front() + (hips.back() - hips.front()) * at.phase;
+    return core::Vec3{now.x - path.x, now.y, now.z - path.z} * hipsScale_;
 }
 
 void MotionPlayer::sample(float time, std::vector<core::Quat>& rotations) const {
-    const model::MotionClip& clip = *clip_;
-    std::size_t i0 = 0;
-    std::size_t i1 = 0;
-    float w = 0.0f;
-    if (clip.frameCount > 1) {
-        const auto period = static_cast<float>(clip.frameCount - 1);
-        float frame = std::fmod(time * model::MotionClip::kFramesPerSecond, period);
-        if (frame < 0.0f) {
-            frame += period;
-        }
-        i0 = std::min(static_cast<std::size_t>(frame), clip.frameCount - 2);
-        i1 = i0 + 1;
-        w = frame - static_cast<float>(i0);
-    }
+    const FramePosition at = locate(time);
+    const std::size_t i0 = at.i0;
+    const std::size_t i1 = at.i1;
+    const float w = at.weight;
 
     rotations.resize(parents_.size());
     for (const int bone : order_) {
@@ -94,6 +128,7 @@ void MotionPlayer::sample(float time, std::vector<core::Quat>& rotations) const 
         core::Quat a = up;
         if (tracks_[j] != nullptr) {
             const std::vector<core::Quat>& track = *tracks_[j];
+            // 휴머노이드·이름 트랙 모두 프레임 수가 같음 (로더가 같은 샘플링으로 만듦)
             const std::size_t last = track.size() - 1;
             // 대상 기본 자세를 원본 기본 자세로 돌린(C) 뒤 원본의 움직임(Δ)
             a = core::slerp(track[std::min(i0, last)], track[std::min(i1, last)], w) *
