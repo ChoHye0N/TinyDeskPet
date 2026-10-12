@@ -1,6 +1,8 @@
 #include "model/Humanoid.h"
 
+#include <algorithm>
 #include <array>
+#include <string>
 #include <utility>
 
 namespace deskpet::model {
@@ -90,6 +92,33 @@ constexpr std::array kFbxNames = {
     Entry{"RightToeBase", HumanBone::RightToes},
 };
 
+// 3ds Max Biped ("Bip001 L Thigh"의 "Bip001 " 뒤). 게임에서 추출한 모델에 흔함.
+// 루트 "Bip001"은 몸 전체 이동용이라 hips가 아니라 "Pelvis"가 hips. Spine1/Spine2는 Mixamo와 같게
+constexpr std::array kBipedNames = {
+    Entry{"Pelvis", HumanBone::Hips},
+    Entry{"Spine", HumanBone::Spine},
+    Entry{"Spine1", HumanBone::Chest},
+    Entry{"Spine2", HumanBone::UpperChest},
+    Entry{"Neck", HumanBone::Neck},
+    Entry{"Head", HumanBone::Head},
+    Entry{"L Clavicle", HumanBone::LeftShoulder},
+    Entry{"L UpperArm", HumanBone::LeftUpperArm},
+    Entry{"L Forearm", HumanBone::LeftLowerArm},
+    Entry{"L Hand", HumanBone::LeftHand},
+    Entry{"R Clavicle", HumanBone::RightShoulder},
+    Entry{"R UpperArm", HumanBone::RightUpperArm},
+    Entry{"R Forearm", HumanBone::RightLowerArm},
+    Entry{"R Hand", HumanBone::RightHand},
+    Entry{"L Thigh", HumanBone::LeftUpperLeg},
+    Entry{"L Calf", HumanBone::LeftLowerLeg},
+    Entry{"L Foot", HumanBone::LeftFoot},
+    Entry{"L Toe0", HumanBone::LeftToes},
+    Entry{"R Thigh", HumanBone::RightUpperLeg},
+    Entry{"R Calf", HumanBone::RightLowerLeg},
+    Entry{"R Foot", HumanBone::RightFoot},
+    Entry{"R Toe0", HumanBone::RightToes},
+};
+
 template <std::size_t N>
 HumanBone lookup(const std::array<Entry, N>& table, std::string_view name) {
     for (const auto& [key, bone] : table) {
@@ -98,6 +127,25 @@ HumanBone lookup(const std::array<Entry, N>& table, std::string_view name) {
         }
     }
     return HumanBone::None;
+}
+
+// "Bip" + 숫자 + 공백(또는 '_') 접두사를 떼고 Biped 표에서 찾음. 내보내기 도구에 따라 이름의
+// 공백이 '_'로 바뀌므로 ("Bip001_L_Thigh") 공백으로 되돌려 비교
+HumanBone lookupBiped(std::string_view name) {
+    constexpr std::string_view kPrefix = "Bip";
+    if (!name.starts_with(kPrefix)) {
+        return HumanBone::None;
+    }
+    std::size_t pos = kPrefix.size();
+    while (pos < name.size() && name[pos] >= '0' && name[pos] <= '9') {
+        ++pos;
+    }
+    if (pos == kPrefix.size() || pos >= name.size() || (name[pos] != ' ' && name[pos] != '_')) {
+        return HumanBone::None;
+    }
+    std::string rest(name.substr(pos + 1));
+    std::ranges::replace(rest, '_', ' ');
+    return lookup(kBipedNames, rest);
 }
 
 }  // namespace
@@ -123,7 +171,8 @@ HumanBone humanBoneFromFbxName(std::string_view name) {
     if (const auto colon = name.rfind(':'); colon != std::string_view::npos) {
         name.remove_prefix(colon + 1);
     }
-    return lookup(kFbxNames, name);
+    const HumanBone mixamo = lookup(kFbxNames, name);
+    return mixamo != HumanBone::None ? mixamo : lookupBiped(name);
 }
 
 HumanBone limbChild(HumanBone bone) {

@@ -12,6 +12,7 @@
 
 - **VRM 1.0 SpringBone** (`VRMC_springBone`): 관절 사슬과 관절별 값, 구·캡슐 충돌체. 지금까지는 VRM 0.x만 읽어 VRM 1.0 모델의 머리카락·옷이 흔들리지 않았음
 - 모델 로드 로그에 흔들림 그룹·충돌체 수
+- FBX 모델·모션의 3ds Max Biped 본 이름(`Bip001 Pelvis`, `Bip01_L_UpperArm` 등) 휴머노이드 매핑. 게임에서 추출한 FBX가 휴머노이드 0개로 읽혀 동작·모션이 붙지 않았음
 
 ### Fixed
 
