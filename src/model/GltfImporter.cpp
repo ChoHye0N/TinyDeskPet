@@ -466,8 +466,13 @@ private:
             dst.alphaMode = toAlphaMode(src.alpha_mode);
             dst.alphaCutoff = src.alpha_cutoff;
             dst.doubleSided = src.double_sided != 0;
-            dst.emissiveColor = {src.emissive_factor[0], src.emissive_factor[1],
-                                 src.emissive_factor[2]};
+            // KHR_materials_emissive_strength: 색 × 세기. 세기 0으로 발광을 끈 재질(VRM Add-on for
+            // Blender의 MToon 변환 기본값)을 무시하면 흰색 발광이 되어 모델이 하얗게 보임
+            const float emissiveStrength =
+                src.has_emissive_strength != 0 ? src.emissive_strength.emissive_strength : 1.0f;
+            dst.emissiveColor =
+                Vec3{src.emissive_factor[0], src.emissive_factor[1], src.emissive_factor[2]} *
+                emissiveStrength;
             if (const cgltf_texture* texture = src.emissive_texture.texture; texture != nullptr) {
                 dst.emissiveTexture = indexOf(texture->image, data_.images);
             }

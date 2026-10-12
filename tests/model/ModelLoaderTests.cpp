@@ -528,6 +528,38 @@ TEST(ModelLoader, PlainGltfMaterial_IsNotMToonButReadsEmissiveAndUnlit) {
     EXPECT_EQ(m.matcapTexture, -1);
 }
 
+TEST(ModelLoader, EmissiveStrengthZero_TurnsEmissiveOff) {
+    // VRM Add-on for Blender가 MToon으로 바꾼 재질의 기본값: emissiveFactor [1,1,1] + 세기 0.
+    // 세기를 무시하면 발광이 흰색 최대가 되어 모델 전체가 하얗게 보임
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(
+        b.build(meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+                R"(,"extensionsUsed":["KHR_materials_emissive_strength"],"materials":[{"name":"A",)"
+                R"("emissiveFactor":[1,1,1],)"
+                R"("extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":0}}}])"));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& m = result.model->materials[0];
+    EXPECT_FLOAT_EQ(m.emissiveColor.x, 0.0f);
+    EXPECT_FLOAT_EQ(m.emissiveColor.y, 0.0f);
+    EXPECT_FLOAT_EQ(m.emissiveColor.z, 0.0f);
+}
+
+TEST(ModelLoader, EmissiveStrength_ScalesEmissiveFactor) {
+    // 세기는 1보다 클 수 있음 (HDR 발광)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(
+        b.build(meshJson(t, ",\"material\":0") + "," + kSingleNodeScene +
+                R"(,"extensionsUsed":["KHR_materials_emissive_strength"],"materials":[{"name":"A",)"
+                R"("emissiveFactor":[0.5,0.25,0],)"
+                R"("extensions":{"KHR_materials_emissive_strength":{"emissiveStrength":4}}}])"));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& m = result.model->materials[0];
+    EXPECT_FLOAT_EQ(m.emissiveColor.x, 2.0f);
+    EXPECT_FLOAT_EQ(m.emissiveColor.y, 1.0f);
+}
+
 // ---------------------------------------------------------------------------
 // VRM 메타 (이름·작가·라이선스, FR-23)
 // ---------------------------------------------------------------------------

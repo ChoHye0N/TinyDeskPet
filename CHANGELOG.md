@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- VRM Add-on for Blender로 MToon을 적용한 VRM 1.0 모델이 외곽선만 남고 하얗게 보이던 문제. 발광 세기(`KHR_materials_emissive_strength`)를 읽지 않아, 세기 0으로 꺼 둔 흰색 발광이 그대로 더해졌기 때문
+
 ## [1.0.1] - 2026-10-12
 
 ### Fixed
