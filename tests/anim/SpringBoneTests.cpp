@@ -116,7 +116,7 @@ TEST(SpringBone, Collider_PushesTailOutOfSphere) {
     const Vec3 center = free.run(120)[3];
     const Vec3 offset = center - model.bones[0].position;
 
-    model.springColliders.push_back({0, offset, 0.05f});
+    model.springColliders.push_back({0, offset, 0.05f, false, {}});
     model.springGroups[0].colliders = {0};
     Rig blocked(model);
     // 밀어낸 뒤 본 길이로 되돌리므로 hitRadius 여유까지는 보장하지 않지만 구 안으로는 안 들어감
@@ -245,4 +245,65 @@ TEST(SpringBone, ZeroTimeFrame_KeepsCurrentSwingInsteadOfBindPose) {
     for (std::size_t j = 1; j < model.bones.size(); ++j) {
         EXPECT_LT(distance(next[j], expected[j]), 1e-5f) << "bone " << j;
     }
+}
+
+// ---------------------------------------------------------------------------
+// VRM 1.0: 명시한 관절 사슬, 캡슐 충돌체
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 선분 ab에서 p까지 거리
+float distanceToSegment(Vec3 p, Vec3 a, Vec3 b) {
+    const Vec3 ab = b - a;
+    const float t =
+        std::clamp(deskpet::core::dot(p - a, ab) / deskpet::core::dot(ab, ab), 0.0f, 1.0f);
+    return distance(p, a + ab * t);
+}
+
+}  // namespace
+
+TEST(SpringBone, Vrm1Joints_SwingOnlyListedJointsAndLastIsTail) {
+    // joints {1, 2}: 본 1만 본 2를 향해 흔들리고, 마지막 관절(본 2)과 그 아래(본 3)는 따라만 감.
+    // roots {1}(VRM 0.x)이면 자손 전체가 흔들려 본 2 → 3도 따로 휨
+    deskpet::model::SpringGroup group;
+    group.stiffness = 0.5f;
+    group.gravityPower = 2.0f;
+    Model model = makeChainModel({0.1f, 0.0f, 0.0f}, group);
+    model.springGroups[0].roots.clear();
+    model.springGroups[0].joints = {1, 2};
+    Rig rig(model);
+    const auto posed = rig.run(120);
+
+    EXPECT_LT(posed[2].y, 1.0f - 0.02f);  // 본 1이 휘어 본 2가 내려감
+    const Vec3 first = deskpet::core::normalize(posed[2] - posed[1]);
+    const Vec3 second = deskpet::core::normalize(posed[3] - posed[2]);
+    EXPECT_GT(deskpet::core::dot(first, second), 0.9999f);  // 본 2는 스스로 돌지 않음
+}
+
+TEST(SpringBone, CapsuleCollider_PushesTailOutOfSegment) {
+    deskpet::model::SpringGroup group;
+    group.stiffness = 0.2f;
+    group.gravityPower = 3.0f;
+    group.hitRadius = 0.01f;
+    Model model = makeChainModel({0.1f, 0.0f, 0.0f}, group);
+
+    // 충돌체가 없을 때 사슬 끝(본 3)이 가는 자리를 앞뒤(z)로 지나는 캡슐. 양 끝은 그 자리에서
+    // 10cm씩 떨어져 있어, 캡슐을 끝점 구로만 처리하면 막지 못함
+    Rig free(model);
+    const Vec3 center = free.run(120)[3];
+    const Vec3 offset = center - model.bones[0].position;
+    deskpet::model::SpringCollider capsule;
+    capsule.bone = 0;
+    capsule.offset = offset + Vec3{0.0f, 0.0f, -0.1f};
+    capsule.tail = offset + Vec3{0.0f, 0.0f, 0.1f};
+    capsule.radius = 0.05f;
+    capsule.capsule = true;
+    model.springColliders.push_back(capsule);
+    model.springGroups[0].colliders = {0};
+    Rig blocked(model);
+
+    const Vec3 a = model.bones[0].position + capsule.offset;
+    const Vec3 b = model.bones[0].position + capsule.tail;
+    EXPECT_GE(distanceToSegment(blocked.run(120)[3], a, b), 0.05f);
 }

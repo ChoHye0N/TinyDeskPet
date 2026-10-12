@@ -91,21 +91,29 @@ struct Bone {
     HumanBone human = HumanBone::None;
 };
 
-// SpringBone 충돌체 (구). 본을 따라 움직임
+// SpringBone 충돌체 (구 또는 캡슐). 본을 따라 움직임
 struct SpringCollider {
     int bone = -1;        // Model::bones 인덱스
     core::Vec3 offset;    // 본 위치에서의 오프셋 (바인드 포즈 모델 공간, m)
     float radius = 0.0f;  // m
+    // 캡슐 (VRM 1.0): offset ~ tail 선분에서 radius 안쪽이 충돌. tail은 offset과 같은 공간
+    bool capsule = false;
+    core::Vec3 tail;
 };
 
-// SpringBone 그룹: roots의 자손 본 전체가 같은 파라미터로 흔들림 (VRM secondaryAnimation)
+// SpringBone 그룹: 같은 파라미터로 흔들리는 본들
+//   VRM 0.x secondaryAnimation: roots의 자손 본 전체
+//   VRM 1.0 VRMC_springBone:    joints에 루트 → 끝 순서로 적은 본만
 struct SpringGroup {
     float stiffness = 1.0f;     // 원래 방향으로 돌아가려는 힘
     float gravityPower = 0.0f;  // 중력 세기
     core::Vec3 gravityDir{0.0f, -1.0f, 0.0f};
-    float dragForce = 0.4f;      // 0 ~ 1. 클수록 흔들림이 빨리 줄어듦
-    float hitRadius = 0.02f;     // 본 끝의 충돌 반지름 (m)
-    std::vector<int> roots;      // 흔들림이 시작되는 본
+    float dragForce = 0.4f;   // 0 ~ 1. 클수록 흔들림이 빨리 줄어듦
+    float hitRadius = 0.02f;  // 본 끝의 충돌 반지름 (m)
+    std::vector<int> roots;   // 흔들림이 시작되는 본
+    // 비어 있지 않으면 roots 대신 씀. 각 본은 다음 본을 향해 흔들리고, 마지막 본은 앞 본의 끝
+    // 위치만 줌 (스스로 흔들리지 않음)
+    std::vector<int> joints;
     std::vector<int> colliders;  // Model::springColliders 인덱스
 };
 
@@ -161,7 +169,7 @@ struct Model {
     std::vector<Texture> textures;
     std::vector<Bone> bones;
     std::array<Morph, static_cast<std::size_t>(Expression::Count)> expressions;
-    std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM 0.x만 읽음)
+    std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM만 읽음)
     std::vector<SpringCollider> springColliders;
     Bounds bounds;
 

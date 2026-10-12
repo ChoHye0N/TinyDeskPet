@@ -6,9 +6,10 @@
 //   다음 끝 = 현재 끝 + (현재 끝 − 이전 끝)·(1 − drag)       관성 (흔들림 유지·감쇠)
 //          + 원래 방향 · stiffness · dt                     복원
 //          + 중력 방향 · gravityPower · dt                   중력
-//   → 본 길이로 되돌리고, 충돌체(구) 밖으로 밀어냄
+//   → 본 길이로 되돌리고, 충돌체(구·캡슐) 밖으로 밀어냄
 // 계산 방식은 UniVRM VRMSpringBone과 같습니다. 모델 공간에서 계산하고, 캐릭터가 화면에서
 // 움직인 만큼(movement) 이전 위치들을 반대로 옮겨 관성이 생기게 합니다.
+// 흔들리는 본: VRM 0.x는 그룹 루트의 자손 전체, VRM 1.0은 그룹에 적힌 관절 사슬(끝은 다음 관절).
 
 #include "anim/Skeleton.h"
 #include "model/Model.h"
@@ -52,6 +53,8 @@ private:
 
     void addChain(int root, int group, const std::vector<std::vector<int>>& children,
                   std::vector<bool>& used);
+    void addJoints(const std::vector<int>& bones, int group, std::vector<bool>& used);
+    void addJoint(int bone, core::Vec3 tail, int group);
     // 본 하나를 계산할 때의 기준: 부모 누적 회전, 머리(본 위치), 몸 자세 그대로의 끝 방향
     struct JointFrame {
         core::Quat parentRotation;
@@ -77,6 +80,7 @@ private:
     std::vector<core::Quat> bodyAccumulated_;
     std::vector<core::Vec3> posed_;
     std::vector<core::Vec3> colliderCenters_;
+    std::vector<core::Vec3> colliderTails_;  // 캡슐의 다른 끝 (구는 중심과 같음)
 };
 
 }  // namespace deskpet::anim

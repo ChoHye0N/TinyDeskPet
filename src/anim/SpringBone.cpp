@@ -72,6 +72,16 @@ core::Vec3 tailOf(const model::Model& model, int bone, const std::vector<int>& k
     return b.position + core::Vec3{0.0f, -kLeafTailLength, 0.0f};
 }
 
+// 선분 ab에서 p에 가장 가까운 점 (캡슐 충돌체)
+core::Vec3 closestOnSegment(core::Vec3 p, core::Vec3 a, core::Vec3 b) {
+    const core::Vec3 ab = b - a;
+    const float lengthSquared = core::dot(ab, ab);
+    if (lengthSquared < 1e-12f) {
+        return a;
+    }
+    return a + ab * std::clamp(core::dot(p - a, ab) / lengthSquared, 0.0f, 1.0f);
+}
+
 }  // namespace
 
 SpringBoneSimulator::SpringBoneSimulator(const model::Model& model) : model_(model) {
@@ -79,10 +89,43 @@ SpringBoneSimulator::SpringBoneSimulator(const model::Model& model) : model_(mod
     std::vector<bool> used(model.bones.size(), false);  // 여러 그룹에 같은 본이 있으면 처음 그룹만
     int group = 0;
     for (const model::SpringGroup& spring : model.springGroups) {
+        if (!spring.joints.empty()) {
+            addJoints(spring.joints, group, used);
+        }
         for (const int root : spring.roots) {
             addChain(root, group, children, used);
         }
         ++group;
+    }
+}
+
+// VRM 1.0: 적힌 순서(루트 → 끝)대로. 각 본의 끝은 다음 관절 위치, 마지막 관절은 끝 위치만 줌
+void SpringBoneSimulator::addJoints(const std::vector<int>& bones, int group,
+                                    std::vector<bool>& used) {
+    const auto valid = [&](int bone) {
+        return bone >= 0 && static_cast<std::size_t>(bone) < used.size();
+    };
+    for (std::size_t i = 0; i + 1 < bones.size(); ++i) {
+        const int bone = bones[i];
+        const int next = bones[i + 1];
+        if (!valid(bone) || !valid(next) || used[static_cast<std::size_t>(bone)]) {
+            continue;
+        }
+        used[static_cast<std::size_t>(bone)] = true;
+        addJoint(bone, model_.bones[static_cast<std::size_t>(next)].position, group);
+    }
+}
+
+void SpringBoneSimulator::addJoint(int bone, core::Vec3 tail, int group) {
+    const model::Bone& b = model_.bones[static_cast<std::size_t>(bone)];
+    Joint joint;
+    joint.bone = bone;
+    joint.parent = b.parent;
+    joint.axis = tail - b.position;
+    joint.length = length(joint.axis);
+    joint.group = group;
+    if (joint.length > 1e-6f) {
+        joints_.push_back(joint);
     }
 }
 
@@ -101,17 +144,7 @@ void SpringBoneSimulator::addChain(int root, int group,
         used[static_cast<std::size_t>(bone)] = true;
         const auto& kids = children[static_cast<std::size_t>(bone)];
         stack.insert(stack.end(), kids.rbegin(), kids.rend());
-
-        const model::Bone& b = model_.bones[static_cast<std::size_t>(bone)];
-        Joint joint;
-        joint.bone = bone;
-        joint.parent = b.parent;
-        joint.axis = tailOf(model_, bone, kids) - b.position;
-        joint.length = length(joint.axis);
-        joint.group = group;
-        if (joint.length > 1e-6f) {
-            joints_.push_back(joint);
-        }
+        addJoint(bone, tailOf(model_, bone, kids), group);
     }
 }
 
@@ -201,10 +234,14 @@ void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>
     bodyAccumulated_ = accumulated_;  // 흔들림을 더하기 전 몸 자세 (흔들림 범위 제한의 기준)
 
     colliderCenters_.clear();
+    colliderTails_.clear();
     for (const model::SpringCollider& c : model_.springColliders) {
         const auto bone = static_cast<std::size_t>(std::max(c.bone, 0));
-        colliderCenters_.push_back(
-            bone < posed_.size() ? posed_[bone] + accumulated_[bone].rotate(c.offset) : c.offset);
+        const auto place = [&](core::Vec3 offset) {
+            return bone < posed_.size() ? posed_[bone] + accumulated_[bone].rotate(offset) : offset;
+        };
+        colliderCenters_.push_back(place(c.offset));
+        colliderTails_.push_back(c.capsule ? place(c.tail) : colliderCenters_.back());
     }
 
     for (Joint& joint : joints_) {
@@ -242,13 +279,15 @@ void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>
             if (index < 0 || static_cast<std::size_t>(index) >= colliderCenters_.size()) {
                 continue;
             }
-            const core::Vec3 center = colliderCenters_[static_cast<std::size_t>(index)];
-            const float radius =
-                model_.springColliders[static_cast<std::size_t>(index)].radius + group.hitRadius;
+            const auto c = static_cast<std::size_t>(index);
+            // 구는 중심, 캡슐은 선분 위의 가장 가까운 점에서 반지름만큼 밀어냄
+            const core::Vec3 center =
+                closestOnSegment(next, colliderCenters_[c], colliderTails_[c]);
+            const float radius = model_.springColliders[c].radius + group.hitRadius;
             const core::Vec3 d = next - center;
             const float dist = length(d);
             if (dist < radius && dist > 1e-6f) {
-                next = constrain(center + d * (radius / dist));  // 구 표면으로 밀어낸 뒤 길이 유지
+                next = constrain(center + d * (radius / dist));  // 표면으로 밀어낸 뒤 길이 유지
             }
         }
 

@@ -193,9 +193,10 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
     const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
     logging::info(
         "모델 로드: {} ({}, 정점 {}, 머티리얼 {}, 텍스처 {}(준비 {}), 본 {}(휴머노이드 {}), "
-        "높이 {:.2f}m, {:.2f}초)",
+        "흔들림 {}(충돌체 {}), 높이 {:.2f}m, {:.2f}초)",
         name, format, m.vertices.size(), m.materials.size(), m.textures.size(), preparedTextures,
-        m.bones.size(), humanoid, m.bounds.size().y, elapsed.count());
+        m.bones.size(), humanoid, m.springGroups.size(), m.springColliders.size(),
+        m.bounds.size().y, elapsed.count());
     if (!m.meta.name.empty()) {
         logging::info("모델 정보: {} / 작가 {} / 라이선스 {}", m.meta.name, m.meta.author,
                       m.meta.license);

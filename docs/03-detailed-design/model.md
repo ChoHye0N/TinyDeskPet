@@ -46,9 +46,12 @@ void setSkinWeights(Vertex&, std::span<const std::pair<int, float>> influences);
 enum class Expression : std::uint8_t { Blink, Happy, Surprised, Count };
 struct Morph { std::vector<std::uint32_t> vertices; std::vector<core::Vec3> deltas; };  // 희소 정점 오프셋
 enum class AlphaMode : std::uint8_t { Opaque, Mask, Blend };
-struct SpringCollider { int bone; core::Vec3 offset; float radius; };
+struct SpringCollider { int bone; core::Vec3 offset; float radius;
+                        bool capsule; core::Vec3 tail; };          // 캡슐이면 offset ~ tail 선분
 struct SpringGroup { float stiffness, gravityPower; core::Vec3 gravityDir; float dragForce, hitRadius;
-                     std::vector<int> roots, colliders; };
+                     std::vector<int> roots;    // VRM 0.x: 자손 전체
+                     std::vector<int> joints;   // VRM 1.0: 적힌 사슬 (비어 있지 않으면 roots 대신)
+                     std::vector<int> colliders; };
 struct Material { std::string name; core::Vec4 baseColor; int baseColorTexture;  // -1 = 없음
                   AlphaMode alphaMode; float alphaCutoff; bool doubleSided;
                   float outlineWidth /* m, 0 = 없음 */; core::Vec4 outlineColor; };
@@ -212,14 +215,23 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 
 ### 흔들림 정보 (SpringBone)
 
-VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_springBone`, PMX 강체는 TODO).
+VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBone`을 읽습니다 (버전마다 하나만, PMX 강체는 TODO).
+
+**VRM 0.x**
 
 | 데이터 | 출처 | 변환 |
 |---|---|---|
 | `SpringCollider{bone, offset, radius}` | `colliderGroups[{node, colliders[{offset, radius}]}]` (그룹별 구를 펼쳐 저장) | VRM 0.x 노드는 회전 없는 T포즈라 offset을 모델 공간으로 쓰고 x·z 부호만 반전 |
 | `SpringGroup{stiffness, gravityPower, gravityDir, dragForce, hitRadius, roots, colliders}` | `boneGroups[{stiffiness(원문 철자), gravityPower, gravityDir, dragForce, hitRadius, bones, colliderGroups}]` | gravityDir도 x·z 반전. colliderGroups 번호 → 구 인덱스 목록 |
 
-`secondaryAnimation` 안에는 `colliderGroups`가 두 단계(최상위, `boneGroups[]` 안)에 있어서, 처음 나온 키를 찾는 스캐너로는 엉뚱한 배열을 읽습니다. 바로 아래 단계만 찾는 `childSpan`을 씁니다.
+`secondaryAnimation` 안에는 `colliderGroups`가 두 단계(최상위, `boneGroups[]` 안)에 있어서, 처음 나온 키를 찾는 스캐너로는 엉뚱한 배열을 읽습니다. 바로 아래 단계만 찾는 `childSpan`을 씁니다. VRM 1.0도 `colliders`(최상위, `colliderGroups[]` 안)·`colliderGroups`(최상위, `springs[]` 안)가 겹쳐 같은 방법으로 읽습니다.
+
+**VRM 1.0**
+
+| 데이터 | 출처 | 변환 |
+|---|---|---|
+| `SpringCollider` | `colliders[{node, shape{sphere{offset[3], radius} \| capsule{offset[3], radius, tail[3]}}}]` | offset·tail은 노드 로컬 좌표(노드에 회전이 있을 수 있음) → 바인드 포즈 노드 월드 행렬로 방향 변환. 정면이 이미 +Z라 부호 반전 없음 |
+| `SpringGroup{…, joints, colliders}` | `springs[{joints[{node, hitRadius, stiffness, gravityPower, gravityDir[3], dragForce}], colliderGroups}]`, `colliderGroups[{colliders}]` | 관절 i의 값은 i → i+1 구간에 쓰고 마지막 관절의 값은 쓰지 않음. 값이 같은 구간이 이어지면 그룹 하나로 묶고, 바뀌는 관절에서 나눔(앞 그룹의 마지막 관절 = 뒤 그룹의 첫 관절). 빠진 값은 VRM 1.0 기본값(stiffness 1, gravityPower 0, gravityDir [0,−1,0], dragForce 0.5, hitRadius 0). `center`는 읽지 않음 |
 
 ### 모델 정보 (`ModelMeta`, FR-23)
 
@@ -257,7 +269,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함) |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
@@ -266,7 +278,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | `HumanoidTests` | VRM·MMD·Mixamo 이름 매핑, 팔다리 다음 본 |
 | `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 확장 없으면 오류. FBX(ASCII): 회전 곡선 재샘플링, 애니메이션 없으면 오류 |
 
-수동 확인: VRM 0.x 모델, ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
+수동 확인: VRM 0.x 모델, VRM Add-on for Blender로 SpringBone(구·캡슐)을 넣은 VRM 1.0 모델(로그 "흔들림 N(충돌체 M)"), ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
 
 ## 6. 확장 지점
 
@@ -277,4 +289,4 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
 | ~~`TODO(M4)`~~ | ✅ 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 (§4.9). 남은 것: 손가락, VRMA 표정·루트 이동 |
-| `TODO(M5)` | ~~MToon 파라미터~~ ✅ (ADR-0012), VRM 1.0 SpringBone, MMD 툰·스피어 텍스처 |
+| `TODO(M5)` | ~~MToon 파라미터~~ ✅ (ADR-0012), ~~VRM 1.0 SpringBone~~ ✅, MMD 툰·스피어 텍스처 |

@@ -401,6 +401,60 @@ TEST(ModelLoader, Vrm0SpringBone_ReadsGroupsAndCollidersInModelSpace) {
     EXPECT_FLOAT_EQ(model.springColliders[0].radius, 0.05f);
 }
 
+TEST(ModelLoader, Vrm1SpringBone_SplitsJointsByParametersAndReadsColliders) {
+    // VRM 1.0: 관절마다 값이 있고(관절 i의 값은 i → i+1 구간), 충돌체 오프셋은 노드 로컬 좌표.
+    // 노드 1은 Y축 90° 회전 → 로컬 +X 오프셋이 모델 공간 -Z. 정면이 +Z라 부호 반전은 없음
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string json =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0,"children":[1]},)"
+        R"({"name":"hair","translation":[0,1,0],"rotation":[0,0.70710678,0,0.70710678],)"
+        R"("children":[2]},{"name":"hair1","translation":[0,-0.1,0],"children":[3]},)"
+        R"({"name":"hair2","translation":[0,-0.1,0],"children":[4]},)"
+        R"({"name":"hair3","translation":[0,-0.1,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("extensionsUsed":["VRMC_vrm","VRMC_springBone"],"extensions":{"VRMC_springBone":{)"
+        R"("specVersion":"1.0","colliders":[)"
+        R"({"node":1,"shape":{"sphere":{"offset":[0.1,0,0],"radius":0.05}}},)"
+        R"({"node":1,"shape":{"capsule":{"offset":[0,0,0],"radius":0.02,"tail":[0.1,0,0]}}}],)"
+        R"("colliderGroups":[{"name":"head","colliders":[0,1]}],)"
+        R"("springs":[{"name":"hair","colliderGroups":[0],"joints":[)"
+        R"({"node":1,"stiffness":2,"gravityPower":0.5,"gravityDir":[1,0,0],"hitRadius":0.02},)"
+        R"({"node":2,"stiffness":2,"gravityPower":0.5,"gravityDir":[1,0,0],"hitRadius":0.02},)"
+        R"({"node":3,"stiffness":0.5,"dragForce":0.7},{"node":4,"stiffness":9}]}]}})";
+    const LoadResult result = load(b.build(json));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& model = *result.model;
+    ASSERT_EQ(model.springGroups.size(), 2U);  // 값이 바뀌는 관절 3에서 나뉨
+    const auto& upper = model.springGroups[0];
+    EXPECT_EQ(upper.joints, (std::vector<int>{1, 2, 3}));  // 마지막 관절 3은 끝 위치만
+    EXPECT_TRUE(upper.roots.empty());
+    EXPECT_FLOAT_EQ(upper.stiffness, 2.0f);
+    EXPECT_FLOAT_EQ(upper.gravityPower, 0.5f);
+    EXPECT_FLOAT_EQ(upper.gravityDir.x, 1.0f);
+    EXPECT_FLOAT_EQ(upper.dragForce, 0.5f);  // 없으면 VRM 1.0 기본값
+    EXPECT_FLOAT_EQ(upper.hitRadius, 0.02f);
+    EXPECT_EQ(upper.colliders, (std::vector<int>{0, 1}));
+    const auto& lower = model.springGroups[1];
+    EXPECT_EQ(lower.joints, (std::vector<int>{3, 4}));  // 마지막 관절 4의 값(9)은 쓰지 않음
+    EXPECT_FLOAT_EQ(lower.stiffness, 0.5f);
+    EXPECT_FLOAT_EQ(lower.dragForce, 0.7f);
+    EXPECT_FLOAT_EQ(lower.gravityDir.y, -1.0f);  // 없으면 아래
+
+    ASSERT_EQ(model.springColliders.size(), 2U);
+    const auto& sphere = model.springColliders[0];
+    EXPECT_EQ(sphere.bone, 1);
+    EXPECT_FALSE(sphere.capsule);
+    EXPECT_NEAR(sphere.offset.x, 0.0f, 1e-5f);
+    EXPECT_NEAR(sphere.offset.z, -0.1f, 1e-5f);
+    EXPECT_FLOAT_EQ(sphere.radius, 0.05f);
+    const auto& capsule = model.springColliders[1];
+    EXPECT_TRUE(capsule.capsule);
+    EXPECT_NEAR(capsule.tail.z, -0.1f, 1e-5f);
+    EXPECT_FLOAT_EQ(capsule.radius, 0.02f);
+}
+
 TEST(ModelLoader, PlainGltf_HasNoSpringBones) {
     GltfBuilder b;
     const Triangle t = addTriangle(b);
