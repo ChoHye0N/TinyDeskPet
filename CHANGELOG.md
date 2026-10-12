@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-13
+
+프로그램 이름이 **TinyDeskPet**으로 바뀌었습니다. 모션 파일이 손가락·머리카락·꼬리·몸 높이까지 재생되고, VRM 1.0 SpringBone과 3ds Max Biped 뼈대 FBX를 지원합니다.
+
 ### Added
 
 - **VRM 1.0 SpringBone** (`VRMC_springBone`): 관절 사슬과 관절별 값, 구·캡슐 충돌체. 지금까지는 VRM 0.x만 읽어 VRM 1.0 모델의 머리카락·옷이 흔들리지 않았음
@@ -87,6 +91,7 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v1.0.0
