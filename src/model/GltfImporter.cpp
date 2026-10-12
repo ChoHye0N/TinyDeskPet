@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -159,8 +160,7 @@ std::optional<std::string_view> stringMember(std::string_view json, std::string_
     return json.substr(*pos + 1, end - *pos - 1);
 }
 
-void assignHumanBone(std::vector<Bone>& bones, std::string_view name, std::optional<int> node) {
-    const HumanBone human = humanBoneFromVrmName(name);
+void assignHumanBone(std::vector<Bone>& bones, HumanBone human, std::optional<int> node) {
     if (human != HumanBone::None && node && *node >= 0 &&
         static_cast<std::size_t>(*node) < bones.size()) {
         bones[static_cast<std::size_t>(*node)].human = human;
@@ -311,7 +311,7 @@ void mapHumanBoneEntries(std::string_view list, std::vector<Bone>& bones) {
             if (nameEnd == std::string_view::npos || objectEnd == std::string_view::npos) {
                 return;
             }
-            assignHumanBone(bones, list.substr(pos + 1, nameEnd - pos - 1),
+            assignHumanBone(bones, humanBoneFromVrmName(list.substr(pos + 1, nameEnd - pos - 1)),
                             intMember(list.substr(objectStart, objectEnd - objectStart), "node"));
             pos = objectEnd;
         } else if (list[pos] == '{') {  // 0.x: { "bone": "이름", "node": n }
@@ -321,7 +321,8 @@ void mapHumanBoneEntries(std::string_view list, std::vector<Bone>& bones) {
             }
             const std::string_view object = list.substr(pos, objectEnd - pos);
             if (const auto bone = stringMember(object, "bone")) {
-                assignHumanBone(bones, *bone, intMember(object, "node"));
+                // 0.x는 엄지 이름이 1.0과 한 칸 어긋남 (thumbProximal = 1.0 thumbMetacarpal)
+                assignHumanBone(bones, humanBoneFromVrm0Name(*bone), intMember(object, "node"));
             }
             pos = objectEnd;
         } else {
@@ -1194,35 +1195,59 @@ public:
         clip.frameCount =
             static_cast<std::size_t>(std::floor(duration_ * MotionClip::kFramesPerSecond + 1e-3f)) +
             1;
+        // 노드마다 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전). 휴머노이드가 아닌 노드도
+        // 부모와 비교하려고 전부 계산
         std::vector<core::Quat> rest = worldRotations(-1.0f);
         std::vector<core::Quat> world;
+        std::vector<std::vector<core::Quat>> deltas(data_.nodes_count);
         for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
             world = worldRotations(static_cast<float>(frame) / MotionClip::kFramesPerSecond);
-            for (std::size_t n = 0; n < human_.size(); ++n) {
-                if (human_[n] != HumanBone::None) {
-                    // 기본 자세 → 지금: W(t)·W₀⁻¹ (모델 축 기준 회전)
-                    clip.track(human_[n]).push_back(world[n] * rest[n].conjugate());
-                }
+            for (std::size_t n = 0; n < world.size(); ++n) {
+                deltas[n].push_back(world[n] * rest[n].conjugate());
             }
         }
         std::array<std::optional<Vec3>, kHumanBoneCount> positions{};
+        std::vector<motion::SourceNode> nodes(data_.nodes_count);
         for (std::size_t n = 0; n < human_.size(); ++n) {
+            const cgltf_node& node = data_.nodes[n];
+            nodes[n] = {node.name != nullptr ? std::string_view(node.name) : std::string_view{},
+                        indexOf(node.parent), human_[n] != HumanBone::None};
             if (human_[n] != HumanBone::None) {
-                const Mat4 m = worldMatrix(data_.nodes[n]);
+                clip.track(human_[n]) = deltas[n];
+                const Mat4 m = worldMatrix(node);
                 positions[static_cast<std::size_t>(human_[n])] =
                     Vec3{m.m[3][0], m.m[3][1], m.m[3][2]};
             }
         }
         motion::setRestDirections(clip, positions);
+        motion::addBoneTracks(clip, nodes, deltas);
+        readHipsTranslation(clip);
         return clip;
     }
 
 private:
+    template <class T>
     struct Channel {
         std::vector<float> times;
-        std::vector<core::Quat> values;
+        std::vector<T> values;
         bool step = false;
     };
+
+    // 엉덩이 노드의 위치 변화 (조상의 이동·회전 포함)
+    void readHipsTranslation(MotionClip& clip) const {
+        const auto hips = std::ranges::find(human_, HumanBone::Hips);
+        if (hips == human_.end()) {
+            return;
+        }
+        const auto n = static_cast<std::size_t>(hips - human_.begin());
+        std::vector<Vec3> frames;
+        frames.reserve(clip.frameCount);
+        for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
+            const float time = static_cast<float>(frame) / MotionClip::kFramesPerSecond;
+            frames.push_back(worldPosition(n, time, worldRotations(time)));
+        }
+        motion::setHipsTranslation(clip, frames, worldPosition(n, -1.0f, worldRotations(-1.0f)));
+    }
 
     bool readHumanoid() {
         const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
@@ -1241,36 +1266,48 @@ private:
         return true;
     }
 
-    // 회전 채널만 읽음 (이동·크기는 리타기팅에 쓰지 않음)
+    // 회전·이동 채널 (크기는 쓰지 않음). 이동은 엉덩이 위치에만 씀
     void readChannels(const cgltf_animation& animation) {
         channels_.resize(data_.nodes_count);
+        translations_.resize(data_.nodes_count);
         for (cgltf_size c = 0; c < animation.channels_count; ++c) {
             const cgltf_animation_channel& channel = animation.channels[c];
-            if (channel.target_node == nullptr || channel.sampler == nullptr ||
-                channel.target_path != cgltf_animation_path_type_rotation) {
+            if (channel.target_node == nullptr || channel.sampler == nullptr) {
                 continue;
             }
-            const cgltf_animation_sampler& sampler = *channel.sampler;
-            Channel& out = channels_[static_cast<std::size_t>(channel.target_node - data_.nodes)];
-            const cgltf_size count = sampler.input->count;
-            // CUBICSPLINE은 키마다 (들어오는 접선, 값, 나가는 접선): 값만 쓰고 선형으로 근사
-            const cgltf_size stride =
-                sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;
-            if (sampler.output->count < count * stride) {
-                continue;
+            const auto node = static_cast<std::size_t>(channel.target_node - data_.nodes);
+            if (channel.target_path == cgltf_animation_path_type_rotation) {
+                readSampler(*channel.sampler, channels_[node], [](std::array<float, 4> v) {
+                    return core::Quat{v[0], v[1], v[2], v[3]}.normalized();
+                });
+            } else if (channel.target_path == cgltf_animation_path_type_translation) {
+                readSampler(*channel.sampler, translations_[node],
+                            [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
             }
-            out = {};
-            out.step = sampler.interpolation == cgltf_interpolation_type_step;
-            for (cgltf_size k = 0; k < count; ++k) {
-                float t = 0.0f;
-                std::array<float, 4> q{};
-                cgltf_accessor_read_float(sampler.input, k, &t, 1);
-                cgltf_accessor_read_float(sampler.output, k * stride + (stride - 1) / 2, q.data(),
-                                          4);
-                out.times.push_back(t);
-                out.values.push_back(core::Quat{q[0], q[1], q[2], q[3]}.normalized());
-                duration_ = std::max(duration_, t);
-            }
+        }
+    }
+
+    template <class T, class Convert>
+    void readSampler(const cgltf_animation_sampler& sampler, Channel<T>& out, Convert convert) {
+        const cgltf_size count = sampler.input->count;
+        // CUBICSPLINE은 키마다 (들어오는 접선, 값, 나가는 접선): 값만 쓰고 선형으로 근사
+        const cgltf_size stride =
+            sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;
+        if (sampler.output->count < count * stride) {
+            return;
+        }
+        const cgltf_size components = cgltf_num_components(sampler.output->type);
+        out = {};
+        out.step = sampler.interpolation == cgltf_interpolation_type_step;
+        for (cgltf_size k = 0; k < count; ++k) {
+            float t = 0.0f;
+            std::array<float, 4> v{};
+            cgltf_accessor_read_float(sampler.input, k, &t, 1);
+            cgltf_accessor_read_float(sampler.output, k * stride + (stride - 1) / 2, v.data(),
+                                      std::min<cgltf_size>(components, v.size()));
+            out.times.push_back(t);
+            out.values.push_back(convert(v));
+            duration_ = std::max(duration_, t);
         }
     }
 
@@ -1293,7 +1330,13 @@ private:
         }
     }
 
-    [[nodiscard]] static core::Quat sample(const Channel& channel, float time) {
+    [[nodiscard]] int indexOf(const cgltf_node* node) const {
+        return node != nullptr ? static_cast<int>(node - data_.nodes) : -1;
+    }
+
+    // 회전은 slerp, 이동은 선형 보간
+    template <class T>
+    [[nodiscard]] static T sample(const Channel<T>& channel, float time) {
         const auto& t = channel.times;
         if (time <= t.front()) {
             return channel.values.front();
@@ -1305,8 +1348,37 @@ private:
         if (channel.step || t[k + 1] <= t[k]) {
             return channel.values[k];
         }
-        return core::slerp(channel.values[k], channel.values[k + 1],
-                           (time - t[k]) / (t[k + 1] - t[k]));
+        const float w = (time - t[k]) / (t[k + 1] - t[k]);
+        if constexpr (std::is_same_v<T, core::Quat>) {
+            return core::slerp(channel.values[k], channel.values[k + 1], w);
+        } else {
+            return channel.values[k] + (channel.values[k + 1] - channel.values[k]) * w;
+        }
+    }
+
+    // 노드의 월드 위치 = Σ (조상마다 부모의 월드 회전 · 로컬 이동). world는 같은 시각의
+    // worldRotations. 크기는 무시 (VRMA 노드는 크기 1). time < 0이면 기본 자세
+    [[nodiscard]] Vec3 worldPosition(std::size_t n, float time,
+                                     const std::vector<core::Quat>& world) const {
+        Vec3 position;
+        std::size_t depth = 0;
+        for (const cgltf_node* node = &data_.nodes[n]; node != nullptr && depth < data_.nodes_count;
+             node = node->parent, ++depth) {
+            const auto i = static_cast<std::size_t>(node - data_.nodes);
+            Vec3 local =
+                node->has_translation != 0
+                    ? Vec3{node->translation[0], node->translation[1], node->translation[2]}
+                    : Vec3{};
+            if (time >= 0.0f && !translations_[i].times.empty()) {
+                local = sample(translations_[i], time);
+            }
+            const core::Quat parent =
+                node->parent != nullptr
+                    ? world[static_cast<std::size_t>(node->parent - data_.nodes)]
+                    : core::Quat{};
+            position = position + parent.rotate(local);
+        }
+        return position;
     }
 
     // time < 0이면 애니메이션 없는 기본 자세
@@ -1332,7 +1404,8 @@ private:
 
     const cgltf_data& data_;
     std::vector<HumanBone> human_;  // 노드 → 휴머노이드 본
-    std::vector<Channel> channels_;
+    std::vector<Channel<core::Quat>> channels_;
+    std::vector<Channel<Vec3>> translations_;
     std::vector<std::size_t> order_;
     float duration_ = 0.0f;
 };

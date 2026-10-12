@@ -182,10 +182,13 @@ void ProceduralAnimator::setClip(Motion motion, std::shared_ptr<const model::Mot
 
 void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     rotations_.assign(skeleton_.size(), core::Quat{});
+    clipOffset_ = {};
     if (const auto& clip = clips_[static_cast<std::size_t>(input.motion)]) {
         // 대기 동작을 끄면 첫 프레임에 멈춤 (화면이 안 바뀌어 Present 생략, DEBT-02)
         const bool still = input.motion == Motion::Idle && !input.idleMotion;
-        clip->sample(still ? 0.0f : input.time, rotations_);
+        const float time = input.motionTime >= 0.0f ? input.motionTime : input.time;
+        clip->sample(still ? 0.0f : time, rotations_);
+        clipOffset_ = clip->rootOffset(still ? 0.0f : time);
         return;
     }
     const PoseParams p = paramsFor(input);
@@ -213,7 +216,7 @@ void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
 
 // 착지 웅크림 (amount 0 ~ 1). 슬라임처럼 몸 전체를 납작하게 늘이면 사람 모델은 비율이 깨지므로
 // 관절로 표현: 무릎을 굽히고 허벅지를 그 절반만큼 앞으로 → 정강이가 반대로 같은 각도만큼 기울어
-// 발이 엉덩이 바로 아래에 옴 (허벅지·정강이 길이가 비슷할 때). 몸이 내려가는 높이는 groundOffset이
+// 발이 엉덩이 바로 아래에 옴 (허벅지·정강이 길이가 비슷할 때). 몸이 내려가는 높이는 rootOffset이
 // 발을 바닥에 맞추며 정함. 상체는 숙이고, 고개는 반쯤 되돌려 시선을 유지, 팔은 균형 잡듯 벌림
 void ProceduralAnimator::applyCrouch(float amount) const {
     if (amount <= 0.0f) {
@@ -294,15 +297,17 @@ void ProceduralAnimator::applyLook(LookAngles look) const {
     }
 }
 
-// 서 있거나 걷는 동안 낮은 쪽 발이 바닥(바인드 포즈 발 높이)에 닿도록 몸 전체를 내릴 거리.
-// 엉덩이를 고정한 채 다리를 굽히거나 흔들면 발이 바닥에서 뜨기 때문 (걸을 때 몸이 오르내림)
-core::Vec3 ProceduralAnimator::groundOffset(Motion motion) const {
+// 클립의 엉덩이 이동으로 몸을 옮긴 뒤, 서 있거나 걷는 동안 낮은 쪽 발이 바닥(바인드 포즈 발
+// 높이)보다 떠 있으면 닿도록 더 내림. 엉덩이를 고정한 채 다리를 굽히거나 흔들면 발이 바닥에서 뜨기
+// 때문 (걸을 때 몸이 오르내림). 엉덩이 이동을 넣은 자세로 재므로, 클립이 이미 몸을 낮췄으면 두 번
+// 내리지 않음
+core::Vec3 ProceduralAnimator::rootOffset(Motion motion) const {
     if (motion != Motion::Idle && motion != Motion::Walk) {
-        return {};
+        return clipOffset_;
     }
     const std::array<int, 2> feet = {skeleton_.find(HumanBone::LeftFoot),
                                      skeleton_.find(HumanBone::RightFoot)};
-    skeleton_.computePose(rotations_, poseRotations_, posePositions_);
+    skeleton_.computePose(rotations_, poseRotations_, posePositions_, clipOffset_);
     float bindLowest = std::numeric_limits<float>::max();
     float posedLowest = std::numeric_limits<float>::max();
     for (const int foot : feet) {
@@ -312,14 +317,15 @@ core::Vec3 ProceduralAnimator::groundOffset(Motion motion) const {
         }
     }
     if (bindLowest == std::numeric_limits<float>::max()) {
-        return {};  // 발 본이 없는 모델
+        return clipOffset_;  // 발 본이 없는 모델
     }
-    return {0.0f, std::min(bindLowest - posedLowest, 0.0f), 0.0f};  // 내리기만 함
+    return clipOffset_ +
+           core::Vec3{0.0f, std::min(bindLowest - posedLowest, 0.0f), 0.0f};  // 내리기만
 }
 
 void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressions& base,
-                                     AnimationOutput& out, core::Vec3 rootOffset) const {
-    skeleton_.computeSkinMatrices(rotations_, out.skin, rootOffset);
+                                     AnimationOutput& out, core::Vec3 offset) const {
+    skeleton_.computeSkinMatrices(rotations_, out.skin, offset);
     out.expressions = base;
     // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];
@@ -332,23 +338,29 @@ void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& 
     // 상태가 없으므로 squash 값을 그대로 웅크림 정도로 씀
     applyCrouch(std::clamp(input.squash / kFullSquash, 0.0f, 1.0f));
     applyLook(lookAnglesFor(input));
-    writeOutput(input, expressionsFor(input.motion), out, groundOffset(input.motion));
+    writeOutput(input, expressionsFor(input.motion), out, rootOffset(input.motion));
 }
 
 void ProceduralAnimator::animate(const AnimationInput& input, float dt, AnimationOutput& out) {
-    computeRotations(input);
-    Expressions expressions = expressionsFor(input.motion);
-
     if (!hasPose_) {
         hasPose_ = true;  // 첫 프레임은 넘어올 자세가 없음
         motion_ = input.motion;
+        motionStart_ = input.time;
     } else if (input.motion != motion_) {
         // 직전에 그린 자세(전환 도중이면 섞인 자세)에서 출발하므로 전환이 끊겨도 튀지 않음
         motion_ = input.motion;
         fromRotations_ = lastRotations_;
         fromExpressions_ = lastExpressions_;
+        fromClipOffset_ = lastClipOffset_;
         elapsed_ = 0.0f;
+        motionStart_ = input.time;
     }
+
+    // 클립은 동작이 시작될 때 처음부터 (집어 드는 동작 등이 중간부터 나오지 않게)
+    AnimationInput timed = input;
+    timed.motionTime = std::max(input.time - motionStart_, 0.0f);
+    computeRotations(timed);
+    Expressions expressions = expressionsFor(input.motion);
 
     if (elapsed_ < kTransitionSeconds) {
         elapsed_ = std::min(elapsed_ + dt, kTransitionSeconds);
@@ -360,10 +372,12 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
         for (std::size_t i = 0; i < expressions.size(); ++i) {
             expressions[i] = fromExpressions_[i] + (expressions[i] - fromExpressions_[i]) * w;
         }
+        clipOffset_ = fromClipOffset_ + (clipOffset_ - fromClipOffset_) * w;
     }
 
     lastRotations_ = rotations_;
     lastExpressions_ = expressions;
+    lastClipOffset_ = clipOffset_;
 
     // 착지: squash가 커지는 순간 시작. 캐릭터의 squash(0.18초 직선 감소)는 사람 동작엔 짧고
     // 갑작스러워서, 시작 신호로만 쓰고 곡선은 따로 만듦 (빠르게 내려갔다 천천히 일어남)
@@ -392,10 +406,10 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
     look_ = {approach(look_.yaw, target.yaw), approach(look_.pitch, target.pitch)};
     applyLook(look_);
 
-    const core::Vec3 rootOffset = groundOffset(input.motion);
+    const core::Vec3 offset = rootOffset(input.motion);
     // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)
-    springs_.update(skeleton_, rotations_, input.movement, dt, rootOffset);
-    writeOutput(input, expressions, out, rootOffset);
+    springs_.update(skeleton_, rotations_, input.movement, dt, offset);
+    writeOutput(input, expressions, out, offset);
 }
 
 namespace {

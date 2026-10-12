@@ -359,6 +359,68 @@ TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {
     EXPECT_GT(animator.displayBounds().max.y, withoutClip + 0.4f);  // 든 손끝까지 포함
 }
 
+namespace {
+
+// 엉덩이를 dy만큼 옮기는 정지 자세 클립 (원본 엉덩이 높이 = 테스트 모델과 같은 1 → 그대로)
+std::shared_ptr<deskpet::model::MotionClip> hipsMoveClip(float dy) {
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 1;
+    clip->hipsHeight = 1.0f;
+    clip->hipsTranslation = {{0.0f, dy, 0.0f}};
+    return clip;
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorClip, HipsTranslation_LiftsBody) {
+    // 집어 올리는 동작처럼 엉덩이가 올라가면 몸 전체가 올라감 (ADR-0014)
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    animator.setClip(Motion::Dragged, hipsMoveClip(0.2f));
+    AnimationOutput out;
+    AnimationInput input;
+    input.motion = Motion::Dragged;
+    animator.evaluate(input, out);
+    EXPECT_NEAR(posed(model, out, 1).y, 1.2f, 1e-4f);
+}
+
+TEST(ProceduralAnimatorClip, HipsLowering_IsNotDoubledByFootPlanting) {
+    // 대기 중 클립이 몸을 낮추면 발 붙이기는 더 내리지 않음 (발이 이미 바닥 아래라 내릴 필요 없음)
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    animator.setClip(Motion::Idle, hipsMoveClip(-0.1f));
+    AnimationOutput out;
+    animator.evaluate({}, out);
+    EXPECT_NEAR(posed(model, out, 1).y, 0.9f, 1e-4f);
+}
+
+TEST(ProceduralAnimatorClip, ClipRestartsWhenMotionStarts) {
+    // 1초 동안 엉덩이를 0 → 30° 돌리는 클립을 매달림에 지정. 누적 시간 5.25초에 매달리기 시작해
+    // 0.5초 뒤면 클립의 0.5초(15°). 누적 시간으로 재생하면 5.75 → 0.75초(22.5°)가 됨
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 31;
+    for (int i = 0; i < 31; ++i) {
+        clip->track(deskpet::model::HumanBone::Hips)
+            .push_back(deskpet::core::Quat::axisAngle(
+                {0.0f, 1.0f, 0.0f}, static_cast<float>(i) * std::numbers::pi_v<float> / 180.0f));
+    }
+    animator.setClip(Motion::Dragged, clip);
+
+    AnimationOutput out;
+    AnimationInput input;
+    input.time = 5.25f;
+    animator.animate(input, 0.0f, out);  // 대기
+    input.motion = Motion::Dragged;
+    for (int frame = 0; frame <= 10; ++frame) {
+        input.time = 5.25f + 0.05f * static_cast<float>(frame);
+        animator.animate(input, frame == 0 ? 0.0f : 0.05f, out);
+    }
+    const Vec3 forward = deskpet::core::transformDirection({0.0f, 0.0f, 1.0f}, out.skin[1]);
+    EXPECT_NEAR(std::atan2(forward.x, forward.z) * 180.0f / std::numbers::pi_v<float>, 15.0f, 0.1f);
+}
+
 TEST(ProceduralAnimatorClip, RemovingClip_RestoresProceduralPose) {
     const auto model = deskpet::test::makeSkeletonModel();
     ProceduralAnimator animator(model);

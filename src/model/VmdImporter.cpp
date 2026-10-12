@@ -49,6 +49,36 @@ enum MmdBone : std::uint8_t {
     RElbow,
     RHandTwist,
     RWrist,
+    LThumb0,
+    LThumb1,
+    LThumb2,
+    LIndex0,
+    LIndex1,
+    LIndex2,
+    LMiddle0,
+    LMiddle1,
+    LMiddle2,
+    LRing0,
+    LRing1,
+    LRing2,
+    LLittle0,
+    LLittle1,
+    LLittle2,
+    RThumb0,
+    RThumb1,
+    RThumb2,
+    RIndex0,
+    RIndex1,
+    RIndex2,
+    RMiddle0,
+    RMiddle1,
+    RMiddle2,
+    RRing0,
+    RRing1,
+    RRing2,
+    RLittle0,
+    RLittle1,
+    RLittle2,
     LLeg,
     LKnee,
     LAnkle,
@@ -69,7 +99,8 @@ struct BoneInfo {
     Vec3 rest;  // 표준 모델의 기본 자세 위치 (MMD 좌표·단위). 다리 길이·팔 각도만 의미 있음
 };
 
-// 팔은 MMD 모델의 일반적인 A포즈: 수평에서 37° 아래 (cos 0.7986, sin 0.6018)
+// 팔은 MMD 모델의 일반적인 A포즈: 수평에서 37° 아래 (cos 0.7986, sin 0.6018).
+// 손가락은 팔 방향으로 뻗고 앞(−Z)에서 뒤로 엄지·검지·중지·약지·새끼 순 (방향만 의미 있음)
 constexpr std::array<BoneInfo, Count> kBones = {{
     {"\x91\x53\x82\xC4\x82\xCC\x90\x65", -1, HumanBone::None, {0.0f, 0.0f, 0.0f}},  // 全ての親
     {"\x83\x5A\x83\x93\x83\x5E\x81\x5B", Root, HumanBone::None, {0.0f, 8.0f, 0.0f}},  // センター
@@ -93,7 +124,127 @@ constexpr std::array<BoneInfo, Count> kBones = {{
     {"\x89\x45\x82\xD0\x82\xB6", RArmTwist, HumanBone::RightLowerArm, {-3.696f, 13.395f, 0.0f}},
     {"\x89\x45\x8E\xE8\x9D\x80", RElbow, HumanBone::None, {-4.774f, 12.583f, 0.0f}},  // 右手捩
     {"\x89\x45\x8E\xE8\x8E\xF1", RHandTwist, HumanBone::RightHand, {-5.852f, 11.770f, 0.0f}},
-    {"\x8D\xB6\x91\xAB", LowerBody, HumanBone::LeftUpperLeg, {1.0f, 10.6f, 0.0f}},    // 左足
+    {"\x8D\xB6\x90\x65\x8E\x77\x82\x4F",
+     LWrist,
+     HumanBone::LeftThumbMetacarpal,
+     {5.972f, 11.680f, -0.150f}},  // 左親指０
+    {"\x8D\xB6\x90\x65\x8E\x77\x82\x50",
+     LThumb0,
+     HumanBone::LeftThumbProximal,
+     {6.143f, 11.551f, -0.279f}},  // 左親指１
+    {"\x8D\xB6\x90\x65\x8E\x77\x82\x51",
+     LThumb1,
+     HumanBone::LeftThumbDistal,
+     {6.314f, 11.422f, -0.407f}},  // 左親指２
+    {"\x8D\xB6\x90\x6C\x8E\x77\x82\x50",
+     LWrist,
+     HumanBone::LeftIndexProximal,
+     {6.371f, 11.379f, -0.180f}},  // 左人指１
+    {"\x8D\xB6\x90\x6C\x8E\x77\x82\x51",
+     LIndex0,
+     HumanBone::LeftIndexIntermediate,
+     {6.651f, 11.168f, -0.180f}},  // 左人指２
+    {"\x8D\xB6\x90\x6C\x8E\x77\x82\x52",
+     LIndex1,
+     HumanBone::LeftIndexDistal,
+     {6.850f, 11.018f, -0.180f}},  // 左人指３
+    {"\x8D\xB6\x92\x86\x8E\x77\x82\x50",
+     LWrist,
+     HumanBone::LeftMiddleProximal,
+     {6.411f, 11.349f, -0.030f}},  // 左中指１
+    {"\x8D\xB6\x92\x86\x8E\x77\x82\x51",
+     LMiddle0,
+     HumanBone::LeftMiddleIntermediate,
+     {6.714f, 11.120f, -0.030f}},  // 左中指２
+    {"\x8D\xB6\x92\x86\x8E\x77\x82\x52",
+     LMiddle1,
+     HumanBone::LeftMiddleDistal,
+     {6.930f, 10.958f, -0.030f}},  // 左中指３
+    {"\x8D\xB6\x96\xF2\x8E\x77\x82\x50",
+     LWrist,
+     HumanBone::LeftRingProximal,
+     {6.371f, 11.379f, 0.120f}},  // 左薬指１
+    {"\x8D\xB6\x96\xF2\x8E\x77\x82\x51",
+     LRing0,
+     HumanBone::LeftRingIntermediate,
+     {6.651f, 11.168f, 0.120f}},  // 左薬指２
+    {"\x8D\xB6\x96\xF2\x8E\x77\x82\x52",
+     LRing1,
+     HumanBone::LeftRingDistal,
+     {6.850f, 11.018f, 0.120f}},  // 左薬指３
+    {"\x8D\xB6\x8F\xAC\x8E\x77\x82\x50",
+     LWrist,
+     HumanBone::LeftLittleProximal,
+     {6.291f, 11.439f, 0.250f}},  // 左小指１
+    {"\x8D\xB6\x8F\xAC\x8E\x77\x82\x51",
+     LLittle0,
+     HumanBone::LeftLittleIntermediate,
+     {6.515f, 11.270f, 0.250f}},  // 左小指２
+    {"\x8D\xB6\x8F\xAC\x8E\x77\x82\x52",
+     LLittle1,
+     HumanBone::LeftLittleDistal,
+     {6.675f, 11.150f, 0.250f}},  // 左小指３
+    {"\x89\x45\x90\x65\x8E\x77\x82\x4F",
+     RWrist,
+     HumanBone::RightThumbMetacarpal,
+     {-5.972f, 11.680f, -0.150f}},  // 右親指０
+    {"\x89\x45\x90\x65\x8E\x77\x82\x50",
+     RThumb0,
+     HumanBone::RightThumbProximal,
+     {-6.143f, 11.551f, -0.279f}},  // 右親指１
+    {"\x89\x45\x90\x65\x8E\x77\x82\x51",
+     RThumb1,
+     HumanBone::RightThumbDistal,
+     {-6.314f, 11.422f, -0.407f}},  // 右親指２
+    {"\x89\x45\x90\x6C\x8E\x77\x82\x50",
+     RWrist,
+     HumanBone::RightIndexProximal,
+     {-6.371f, 11.379f, -0.180f}},  // 右人指１
+    {"\x89\x45\x90\x6C\x8E\x77\x82\x51",
+     RIndex0,
+     HumanBone::RightIndexIntermediate,
+     {-6.651f, 11.168f, -0.180f}},  // 右人指２
+    {"\x89\x45\x90\x6C\x8E\x77\x82\x52",
+     RIndex1,
+     HumanBone::RightIndexDistal,
+     {-6.850f, 11.018f, -0.180f}},  // 右人指３
+    {"\x89\x45\x92\x86\x8E\x77\x82\x50",
+     RWrist,
+     HumanBone::RightMiddleProximal,
+     {-6.411f, 11.349f, -0.030f}},  // 右中指１
+    {"\x89\x45\x92\x86\x8E\x77\x82\x51",
+     RMiddle0,
+     HumanBone::RightMiddleIntermediate,
+     {-6.714f, 11.120f, -0.030f}},  // 右中指２
+    {"\x89\x45\x92\x86\x8E\x77\x82\x52",
+     RMiddle1,
+     HumanBone::RightMiddleDistal,
+     {-6.930f, 10.958f, -0.030f}},  // 右中指３
+    {"\x89\x45\x96\xF2\x8E\x77\x82\x50",
+     RWrist,
+     HumanBone::RightRingProximal,
+     {-6.371f, 11.379f, 0.120f}},  // 右薬指１
+    {"\x89\x45\x96\xF2\x8E\x77\x82\x51",
+     RRing0,
+     HumanBone::RightRingIntermediate,
+     {-6.651f, 11.168f, 0.120f}},  // 右薬指２
+    {"\x89\x45\x96\xF2\x8E\x77\x82\x52",
+     RRing1,
+     HumanBone::RightRingDistal,
+     {-6.850f, 11.018f, 0.120f}},  // 右薬指３
+    {"\x89\x45\x8F\xAC\x8E\x77\x82\x50",
+     RWrist,
+     HumanBone::RightLittleProximal,
+     {-6.291f, 11.439f, 0.250f}},  // 右小指１
+    {"\x89\x45\x8F\xAC\x8E\x77\x82\x51",
+     RLittle0,
+     HumanBone::RightLittleIntermediate,
+     {-6.515f, 11.270f, 0.250f}},  // 右小指２
+    {"\x89\x45\x8F\xAC\x8E\x77\x82\x52",
+     RLittle1,
+     HumanBone::RightLittleDistal,
+     {-6.675f, 11.150f, 0.250f}},                                                   // 右小指３
+    {"\x8D\xB6\x91\xAB", LowerBody, HumanBone::LeftUpperLeg, {1.0f, 10.6f, 0.0f}},  // 左足
     {"\x8D\xB6\x82\xD0\x82\xB4", LLeg, HumanBone::LeftLowerLeg, {1.0f, 6.0f, 0.0f}},  // 左ひざ
     {"\x8D\xB6\x91\xAB\x8E\xF1", LKnee, HumanBone::LeftFoot, {1.0f, 1.4f, 0.0f}},     // 左足首
     {"\x8D\xB6\x82\xC2\x82\xDC\x90\xE6", LAnkle, HumanBone::LeftToes, {1.0f, 0.0f, -1.5f}},
@@ -298,6 +449,8 @@ public:
         }
         const bool leftIk = !keys_[LLegIk].empty();
         const bool rightIk = !keys_[RLegIk].empty();
+        std::vector<Vec3> hips;  // 下半身 위치 (センター·グルーブ 이동이 여기에 반영됨)
+        hips.reserve(clip.frameCount);
         for (std::size_t i = 0; i < clip.frameCount; ++i) {
             const Frame f = pose(static_cast<float>(i), leftIk, rightIk);
             for (std::size_t b = 0; b < kBones.size(); ++b) {
@@ -305,6 +458,7 @@ public:
                     clip.track(kBones[b].human).push_back(toModelSpace(f.world[b]));
                 }
             }
+            hips.push_back(toModelSpace(f.position[LowerBody]));
         }
         std::array<std::optional<Vec3>, kHumanBoneCount> rest{};
         for (const BoneInfo& bone : kBones) {
@@ -313,6 +467,8 @@ public:
             }
         }
         motion::setRestDirections(clip, rest);
+        // MMD 단위 그대로 (재생할 때 엉덩이 높이 비율로 맞추므로 단위가 상쇄됨)
+        motion::setHipsTranslation(clip, hips, toModelSpace(kBones[LowerBody].rest));
         return clip;
     }
 
@@ -332,7 +488,7 @@ private:
             const int bone = findBone(reader.take(kNameSize));
             const std::uint32_t frame = reader.u32();
             if (bone < 0 || frame > kMaxFrame) {
-                reader.take(kKeySize - kNameSize - 4);  // 모르는 본(손가락, 눈 등)은 건너뜀
+                reader.take(kKeySize - kNameSize - 4);  // 모르는 본(눈, 머리카락 등)은 건너뜀
                 continue;
             }
             keys_[static_cast<std::size_t>(bone)].push_back(readKey(reader, frame));

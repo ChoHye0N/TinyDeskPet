@@ -10,8 +10,32 @@ using deskpet::model::humanBoneFromVrmName;
 TEST(Humanoid, VrmNames) {
     EXPECT_EQ(humanBoneFromVrmName("hips"), HumanBone::Hips);
     EXPECT_EQ(humanBoneFromVrmName("leftUpperArm"), HumanBone::LeftUpperArm);
-    EXPECT_EQ(humanBoneFromVrmName("leftThumbProximal"), HumanBone::None);  // 손가락은 미지원
+    EXPECT_EQ(humanBoneFromVrmName("leftThumbMetacarpal"), HumanBone::LeftThumbMetacarpal);
+    EXPECT_EQ(humanBoneFromVrmName("rightLittleDistal"), HumanBone::RightLittleDistal);
+    EXPECT_EQ(humanBoneFromVrmName("leftThumbIntermediate"), HumanBone::None);  // 0.x 전용 이름
     EXPECT_EQ(deskpet::model::toString(HumanBone::RightToes), "rightToes");
+    EXPECT_EQ(deskpet::model::toString(HumanBone::LeftIndexDistal), "leftIndexDistal");
+}
+
+TEST(Humanoid, Vrm0Names_ShiftThumbOneJointTowardHand) {
+    // 0.x 엄지 proximal·intermediate·distal = 1.0 metacarpal·proximal·distal
+    using deskpet::model::humanBoneFromVrm0Name;
+    EXPECT_EQ(humanBoneFromVrm0Name("leftThumbProximal"), HumanBone::LeftThumbMetacarpal);
+    EXPECT_EQ(humanBoneFromVrm0Name("rightThumbIntermediate"), HumanBone::RightThumbProximal);
+    EXPECT_EQ(humanBoneFromVrm0Name("leftThumbDistal"), HumanBone::LeftThumbDistal);
+    EXPECT_EQ(humanBoneFromVrm0Name("leftIndexProximal"), HumanBone::LeftIndexProximal);
+    EXPECT_EQ(humanBoneFromVrm0Name("hips"), HumanBone::Hips);
+}
+
+TEST(Humanoid, FingerNames_InEveryFormat) {
+    EXPECT_EQ(humanBoneFromMmdName("左親指０"), HumanBone::LeftThumbMetacarpal);
+    EXPECT_EQ(humanBoneFromMmdName("左人指２"), HumanBone::LeftIndexIntermediate);
+    EXPECT_EQ(humanBoneFromMmdName("右小指３"), HumanBone::RightLittleDistal);
+    EXPECT_EQ(humanBoneFromFbxName("mixamorig:LeftHandThumb1"), HumanBone::LeftThumbMetacarpal);
+    EXPECT_EQ(humanBoneFromFbxName("mixamorig:RightHandPinky3"), HumanBone::RightLittleDistal);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Finger0"), HumanBone::LeftThumbMetacarpal);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Finger21"), HumanBone::LeftMiddleIntermediate);
+    EXPECT_EQ(humanBoneFromFbxName("Bip001_R_Finger42"), HumanBone::RightLittleDistal);
 }
 
 TEST(Humanoid, MmdStandardNames) {
@@ -40,7 +64,7 @@ TEST(Humanoid, FbxBipedNames_IgnoreNumberedPrefixAndUnderscores) {
     // 몸 전체 이동용 루트(Bip001)는 hips가 아님 (Pelvis가 hips). 비슷한 이름의 다른 본도 아님
     EXPECT_EQ(humanBoneFromFbxName("Bip001"), HumanBone::None);
     EXPECT_EQ(humanBoneFromFbxName("Bip001_Weapon"), HumanBone::None);
-    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Finger0"), HumanBone::None);  // 손가락은 미지원
+    EXPECT_EQ(humanBoneFromFbxName("Bip001 L Finger5"), HumanBone::None);  // 손가락은 0 ~ 4
     EXPECT_EQ(humanBoneFromFbxName("Biped L Thigh"), HumanBone::None);
 }
 
@@ -52,7 +76,11 @@ TEST(Humanoid, LimbChild_IsNextBoneAlongArmsAndLegs) {
     EXPECT_EQ(limbChild(HumanBone::RightUpperLeg), HumanBone::RightLowerLeg);
     EXPECT_EQ(limbChild(HumanBone::LeftLowerLeg), HumanBone::LeftFoot);
     EXPECT_EQ(limbChild(HumanBone::RightFoot), HumanBone::RightToes);
-    // 몸통·머리·손끝은 방향을 재지 않음 (부모 쪽 보정을 따름)
+    EXPECT_EQ(limbChild(HumanBone::LeftThumbMetacarpal), HumanBone::LeftThumbProximal);
+    EXPECT_EQ(limbChild(HumanBone::RightIndexIntermediate), HumanBone::RightIndexDistal);
+    // 몸통·머리·손·손가락 끝은 방향을 재지 않음 (부모 쪽 보정을 따름)
     EXPECT_EQ(limbChild(HumanBone::Spine), HumanBone::None);
     EXPECT_EQ(limbChild(HumanBone::LeftHand), HumanBone::None);
+    EXPECT_EQ(limbChild(HumanBone::LeftThumbDistal), HumanBone::None);
+    EXPECT_EQ(limbChild(HumanBone::RightLittleDistal), HumanBone::None);
 }

@@ -8,10 +8,12 @@ Skeleton::Skeleton(const model::Model& model) {
     const std::size_t count = model.bones.size();
     positions_.reserve(count);
     parents_.reserve(count);
+    names_.reserve(count);
     human_.fill(-1);
     for (std::size_t i = 0; i < count; ++i) {
         const model::Bone& bone = model.bones[i];
         positions_.push_back(bone.position);
+        names_.push_back(bone.name);
         const bool validParent = bone.parent >= 0 &&
                                  static_cast<std::size_t>(bone.parent) < count &&
                                  static_cast<std::size_t>(bone.parent) != i;
@@ -54,6 +56,12 @@ int Skeleton::parent(int bone) const noexcept {
     return bone >= 0 && static_cast<std::size_t>(bone) < parents_.size()
                ? parents_[static_cast<std::size_t>(bone)]
                : -1;
+}
+
+std::string_view Skeleton::name(int bone) const noexcept {
+    return bone >= 0 && static_cast<std::size_t>(bone) < names_.size()
+               ? std::string_view(names_[static_cast<std::size_t>(bone)])
+               : std::string_view{};
 }
 
 void Skeleton::computePose(std::span<const core::Quat> rotations,

@@ -15,6 +15,8 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace deskpet::anim {
@@ -27,6 +29,8 @@ public:
     [[nodiscard]] int find(model::HumanBone bone) const noexcept;
     [[nodiscard]] core::Vec3 bindPosition(int bone) const noexcept;
     [[nodiscard]] int parent(int bone) const noexcept;
+    // 본 이름 (원본 그대로, 범위 밖이면 빈 문자열). 휴머노이드가 아닌 모션 트랙을 이름으로 맞출 때
+    [[nodiscard]] std::string_view name(int bone) const noexcept;
     // 부모가 자식보다 먼저 오는 본 순서
     [[nodiscard]] std::span<const int> order() const noexcept { return order_; }
 
@@ -42,8 +46,9 @@ public:
 private:
     std::vector<core::Vec3> positions_;
     std::vector<int> parents_;
-    std::vector<int> order_;       // 부모가 자식보다 먼저 오는 계산 순서
-    std::array<int, 32> human_{};  // HumanBone → 본 인덱스 (-1 = 없음)
+    std::vector<std::string> names_;
+    std::vector<int> order_;  // 부모가 자식보다 먼저 오는 계산 순서
+    std::array<int, model::kHumanBoneCount> human_{};  // HumanBone → 본 인덱스 (-1 = 없음)
 
     // computeSkinMatrices의 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> accumulated_;

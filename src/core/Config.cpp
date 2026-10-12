@@ -189,6 +189,22 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
              c.animation.airborneClip = std::string(v);
              return ApplyResult{};
          }},
+        {"animation.idle_loop_start",
+         [](std::string_view v, AppConfig& c) {
+             return assignFloat(v, 0.0f, 3600.0f, c.animation.idleLoopStart);
+         }},
+        {"animation.walk_loop_start",
+         [](std::string_view v, AppConfig& c) {
+             return assignFloat(v, 0.0f, 3600.0f, c.animation.walkLoopStart);
+         }},
+        {"animation.dragged_loop_start",
+         [](std::string_view v, AppConfig& c) {
+             return assignFloat(v, 0.0f, 3600.0f, c.animation.draggedLoopStart);
+         }},
+        {"animation.airborne_loop_start",
+         [](std::string_view v, AppConfig& c) {
+             return assignFloat(v, 0.0f, 3600.0f, c.animation.airborneLoopStart);
+         }},
         {"state.last_x",
          [](std::string_view v, AppConfig& c) {
              return assignOptionalInt(v, -100000, 100000, c.state.lastX);

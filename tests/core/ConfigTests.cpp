@@ -161,6 +161,19 @@ TEST(Config, MotionClips_DefaultToEmptyAndAreReadPerMotion) {
     EXPECT_EQ(result.config.animation.airborneClip, "motions/fall.vrma");
 }
 
+TEST(Config, MotionLoopStart_DefaultsToZeroAndRejectsNegative) {
+    const auto& defaults = parseConfig("").config.animation;
+    EXPECT_FLOAT_EQ(defaults.idleLoopStart, 0.0f);
+    EXPECT_FLOAT_EQ(defaults.draggedLoopStart, 0.0f);
+
+    const auto result = parseConfig(
+        "[animation]\ndragged_loop_start = 1.5\nairborne_loop_start = 99\nwalk_loop_start = -1\n");
+    EXPECT_FLOAT_EQ(result.config.animation.draggedLoopStart, 1.5f);
+    EXPECT_FLOAT_EQ(result.config.animation.airborneLoopStart, 99.0f);  // 길이 이상 = 마지막 자세
+    EXPECT_FLOAT_EQ(result.config.animation.walkLoopStart, 0.0f);  // 음수는 경고 후 기본값
+    EXPECT_TRUE(containsWarning(result.warnings, "walk_loop_start"));
+}
+
 TEST(Config, LastPosition_IsOptionalAndReadWhenPresent) {
     EXPECT_FALSE(parseConfig("").config.state.lastPosition().has_value());
 

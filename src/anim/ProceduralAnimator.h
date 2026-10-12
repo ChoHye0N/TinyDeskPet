@@ -33,6 +33,9 @@ struct AnimationInput {
     core::Vec3 movement;  // 이번 프레임에 캐릭터가 화면에서 움직인 거리 (모델 공간 m) → 흔들림 관성
     // 바라볼 점 (모델 공간 m, 보통 커서). 없으면 정면 (LookAt)
     std::optional<core::Vec3> lookTarget;
+    // 지금 동작이 시작된 뒤 흐른 시간 (s). 음수면 time을 씀. animate가 동작이 바뀔 때마다 0부터
+    // 채우므로 앱은 비워 둠 (모션 클립이 동작 시작에 맞춰 처음부터 재생되도록, ADR-0014)
+    float motionTime = -1.0f;
 };
 
 using Expressions = std::array<float, static_cast<std::size_t>(model::Expression::Count)>;
@@ -89,9 +92,10 @@ private:
     };
     [[nodiscard]] LookAngles lookAnglesFor(const AnimationInput& input) const;
     void applyLook(LookAngles look) const;  // 목·머리·눈에 나눠 돌림
-    [[nodiscard]] core::Vec3 groundOffset(Motion motion) const;
+    // 몸 전체를 옮길 거리: 클립의 엉덩이 이동 + (서 있거나 걸을 때) 발을 바닥에 맞추는 내림
+    [[nodiscard]] core::Vec3 rootOffset(Motion motion) const;
     void writeOutput(const AnimationInput& input, const Expressions& base, AnimationOutput& out,
-                     core::Vec3 rootOffset) const;
+                     core::Vec3 offset) const;
     void includePosedVertices(const std::vector<core::Mat4>& skin, float maxTurnRadians,
                               model::Bounds& bounds) const;
     [[nodiscard]] std::vector<AnimationInput> boundsSamples() const;
@@ -102,16 +106,21 @@ private:
     Limb leftArm_;
     Limb rightArm_;
     std::array<std::optional<MotionPlayer>, kMotionCount> clips_;  // Motion 순서
-    mutable std::vector<core::Quat> rotations_;      // evaluate 중간 결과 (할당 재사용)
-    mutable std::vector<core::Quat> poseRotations_;  // groundOffset 중간 결과
+    mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
+    mutable core::Vec3 clipOffset_;  // 〃 클립의 엉덩이 이동 (클립이 없으면 0)
+    mutable std::vector<core::Quat> poseRotations_;  // rootOffset 중간 결과
     mutable std::vector<core::Vec3> posePositions_;
 
     // 전환 상태 (animate 전용). 자세는 착지 반동을 빼고 저장해 반동이 두 번 더해지지 않게 함
     bool hasPose_ = false;
     Motion motion_ = Motion::Idle;
     float elapsed_ = kTransitionSeconds;  // 전환 시작 후 흐른 시간. kTransitionSeconds 이상 = 끝
+    float motionStart_ = 0.0f;  // 지금 동작이 시작된 시각 (AnimationInput::time 기준)
     std::vector<core::Quat> fromRotations_;
     std::vector<core::Quat> lastRotations_;
+    core::Vec3
+        fromClipOffset_;  // 엉덩이 이동도 회전처럼 전환 동안 섞음 (들린 몸이 툭 떨어지지 않게)
+    core::Vec3 lastClipOffset_;
     Expressions fromExpressions_{};
     Expressions lastExpressions_{};
 

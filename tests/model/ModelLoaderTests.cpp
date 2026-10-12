@@ -225,17 +225,20 @@ TEST(ModelLoader, Vrm0Humanoid_ArrayFormIsMapped) {
     // VRM 0.x는 배열 형식이고 항목 안에 중첩 객체(min/max 등)가 있음
     const std::string rest =
         meshJson(t) +
-        R"(,"nodes":[{"mesh":0},{"name":"Hips","translation":[0.5,1,0]}],)"
-        R"("scenes":[{"nodes":[0,1]}],"scene":0,"extensionsUsed":["VRM"],)"
+        R"(,"nodes":[{"mesh":0},{"name":"Hips","translation":[0.5,1,0]},{"name":"Thumb"}],)"
+        R"("scenes":[{"nodes":[0,1,2]}],"scene":0,"extensionsUsed":["VRM"],)"
         R"("extensions":{"VRM":{"humanoid":{"humanBones":[)"
-        R"({"bone":"hips","node":1,"useDefaultValues":true,"min":{"x":0,"y":0,"z":0}}]}}})";
+        R"({"bone":"hips","node":1,"useDefaultValues":true,"min":{"x":0,"y":0,"z":0}},)"
+        R"({"bone":"leftThumbProximal","node":2}]}}})";
     const LoadResult result = load(b.build(rest));
 
     ASSERT_TRUE(result.model.has_value()) << result.error;
     const auto& bones = result.model->bones;
-    ASSERT_EQ(bones.size(), 2U);
+    ASSERT_EQ(bones.size(), 3U);
     EXPECT_EQ(bones[1].human, deskpet::model::HumanBone::Hips);
     EXPECT_NEAR(bones[1].position.x, -0.5f, 1e-5f);  // 0.x 회전(180°) 적용
+    // 0.x 엄지 proximal = 1.0 thumbMetacarpal
+    EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftThumbMetacarpal);
 }
 
 // ---------------------------------------------------------------------------

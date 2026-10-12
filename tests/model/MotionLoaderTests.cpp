@@ -182,6 +182,35 @@ TEST(VmdMotion, ChildBones_FollowParentRotation) {
     expectSameRotation(result.clip->track(HumanBone::Hips)[0], Quat{});  // 下半身은 그대로
 }
 
+TEST(VmdMotion, FingerKeys_BecomeFingerTracksFollowingTheHand) {
+    // 左人指２(검지 가운데 마디)를 굽히면 그 마디와 끝 마디가 같이 돌고, 첫 마디는 손을 따라감
+    constexpr std::string_view kLeftIndex2 = "\x8D\xB6\x90\x6C\x8E\x77\x82\x51";  // 左人指２
+    const auto vmd = VmdBuilder().build({{kLeftIndex2, 0, {}, mmd({0.0f, 0.0f, 1.0f}, -60.0f)}});
+    const MotionLoadResult result = load(vmd);
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const Quat bent = Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(-60.0f));
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexIntermediate)[0], bent);
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexDistal)[0], bent);
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexProximal)[0], Quat{});
+    // 손가락 마디 방향도 재서 대상 모델의 손가락 방향 차이를 보정함
+    const Vec3 index =
+        result.clip->restDirections[static_cast<std::size_t>(HumanBone::LeftIndexProximal)];
+    EXPECT_GT(index.x, 0.5f);  // 팔과 같이 캐릭터 왼쪽으로 뻗음
+}
+
+TEST(VmdMotion, CenterKeys_MoveHipsInMmdUnits) {
+    // センター를 MMD 단위로 2 내리고 앞(MMD −Z)으로 1 → 下半身도 같이. 단위는 MMD 그대로 두고 원본
+    // 엉덩이 높이(下半身 11.6)와 함께 저장 (재생할 때 비율로 맞춤)
+    constexpr std::string_view kCenter = "\x83\x5A\x83\x93\x83\x5E\x81\x5B";  // センター
+    const MotionLoadResult result =
+        load(VmdBuilder().build({{kCenter, 0, {0.0f, -2.0f, -1.0f}, Quat{}}}));
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    EXPECT_NEAR(result.clip->hipsHeight, 11.6f, 1e-4f);
+    ASSERT_EQ(result.clip->hipsTranslation.size(), 1U);
+    EXPECT_NEAR(result.clip->hipsTranslation[0].y, -2.0f, 1e-4f);
+    EXPECT_NEAR(result.clip->hipsTranslation[0].z, 1.0f, 1e-4f);  // 공통 규약 정면 +Z
+}
+
 TEST(VmdMotion, RestDirections_AssumeMmdAPose) {
     const MotionLoadResult result = load(VmdBuilder().build({{kHead, 0, {}, Quat{}}}));
     ASSERT_TRUE(result.clip.has_value()) << result.error;
@@ -287,6 +316,69 @@ TEST(VrmaMotion, ParentRestRotation_IsExpressedInModelAxes) {
     ASSERT_TRUE(result.clip.has_value()) << result.error;
     expectSameRotation(result.clip->track(HumanBone::LeftUpperArm)[30],
                        Quat::axisAngle({1.0f, 0.0f, 0.0f}, radians(90.0f)));
+}
+
+TEST(VrmaMotion, NonHumanoidNodes_MovingOnTheirOwn_BecomeNamedTracks) {
+    // hips ─ tail(스스로 Y축 90°), skirt(가만히), leftUpperArm(Z축 90°) ─ sleeve(가만히)
+    // tail만 이름 트랙. skirt·sleeve는 부모를 그대로 따라가므로 트랙이 없어도 같음
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const float s = std::sin(radians(45.0f));
+    const int armRotations = b.addFloats({0, 0, 0, 1, 0, 0, s, s}, "VEC4");
+    const int tailRotations = b.addFloats({0, 0, 0, 1, 0, s, 0, s}, "VEC4");
+    const std::string json = b.build(
+        R"("nodes":[{"name":"hips","translation":[0,1,0],"children":[1,2,3]},)"
+        R"({"name":"tail","translation":[0,0,-0.1]},{"name":"skirt","translation":[0,-0.1,0]},)"
+        R"({"name":"leftUpperArm","translation":[0.2,0.3,0],"children":[4]},)"
+        R"({"name":"sleeve","translation":[0.1,0,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("animations":[{"channels":[{"sampler":0,"target":{"node":3,"path":"rotation"}},)"
+        R"({"sampler":1,"target":{"node":1,"path":"rotation"}}],"samplers":[)"
+        R"({"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(armRotations) +
+        R"(},)"
+        R"({"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(tailRotations) +
+        R"(}]}],)"
+        R"("extensionsUsed":["VRMC_vrm_animation"],"extensions":{"VRMC_vrm_animation":{)"
+        R"("specVersion":"1.0","humanoid":{"humanBones":{"hips":{"node":0},)"
+        R"("leftUpperArm":{"node":3}}}}})");
+    const MotionLoadResult result = loadText(json, ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const auto& tracks = result.clip->boneTracks;
+    ASSERT_EQ(tracks.size(), 1U);
+    EXPECT_EQ(tracks[0].name, "tail");
+    ASSERT_EQ(tracks[0].rotations.size(), 31U);
+    expectSameRotation(tracks[0].rotations[30],
+                       Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(90.0f)));
+}
+
+TEST(VrmaMotion, HipsTranslationChannel_BecomesHipsTranslation) {
+    // 엉덩이를 1초 동안 높이 1 → 0.5로 (앉기). 원본 엉덩이 높이 1과 함께 저장
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int heights = b.addFloats({0, 1, 0, 0, 0.5f, 0}, "VEC3");
+    const std::string json = b.build(
+        R"("nodes":[{"name":"hips","translation":[0,1,0]}],"scenes":[{"nodes":[0]}],"scene":0,)"
+        R"("animations":[{"channels":[{"sampler":0,"target":{"node":0,"path":"translation"}}],)"
+        R"("samplers":[{"input":)" +
+        std::to_string(times) + R"(,"output":)" + std::to_string(heights) +
+        R"(}]}],)"
+        R"("extensionsUsed":["VRMC_vrm_animation"],"extensions":{"VRMC_vrm_animation":{)"
+        R"("specVersion":"1.0","humanoid":{"humanBones":{"hips":{"node":0}}}}})");
+    const MotionLoadResult result = loadText(json, ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const MotionClip& clip = *result.clip;
+    EXPECT_FLOAT_EQ(clip.hipsHeight, 1.0f);
+    ASSERT_EQ(clip.hipsTranslation.size(), 31U);
+    EXPECT_NEAR(clip.hipsTranslation[15].y, -0.25f, 1e-5f);
+    EXPECT_NEAR(clip.hipsTranslation[30].y, -0.5f, 1e-5f);
+}
+
+TEST(VrmaMotion, RotationOnly_HasNoHipsTranslation) {
+    GltfBuilder b;
+    const MotionLoadResult result = loadText(b.build(vrmaJson(b)), ".vrma");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    EXPECT_TRUE(result.clip->hipsTranslation.empty());
 }
 
 TEST(VrmaMotion, PlainGltfWithoutExtension_ReturnsError) {
