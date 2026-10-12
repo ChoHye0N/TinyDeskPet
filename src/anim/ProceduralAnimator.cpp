@@ -36,6 +36,14 @@ constexpr float kCrouchArms = 12.0f;   // 팔 벌림
 constexpr float kLandingDown = 0.07f;  // 내려가는 시간
 constexpr float kLandingUp = 0.38f;    // 일어나는 시간
 
+// 바라보기: 목·머리가 나눠 돌고(합 = 목표 각도), 눈은 그 위에 조금 더 (머리보다 먼저 가는 느낌).
+// 목표로 다가가는 빠르기는 초당 비율 (지수 감쇠, 약 0.3초에 95%)
+constexpr float kLookNeckShare = 0.4f;
+constexpr float kLookEyeShare = 0.3f;
+constexpr float kLookEyeMaxDegrees = 12.0f;
+constexpr float kLookRate = 10.0f;
+constexpr float kLookSettleRadians = 1e-4f;  // 이보다 가까우면 목표에 맞춤 (Present 생략 유지)
+
 // 착지 후 시간 → 웅크림 정도 (0 ~ 1). 빠르게 내려갔다가 천천히 일어남, 양 끝 속도 0
 float landingCurve(float t) {
     const auto smooth = [](float x) {
@@ -239,6 +247,53 @@ void ProceduralAnimator::applyCrouch(float amount) const {
     }
 }
 
+// 머리 위치(기본 자세)에서 목표를 향하는 각도. 제한 각도 안으로 자름
+ProceduralAnimator::LookAngles ProceduralAnimator::lookAnglesFor(
+    const AnimationInput& input) const {
+    const int head = skeleton_.find(HumanBone::Head);
+    if (!input.lookTarget || head < 0) {
+        return {};
+    }
+    const core::Vec3 d = *input.lookTarget - skeleton_.bindPosition(head);
+    const float horizontal = std::hypot(d.x, d.z);
+    if (horizontal < 1e-6f && std::abs(d.y) < 1e-6f) {
+        return {};
+    }
+    const float yawLimit = radians(kLookMaxYawDegrees);
+    return {std::clamp(std::atan2(d.x, d.z), -yawLimit, yawLimit),
+            std::clamp(std::atan2(d.y, horizontal), -radians(kLookMaxDownDegrees),
+                       radians(kLookMaxUpDegrees))};
+}
+
+// 목·머리에 모델 축 기준으로 나눠 덧붙임 (목이 없으면 머리가 전부). 숙임(X) 먼저, 돌림(Y) 나중:
+// 고개를 숙인 채 옆을 보는 자연스러운 순서. 눈 본이 있으면 같은 방향으로 조금 더
+void ProceduralAnimator::applyLook(LookAngles look) const {
+    if (look.yaw == 0.0f && look.pitch == 0.0f) {
+        return;
+    }
+    const auto turn = [&](int bone, float share) {
+        if (bone >= 0) {
+            const core::Quat delta = core::Quat::axisAngle(kAxisY, look.yaw * share) *
+                                     core::Quat::axisAngle(kAxisX, -look.pitch * share);
+            setRotation(bone, delta * rotations_[static_cast<std::size_t>(bone)]);
+        }
+    };
+    const int neck = skeleton_.find(HumanBone::Neck);
+    turn(neck, neck >= 0 ? kLookNeckShare : 0.0f);
+    turn(skeleton_.find(HumanBone::Head), neck >= 0 ? 1.0f - kLookNeckShare : 1.0f);
+    const float eyeLimit = radians(kLookEyeMaxDegrees);
+    const LookAngles eyes{std::clamp(look.yaw * kLookEyeShare, -eyeLimit, eyeLimit),
+                          std::clamp(look.pitch * kLookEyeShare, -eyeLimit, eyeLimit)};
+    for (const HumanBone eye : {HumanBone::LeftEye, HumanBone::RightEye}) {
+        const int bone = skeleton_.find(eye);
+        if (bone >= 0) {
+            const core::Quat delta = core::Quat::axisAngle(kAxisY, eyes.yaw) *
+                                     core::Quat::axisAngle(kAxisX, -eyes.pitch);
+            setRotation(bone, delta * rotations_[static_cast<std::size_t>(bone)]);
+        }
+    }
+}
+
 // 서 있거나 걷는 동안 낮은 쪽 발이 바닥(바인드 포즈 발 높이)에 닿도록 몸 전체를 내릴 거리.
 // 엉덩이를 고정한 채 다리를 굽히거나 흔들면 발이 바닥에서 뜨기 때문 (걸을 때 몸이 오르내림)
 core::Vec3 ProceduralAnimator::groundOffset(Motion motion) const {
@@ -276,6 +331,7 @@ void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& 
     computeRotations(input);
     // 상태가 없으므로 squash 값을 그대로 웅크림 정도로 씀
     applyCrouch(std::clamp(input.squash / kFullSquash, 0.0f, 1.0f));
+    applyLook(lookAnglesFor(input));
     writeOutput(input, expressionsFor(input.motion), out, groundOffset(input.motion));
 }
 
@@ -325,6 +381,16 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
         }
     }
     applyCrouch(crouch);
+
+    // 바라보기: 전환 보간과 별개로 목표 각도로 서서히 (커서가 움직일 때마다 튀지 않게)
+    const LookAngles target = lookAnglesFor(input);
+    const float follow = 1.0f - std::exp(-kLookRate * dt);
+    const auto approach = [&](float current, float goal) {
+        const float next = current + (goal - current) * follow;
+        return std::abs(goal - next) < kLookSettleRadians ? goal : next;
+    };
+    look_ = {approach(look_.yaw, target.yaw), approach(look_.pitch, target.pitch)};
+    applyLook(look_);
 
     const core::Vec3 rootOffset = groundOffset(input.motion);
     // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)

@@ -368,3 +368,83 @@ TEST(ProceduralAnimatorClip, RemovingClip_RestoresProceduralPose) {
     animator.evaluate({}, out);
     EXPECT_LT(posed(model, out, 3).y, 1.0f);
 }
+
+// ---------------------------------------------------------------------------
+// 커서 바라보기 (LookAt): 머리를 목표 쪽으로 돌림 (각도 제한, animate는 서서히)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr std::size_t kHeadBone = 12;  // AnimTestModels.h
+
+// 머리 본의 정면(+Z)이 자세에서 가리키는 방향
+Vec3 headForward(const AnimationOutput& out) {
+    return deskpet::core::normalize(
+        deskpet::core::transformDirection({0.0f, 0.0f, 1.0f}, out.skin[kHeadBone]));
+}
+
+float degreesBetween(Vec3 a, Vec3 b) {
+    return std::acos(std::clamp(deskpet::core::dot(a, b), -1.0f, 1.0f)) * 180.0f /
+           std::numbers::pi_v<float>;
+}
+
+// 머리(0, 1.55, 0)에서 offset만큼 떨어진 목표
+AnimationInput lookingAt(Vec3 offset) {
+    AnimationInput input;
+    input.idleMotion = false;
+    input.lookTarget = Vec3{0.0f, 1.55f, 0.0f} + offset;
+    return input;
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorLookAt, NoTargetOrTargetInFront_KeepsHeadForward) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    AnimationInput input;
+    input.idleMotion = false;
+    EXPECT_LT(degreesBetween(headForward(evaluate(model, input)), {0.0f, 0.0f, 1.0f}), 0.1f);
+    EXPECT_LT(degreesBetween(headForward(evaluate(model, lookingAt({0.0f, 0.0f, 1.0f}))),
+                             {0.0f, 0.0f, 1.0f}),
+              0.1f);
+}
+
+TEST(ProceduralAnimatorLookAt, TargetToTheSideAndAbove_TurnsHeadTowardIt) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const AnimationOutput out = evaluate(model, lookingAt({0.5f, 0.2f, 1.0f}));
+    const Vec3 forward = headForward(out);
+    EXPECT_GT(forward.x, 0.3f);  // 캐릭터 왼쪽(+X)으로
+    EXPECT_GT(forward.y, 0.1f);  // 위로
+    EXPECT_LT(degreesBetween(forward, deskpet::core::normalize({0.5f, 0.2f, 1.0f})), 1.0f);
+}
+
+TEST(ProceduralAnimatorLookAt, TurnIsLimited) {
+    // 바로 옆·뒤쪽 목표도 좌우 최대 각도까지만 (목이 꺾이지 않게)
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Vec3 forward = headForward(evaluate(model, lookingAt({1.0f, 0.0f, -0.2f})));
+    const float yaw = std::atan2(forward.x, forward.z) * 180.0f / std::numbers::pi_v<float>;
+    EXPECT_NEAR(yaw, ProceduralAnimator::kLookMaxYawDegrees, 0.5f);
+    const Vec3 up = headForward(evaluate(model, lookingAt({0.0f, 5.0f, 0.1f})));
+    EXPECT_NEAR(std::asin(up.y) * 180.0f / std::numbers::pi_v<float>,
+                ProceduralAnimator::kLookMaxUpDegrees, 0.5f);
+}
+
+TEST(ProceduralAnimatorLookAt, Animate_TurnsGraduallyThenSettles) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    AnimationOutput out;
+    animator.animate(lookingAt({0.0f, 0.0f, 1.0f}), 1.0f / 60.0f, out);  // 정면에서 시작
+
+    const AnimationInput input = lookingAt({0.6f, 0.0f, 1.0f});  // 약 31° 왼쪽
+    animator.animate(input, 1.0f / 60.0f, out);
+    const float first = std::atan2(headForward(out).x, headForward(out).z);
+    EXPECT_GT(first, 0.0f);
+    EXPECT_LT(first * 180.0f / std::numbers::pi_v<float>, 10.0f);  // 한 프레임에 다 돌지 않음
+
+    for (int i = 0; i < 180; ++i) {
+        animator.animate(input, 1.0f / 60.0f, out);
+    }
+    EXPECT_LT(degreesBetween(headForward(out), deskpet::core::normalize({0.6f, 0.0f, 1.0f})), 0.5f);
+    const AnimationOutput settled = out;
+    animator.animate(input, 1.0f / 60.0f, out);
+    EXPECT_EQ(out.skin, settled.skin);  // 멈추면 정확히 같은 자세 (Present 생략)
+}

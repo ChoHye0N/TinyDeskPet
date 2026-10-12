@@ -16,6 +16,7 @@
 - **코드로 만든 애니메이션** — 대기·걷기·매달림·공중·착지 자세, GPU 스키닝, 표정, 상태 전환 slerp 보간 ([ADR-0010](docs/02-architecture/adr/0010-procedural-animation.md))
 - **모션 파일** — 대기·걷기·매달림·공중 동작마다 VRMA, VMD(MMD), FBX(Mixamo) 모션을 지정해 재생. 모델의 기본 자세(T/A포즈)에 맞춰 리타기팅 ([ADR-0013](docs/02-architecture/adr/0013-motion-clip-retargeting.md))
 - **렌더링** — MToon 툰 셰이딩(그림자 색·텍스처, 림, MatCap, 발광)과 선형 색공간 ([ADR-0012](docs/02-architecture/adr/0012-mtoon-linear-color.md)), MSAA, 반전 헐 외곽선 (모델의 MToon·PMX 에지 설정 사용)
+- **커서 바라보기** — 커서가 가까이 오면 목·머리·눈을 나눠 돌려 바라봄 (각도 제한, 부드럽게 따라감)
 - **머리카락·옷 흔들림** — VRM SpringBone. 끌거나 걸으면 관성으로 날리고 다리·팔 충돌체를 피함
 - **드래그 · 던지기 · 낙하 · 점프 · 걷기** — 고정 시간 간격 물리 ([ADR-0004](docs/02-architecture/adr/0004-fixed-timestep-update.md)), 드래그 중에도 애니메이션 유지 ([ADR-0003](docs/02-architecture/adr/0003-manual-window-drag.md))
 - **크기 조절 · 트레이 아이콘 · 고 DPI · 위치/크기 기억**

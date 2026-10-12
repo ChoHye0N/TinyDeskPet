@@ -876,3 +876,47 @@ TEST_F(ApplicationTest, UserHidden_StaysHiddenAfterFullscreenAppCloses) {
 
     EXPECT_FALSE(window_.visible);
 }
+
+// ---------------------------------------------------------------------------
+// 커서 바라보기 (LookAt)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 머리 본(12)의 정면이 화면 기준 어느 쪽을 보는지: 모델 +X(캐릭터 왼쪽) = 화면 오른쪽
+float headYawTowardScreenRight(const deskpet::testing::FakeRendererState& renderer) {
+    const deskpet::core::Vec3 forward = deskpet::core::transformDirection(
+        {0.0f, 0.0f, 1.0f}, renderer.lastScene.character.skinMatrices[12]);
+    return forward.x;
+}
+
+}  // namespace
+
+TEST_F(ApplicationTest, CursorBesideHead_TurnsHeadTowardCursor) {
+    // 시작 상자 (1680, 840) 200x200. 머리보다 왼쪽 화면에 커서 → 캐릭터 오른쪽(−X)을 봄
+    window_.onPoll = [](int, deskpet::testing::FakeWindowState& w) { w.cursor = {1500, 860}; };
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    app->setModel(makeSkinnedModel());
+    (void)app->run();
+    EXPECT_LT(headYawTowardScreenRight(renderer_), -0.2f);
+}
+
+TEST_F(ApplicationTest, LookAtDisabled_KeepsHeadForward) {
+    config_.animation.lookAt = false;
+    window_.onPoll = [](int, deskpet::testing::FakeWindowState& w) { w.cursor = {1500, 860}; };
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    app->setModel(makeSkinnedModel());
+    (void)app->run();
+    EXPECT_NEAR(headYawTowardScreenRight(renderer_), 0.0f, 1e-4f);
+}
+
+TEST_F(ApplicationTest, CursorFarAway_KeepsHeadForward) {
+    window_.onPoll = [](int, deskpet::testing::FakeWindowState& w) { w.cursor = {0, 0}; };
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    app->setModel(makeSkinnedModel());
+    (void)app->run();
+    EXPECT_NEAR(headYawTowardScreenRight(renderer_), 0.0f, 1e-4f);
+}

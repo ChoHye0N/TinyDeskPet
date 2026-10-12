@@ -99,6 +99,7 @@ private:
     void resizeCharacter();  // boxSize_를 targetBoxSize()로 바꾸고 카메라·벽을 갱신
     [[nodiscard]] core::SizeI targetBoxSize() const;
     void applyAnimation();  // 클립 연결, 자세 경계 상자·카메라·벽 다시 계산
+    [[nodiscard]] std::optional<core::Vec3> lookTarget() const;  // 커서 → 모델 공간 목표
     void refitCamera();
     void setVisible(bool visible);
     void applyVisibility();  // 사용자 숨김·자동 숨김을 합쳐 창을 보이거나 숨김
