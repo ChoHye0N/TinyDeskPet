@@ -42,8 +42,8 @@ public:
 private:
     std::vector<core::Vec3> positions_;
     std::vector<int> parents_;
-    std::vector<int> order_;       // 부모가 자식보다 먼저 오는 계산 순서
-    std::array<int, 32> human_{};  // HumanBone → 본 인덱스 (-1 = 없음)
+    std::vector<int> order_;  // 부모가 자식보다 먼저 오는 계산 순서
+    std::array<int, model::kHumanBoneCount> human_{};  // HumanBone → 본 인덱스 (-1 = 없음)
 
     // computeSkinMatrices의 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> accumulated_;

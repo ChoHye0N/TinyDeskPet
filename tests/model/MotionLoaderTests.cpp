@@ -182,6 +182,22 @@ TEST(VmdMotion, ChildBones_FollowParentRotation) {
     expectSameRotation(result.clip->track(HumanBone::Hips)[0], Quat{});  // 下半身은 그대로
 }
 
+TEST(VmdMotion, FingerKeys_BecomeFingerTracksFollowingTheHand) {
+    // 左人指２(검지 가운데 마디)를 굽히면 그 마디와 끝 마디가 같이 돌고, 첫 마디는 손을 따라감
+    constexpr std::string_view kLeftIndex2 = "\x8D\xB6\x90\x6C\x8E\x77\x82\x51";  // 左人指２
+    const auto vmd = VmdBuilder().build({{kLeftIndex2, 0, {}, mmd({0.0f, 0.0f, 1.0f}, -60.0f)}});
+    const MotionLoadResult result = load(vmd);
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const Quat bent = Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(-60.0f));
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexIntermediate)[0], bent);
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexDistal)[0], bent);
+    expectSameRotation(result.clip->track(HumanBone::LeftIndexProximal)[0], Quat{});
+    // 손가락 마디 방향도 재서 대상 모델의 손가락 방향 차이를 보정함
+    const Vec3 index =
+        result.clip->restDirections[static_cast<std::size_t>(HumanBone::LeftIndexProximal)];
+    EXPECT_GT(index.x, 0.5f);  // 팔과 같이 캐릭터 왼쪽으로 뻗음
+}
+
 TEST(VmdMotion, RestDirections_AssumeMmdAPose) {
     const MotionLoadResult result = load(VmdBuilder().build({{kHead, 0, {}, Quat{}}}));
     ASSERT_TRUE(result.clip.has_value()) << result.error;

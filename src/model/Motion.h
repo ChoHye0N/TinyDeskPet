@@ -24,8 +24,6 @@
 
 namespace deskpet::model {
 
-inline constexpr std::size_t kHumanBoneCount = static_cast<std::size_t>(HumanBone::RightToes) + 1;
-
 enum class MotionFormat : std::uint8_t { Unknown, Vrma, Vmd, Fbx };
 
 struct MotionClip {

@@ -159,8 +159,7 @@ std::optional<std::string_view> stringMember(std::string_view json, std::string_
     return json.substr(*pos + 1, end - *pos - 1);
 }
 
-void assignHumanBone(std::vector<Bone>& bones, std::string_view name, std::optional<int> node) {
-    const HumanBone human = humanBoneFromVrmName(name);
+void assignHumanBone(std::vector<Bone>& bones, HumanBone human, std::optional<int> node) {
     if (human != HumanBone::None && node && *node >= 0 &&
         static_cast<std::size_t>(*node) < bones.size()) {
         bones[static_cast<std::size_t>(*node)].human = human;
@@ -311,7 +310,7 @@ void mapHumanBoneEntries(std::string_view list, std::vector<Bone>& bones) {
             if (nameEnd == std::string_view::npos || objectEnd == std::string_view::npos) {
                 return;
             }
-            assignHumanBone(bones, list.substr(pos + 1, nameEnd - pos - 1),
+            assignHumanBone(bones, humanBoneFromVrmName(list.substr(pos + 1, nameEnd - pos - 1)),
                             intMember(list.substr(objectStart, objectEnd - objectStart), "node"));
             pos = objectEnd;
         } else if (list[pos] == '{') {  // 0.x: { "bone": "이름", "node": n }
@@ -321,7 +320,8 @@ void mapHumanBoneEntries(std::string_view list, std::vector<Bone>& bones) {
             }
             const std::string_view object = list.substr(pos, objectEnd - pos);
             if (const auto bone = stringMember(object, "bone")) {
-                assignHumanBone(bones, *bone, intMember(object, "node"));
+                // 0.x는 엄지 이름이 1.0과 한 칸 어긋남 (thumbProximal = 1.0 thumbMetacarpal)
+                assignHumanBone(bones, humanBoneFromVrm0Name(*bone), intMember(object, "node"));
             }
             pos = objectEnd;
         } else {
