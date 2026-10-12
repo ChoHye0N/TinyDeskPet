@@ -216,7 +216,7 @@ void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
 
 // 착지 웅크림 (amount 0 ~ 1). 슬라임처럼 몸 전체를 납작하게 늘이면 사람 모델은 비율이 깨지므로
 // 관절로 표현: 무릎을 굽히고 허벅지를 그 절반만큼 앞으로 → 정강이가 반대로 같은 각도만큼 기울어
-// 발이 엉덩이 바로 아래에 옴 (허벅지·정강이 길이가 비슷할 때). 몸이 내려가는 높이는 groundOffset이
+// 발이 엉덩이 바로 아래에 옴 (허벅지·정강이 길이가 비슷할 때). 몸이 내려가는 높이는 rootOffset이
 // 발을 바닥에 맞추며 정함. 상체는 숙이고, 고개는 반쯤 되돌려 시선을 유지, 팔은 균형 잡듯 벌림
 void ProceduralAnimator::applyCrouch(float amount) const {
     if (amount <= 0.0f) {

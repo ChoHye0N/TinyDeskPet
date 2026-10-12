@@ -26,4 +26,5 @@ ADR(Architecture Decision Record)은 **중요한 기술 결정과 그 이유**�
 | [0010](0010-procedural-animation.md) | 코드로 계산하는 휴머노이드 애니메이션과 GPU 스키닝 | 승인 |
 | [0011](0011-fullscreen-overlay.md) | 화면 전체 오버레이 창 + 픽셀 단위 클릭 통과 | 승인 |
 | [0012](0012-mtoon-linear-color.md) | MToon 셰이딩과 선형 색공간 (셰이더에서 sRGB 변환) | 승인 |
-| [0013](0013-motion-clip-retargeting.md) | 모션 파일 재생 — 월드 델타로 통일한 리타기팅 | 승인 |
+| [0013](0013-motion-clip-retargeting.md) | 모션 파일 재생 — 월드 델타로 통일한 리타기팅 | 대체됨: ADR-0014 |
+| [0014](0014-motion-clip-extensions.md) | 모션 클립 확장 — 손가락·비휴머노이드 본·엉덩이 이동·반복 구간 | 승인 |

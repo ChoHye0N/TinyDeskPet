@@ -108,7 +108,7 @@ private:
     std::array<std::optional<MotionPlayer>, kMotionCount> clips_;  // Motion 순서
     mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
     mutable core::Vec3 clipOffset_;  // 〃 클립의 엉덩이 이동 (클립이 없으면 0)
-    mutable std::vector<core::Quat> poseRotations_;  // groundOffset 중간 결과
+    mutable std::vector<core::Quat> poseRotations_;  // rootOffset 중간 결과
     mutable std::vector<core::Vec3> posePositions_;
 
     // 전환 상태 (animate 전용). 자세는 착지 반동을 빼고 저장해 반동이 두 번 더해지지 않게 함

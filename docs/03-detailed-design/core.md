@@ -148,7 +148,11 @@ struct CharacterConfig { float gravity = 2400.0f; float jumpSpeed = 900.0f;
                          float dragThreshold = 4.0f; float maxFallSpeed = 4000.0f; };
 struct RendererConfig  { bool vsync = true; bool debugLayer = /* Debug 빌드면 true */; };
 struct ModelConfig     { std::string path; };   // 비면 슬라임. 상대 경로는 실행 파일 폴더 기준
-struct AnimationConfig { bool idleMotion = true; };  // 대기 숨쉬기 동작. 끄면 대기 중 Present 생략
+struct AnimationConfig { bool idleMotion = true;     // 대기 숨쉬기 동작. 끄면 대기 중 Present 생략
+                         bool lookAt = true;         // 커서 바라보기
+                         std::string idleClip, walkClip, draggedClip, airborneClip;  // 모션 파일 (ADR-0013)
+                         float idleLoopStart = 0, walkLoopStart = 0,                 // 반복 시작 시각 s
+                               draggedLoopStart = 0, airborneLoopStart = 0; };       // (ADR-0014)
 struct StateConfig     { std::optional<int> lastX, lastY;      // 프로그램이 기록하는 마지막 발 위치
                          std::optional<PointI> lastPosition() const; };  // 둘 다 있을 때만
 struct LogConfig       { logging::Level level = logging::Level::Info; bool toFile = true; };
@@ -193,6 +197,10 @@ outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불
 
 [model]
 path = models/zmd_EM.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
+
+[animation]
+dragged_clip = models/motions/pickup.fbx  ; 문자열 그대로 (idle_/walk_/dragged_/airborne_clip)
+dragged_loop_start = 1.5     ; 초, 0 ~ 3600. 처음 한 번 끝까지 → 이 시각부터 끝까지 반복
 
 [state]                      ; 프로그램이 종료할 때 기록
 last_x = 1720                ; -100000 ~ 100000
@@ -264,7 +272,7 @@ Mat4 perspectiveFovRH(float fovY, float aspect, float nearZ, float farZ);  // �
 | 테스트 파일 | 검증 내용 |
 |---|---|
 | `tests/core/FixedTimestepTests.cpp` | 정확히 1스텝, 누적 후 스텝, 최대 스텝 제한과 누적 버림, 음수·NaN 입력, `alpha()` 범위 |
-| `tests/core/ConfigTests.cpp` | 기본값, 정상 파싱, 주석·공백, 대소문자, 알 수 없는 키 경고, 범위 밖 값, 형식 오류 행 번호, 불리언 표기, 파일 없음, 모델 경로, 마지막 위치, `setIniValue`(값 교체·주석 유지, 섹션 끝 추가, 새 섹션, CRLF 유지, 다시 파싱) |
+| `tests/core/ConfigTests.cpp` | 기본값, 정상 파싱, 주석·공백, 대소문자, 알 수 없는 키 경고, 범위 밖 값, 형식 오류 행 번호, 불리언 표기, 파일 없음, 모델 경로, 모션 파일·반복 시작 시각(음수 거부), 마지막 위치, `setIniValue`(값 교체·주석 유지, 섹션 끝 추가, 새 섹션, CRLF 유지, 다시 파싱) |
 | `tests/core/LogFileTests.cpp` | 이전 로그 `.1` 보존, 크기 한도와 안내 문구, 열기 실패 시 안전 |
 | `tests/core/LogTests.cpp` | 레벨 필터링, 싱크 교체, 레벨 문자열 변환, 포맷 결과 |
 | `tests/core/MathTests.cpp` | 벡터 연산, 사각형 크기 |
