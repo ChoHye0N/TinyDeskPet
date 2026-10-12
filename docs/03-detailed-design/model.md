@@ -236,9 +236,9 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 
 | 형식 | 출처 | 변환 |
 |---|---|---|
-| VRM 1.0 | `materials[].extensions.VRMC_materials_mtoon`: `shadeColorFactor`, `shadeMultiplyTexture`, `shadingShiftFactor`, `shadingToonyFactor`, `matcapFactor`, `matcapTexture`, `parametricRim*`, `rimLightingMixFactor`. 발광은 glTF `emissiveFactor`·`emissiveTexture` | 그대로. 텍스처 참조 `{index}`는 glTF 텍스처 → 이미지 번호로 |
+| VRM 1.0 | `materials[].extensions.VRMC_materials_mtoon`: `shadeColorFactor`, `shadeMultiplyTexture`, `shadingShiftFactor`, `shadingToonyFactor`, `matcapFactor`, `matcapTexture`, `parametricRim*`, `rimLightingMixFactor`. 발광은 glTF `emissiveFactor`·`emissiveTexture` | 그대로. 텍스처 참조 `{index}`는 glTF 텍스처 → 이미지 번호로. 발광 색에 `KHR_materials_emissive_strength` 세기를 곱함 (VRM Add-on for Blender는 MToon 변환 시 색 [1,1,1] + 세기 0으로 발광을 끔) |
 | VRM 0.x | `extensions.VRM.materialProperties[]`(재질 이름으로 매칭, `shader`가 `VRM/MToon`일 때만): `_ShadeColor`, `_ShadeTexture`, `_ShadeShift`, `_ShadeToony`, `_RimColor`, `_RimFresnelPower`, `_RimLift`, `_RimLightingMix`, `_SphereAdd`(MatCap), `_EmissionColor`, `_EmissionMap` | 색(그림자·림·외곽선)은 sRGB → 선형. 발광은 HDR이라 그대로. 그림자 경계: min = shift, max = lerp(1, shift, toony) → 1.0의 shift = −(min + max)/2, toony = 1 − (max − min)/2. glTF `emissiveFactor`(대체 셰이더용)는 무시 |
-| glTF(VRM 아님) | `emissiveFactor`·`emissiveTexture`, `KHR_materials_unlit` → `unlit` | MToon 아님 |
+| glTF(VRM 아님) | `emissiveFactor`·`emissiveTexture`, `KHR_materials_emissive_strength`, `KHR_materials_unlit` → `unlit` | MToon 아님. 발광 = 색 × 세기 (세기는 1보다 클 수 있음) |
 | PMX, FBX | 없음 | MToon 아님 |
 
 ### 외곽선 정보 (반전 헐용)
@@ -257,7 +257,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`만 읽습니다 (VRM 1.0 `VRMC_sprin
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit) |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑, 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
