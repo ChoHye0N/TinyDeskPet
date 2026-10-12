@@ -3,7 +3,8 @@
 # 플랫폼 독립 애플리케이션 로직 → Linux에서도 테스트됨
 add_library(deskpet_app STATIC
   Application.cpp
-  CameraFit.cpp)
+  CameraFit.cpp
+  Ground.cpp)
 add_library(deskpet::app ALIAS deskpet_app)
 
 # 모델을 작업 스레드에서 읽음 (std::async). Linux GCC는 pthread를 명시해야 링크됨

@@ -110,6 +110,7 @@ private:
     void resetCharacterPosition();
     [[nodiscard]] bool restoreSavedPosition();
     void refreshGround();
+    [[nodiscard]] float groundAt(core::Vec2 feet, float stepUp);  // 창 목록을 갱신할 수 있음
     void refreshBounds();
     void applyDpiScale(float scale);
     void setScalePercent(int percent);
@@ -144,6 +145,8 @@ private:
     bool hidden_ = false;      // 사용자가 메뉴로 숨김
     bool autoHidden_ = false;  // 전체 화면 앱 때문에 자동으로 숨김
     double nextFullscreenCheck_ = 0.0;
+    std::vector<core::RectI> surfaces_;  // 다른 창들 (발판 후보, 0.1초마다 갱신)
+    double nextSurfaceCheck_ = 0.0;
     bool pointerDown_ = false;  // 왼쪽 버튼을 누르고 있는 동안은 항상 클릭을 받음 (끌기)
     std::shared_ptr<const model::Model> model_;
     std::optional<anim::ProceduralAnimator> animator_;

@@ -29,6 +29,7 @@ struct CharacterConfig {
     float jumpSpeed = 900.0f;      // px/s
     float dragThreshold = 4.0f;    // px
     float maxFallSpeed = 4000.0f;  // px/s
+    bool walkOnWindows = true;  // 다른 창의 윗변(제목 표시줄)에 서고 걸을 수 있음
 };
 
 struct RendererConfig {
