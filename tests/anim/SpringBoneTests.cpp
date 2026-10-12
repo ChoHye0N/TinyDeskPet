@@ -217,3 +217,32 @@ TEST(SpringBone, FastMovement_InertiaIsCapped) {
     const auto b = faster.run(1, {0.4f, 0.0f, 0.0f});
     EXPECT_LT(distance(a[3], b[3]), 1e-4f);
 }
+
+TEST(SpringBone, ZeroTimeFrame_KeepsCurrentSwingInsteadOfBindPose) {
+    // 화면 프레임이 고정 간격 사이에 끼면 dt = 0으로 불림. 이때 흔들림을 건너뛰면 그 프레임만
+    // 머리카락이 바인드 포즈로 돌아가 한 프레임씩 번쩍였음 → 직전 끝 위치 그대로 자세를 만듦
+    deskpet::model::SpringGroup group;
+    group.stiffness = 0.5f;
+    group.gravityPower = 2.0f;
+    const Model model = makeChainModel({0.1f, 0.0f, 0.0f}, group);
+    Rig rig(model);
+    const auto bent = rig.run(30, {0.01f, 0.0f, 0.0f});  // 처지고 흔들리는 중
+    ASSERT_GT(distance(bent[3], model.bones[3].position), 0.05f);
+
+    rig.rotations.assign(rig.skeleton.size(), Quat{});
+    rig.springs.update(rig.skeleton, rig.rotations, {}, 0.0f);
+    rig.skeleton.computeSkinMatrices(rig.rotations, rig.skin);
+    for (std::size_t j = 1; j < model.bones.size(); ++j) {
+        const Vec3 held = transformPoint(model.bones[j].position, rig.skin[j]);
+        EXPECT_LT(distance(held, bent[j]), 1e-4f) << "bone " << j;
+    }
+
+    // 시간이 0이면 아무것도 진행하지 않음: 다음 프레임은 0 프레임이 없었던 것과 같아야 함
+    const auto next = rig.run(1);
+    Rig reference(model);
+    (void)reference.run(30, {0.01f, 0.0f, 0.0f});
+    const auto expected = reference.run(1);
+    for (std::size_t j = 1; j < model.bones.size(); ++j) {
+        EXPECT_LT(distance(next[j], expected[j]), 1e-5f) << "bone " << j;
+    }
+}

@@ -117,10 +117,19 @@ void SpringBoneSimulator::addChain(int root, int group,
 
 void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
                                  core::Vec3 movement, float dt, core::Vec3 rootOffset) {
-    if (joints_.empty() || dt <= 0.0f) {
+    if (joints_.empty()) {
         return;
     }
     rotations.resize(skeleton.size());
+    if (!(dt > 0.0f)) {
+        // 화면 프레임이 고정 간격 사이에 끼어 시간이 흐르지 않은 프레임 (FixedTimestep이 0단계).
+        // 건너뛰면 이 프레임만 흔들림 없이 바인드 포즈로 그려져 한 프레임씩 번쩍이므로,
+        // 끝 위치는 그대로 두고 그쪽으로 본만 돌림
+        if (initialized_) {
+            hold(skeleton, rotations, rootOffset);
+        }
+        return;
+    }
     if (length(movement) > kTeleportMeters) {
         reset();
         movement = {};
@@ -148,6 +157,44 @@ void SpringBoneSimulator::update(const Skeleton& skeleton, std::vector<core::Qua
     }
 }
 
+// 부모는 먼저 계산되어 accumulated_/posed_가 이번 결과로 갱신되어 있어야 함
+SpringBoneSimulator::JointFrame SpringBoneSimulator::frameOf(
+    const Joint& joint, const Skeleton& skeleton, const std::vector<core::Quat>& rotations) const {
+    const auto j = static_cast<std::size_t>(joint.bone);
+    JointFrame frame;
+    frame.head = posed_[j];
+    if (joint.parent >= 0) {
+        const auto p = static_cast<std::size_t>(joint.parent);
+        frame.parentRotation = accumulated_[p];
+        frame.head = posed_[p] + frame.parentRotation.rotate(skeleton.bindPosition(joint.bone) -
+                                                             skeleton.bindPosition(joint.parent));
+    }
+    const core::Quat rest = rotations[j] * frame.parentRotation;
+    frame.restDir = rest.rotate(joint.axis) * (1.0f / joint.length);
+    return frame;
+}
+
+// 원래 방향 → 끝을 향하는 방향(dir, 단위 벡터)으로 돌리는 델타를 이 본의 자세 위에 덧붙이고,
+// 자식 계산에 쓰도록 이 본의 누적 회전·위치를 갱신
+void SpringBoneSimulator::orient(const Joint& joint, const JointFrame& frame, core::Vec3 dir,
+                                 std::vector<core::Quat>& rotations) {
+    const auto j = static_cast<std::size_t>(joint.bone);
+    rotations[j] = core::Quat::fromTo(frame.restDir, dir) * rotations[j];
+    accumulated_[j] = rotations[j] * frame.parentRotation;
+    posed_[j] = frame.head;
+}
+
+void SpringBoneSimulator::hold(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
+                               core::Vec3 rootOffset) {
+    skeleton.computePose(rotations, accumulated_, posed_, rootOffset);
+    for (const Joint& joint : joints_) {
+        const JointFrame frame = frameOf(joint, skeleton, rotations);
+        const core::Vec3 d = joint.currentTail - frame.head;
+        const float len = length(d);
+        orient(joint, frame, len > 1e-6f ? d * (1.0f / len) : frame.restDir, rotations);
+    }
+}
+
 void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>& rotations,
                                float dt, core::Vec3 rootOffset) {
     skeleton.computePose(rotations, accumulated_, posed_, rootOffset);
@@ -164,18 +211,9 @@ void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>
         const auto j = static_cast<std::size_t>(joint.bone);
         const model::SpringGroup& group =
             model_.springGroups[static_cast<std::size_t>(joint.group)];
-
-        // 부모는 먼저 계산되어 accumulated_/posed_가 이번 결과로 갱신되어 있음
-        core::Quat parentRotation{};
-        core::Vec3 head = posed_[j];
-        if (joint.parent >= 0) {
-            const auto p = static_cast<std::size_t>(joint.parent);
-            parentRotation = accumulated_[p];
-            head = posed_[p] + parentRotation.rotate(skeleton.bindPosition(joint.bone) -
-                                                     skeleton.bindPosition(joint.parent));
-        }
-        const core::Quat rest = rotations[j] * parentRotation;
-        const core::Vec3 restDir = rest.rotate(joint.axis) * (1.0f / joint.length);
+        const JointFrame frame = frameOf(joint, skeleton, rotations);
+        const core::Vec3 head = frame.head;
+        const core::Vec3 restDir = frame.restDir;
 
         if (!initialized_) {
             joint.currentTail = joint.prevTail = head + restDir * joint.length;
@@ -219,12 +257,7 @@ void SpringBoneSimulator::step(const Skeleton& skeleton, std::vector<core::Quat>
         }
         joint.prevTail = joint.currentTail;
         joint.currentTail = next;
-
-        // 원래 방향 → 끝을 향하는 방향으로 돌리는 델타를 이 본의 자세 위에 덧붙임
-        const core::Vec3 dir = (next - head) * (1.0f / joint.length);
-        rotations[j] = core::Quat::fromTo(restDir, dir) * rotations[j];
-        accumulated_[j] = rotations[j] * parentRotation;
-        posed_[j] = head;
+        orient(joint, frame, (next - head) * (1.0f / joint.length), rotations);
     }
     initialized_ = true;
 }
