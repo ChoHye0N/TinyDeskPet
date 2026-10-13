@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -67,6 +68,42 @@ TEST(Skeleton, ChildDelta_IsAppliedOnTopOfParentPose) {
     // 팔꿈치 (0.2, 1.1, 0)에서 손이 앞(+Z)으로 0.25
     expectNear(deskpet::core::transformPoint(model.bones[3].position, skin[3]),
                {0.2f, 1.1f, 0.25f});
+}
+
+TEST(Skeleton, HiddenBone_CollapsesItselfAndChildrenToTheirJoints) {
+    // 숨긴 본(왼쪽 위팔)과 그 아래(아래팔·손)에 붙은 정점은 관절 한 점으로 모여 보이지 않음
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    std::vector<Quat> rotations(skeleton.size());
+    std::vector<std::uint8_t> hidden(skeleton.size(), 0);
+    hidden[2] = 1;
+    std::vector<Mat4> skin;
+    skeleton.computeSkinMatrices(rotations, skin, {}, hidden);
+
+    const Vec3 anywhere{3.0f, -2.0f, 1.0f};
+    expectNear(deskpet::core::transformPoint(anywhere, skin[2]), model.bones[2].position);
+    expectNear(deskpet::core::transformPoint(anywhere, skin[0]), model.bones[0].position);
+    expectNear(deskpet::core::transformPoint(anywhere, skin[3]), model.bones[3].position);
+    expectNear(deskpet::core::transformPoint(anywhere, skin[5]), anywhere);  // 다른 팔은 그대로
+}
+
+TEST(Skeleton, BoneOffset_MovesBoneAndChildrenInParentPoseAxes) {
+    // 이동 오프셋(기본 자세 모델 축): 왼쪽 위팔을 위로 0.1 → 아래팔·손도 같이. 몸을 돌린 자세면
+    // 오프셋도 부모(엉덩이) 자세를 따라 돎
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    std::vector<Quat> rotations(skeleton.size());
+    rotations[1] = Quat::axisAngle({0.0f, 0.0f, 1.0f}, std::numbers::pi_v<float> / 2.0f);  // 엉덩이
+    std::vector<Vec3> offsets(skeleton.size());
+    offsets[2] = {0.0f, 0.1f, 0.0f};
+    std::vector<Mat4> skin;
+    skeleton.computeSkinMatrices(rotations, skin, {}, {}, offsets);
+
+    // 엉덩이 (0,1,0) 기준 Z축 90°: 어깨 (0.2,1.4) → (−0.4, 1.2), 오프셋 +Y → −X
+    expectNear(deskpet::core::transformPoint(model.bones[2].position, skin[2]),
+               {-0.5f, 1.2f, 0.0f});
+    expectNear(deskpet::core::transformPoint(model.bones[3].position, skin[3]),
+               {-0.5f, 1.2f + 0.55f, 0.0f});
 }
 
 TEST(Skeleton, FindsHumanBones) {

@@ -146,6 +146,16 @@ struct Morph {
     }
 };
 
+// 메시 노드의 모프 타깃 하나 (일반 glTF만, ADR-0015). 애니메이션의 weights 채널이 노드 이름과
+// 타깃 번호로 가리킴 (예: 입 모양 메시마다 있는 "숨기기" 타깃)
+struct NamedMorph {
+    std::string name;        // 메시가 달린 노드 이름
+    std::size_t target = 0;  // 그 메시의 모프 타깃 번호
+    Morph morph;
+    // 클립이 가중치를 주지 않을 때 쓰는 값: 파일 안 첫 애니메이션의 첫 키, 없으면 0
+    float defaultWeight = 0.0f;
+};
+
 enum class VrmVersion : std::uint8_t { None, V0, V1 };  // None = VRM 확장 없는 일반 glTF
 
 enum class ModelFormat : std::uint8_t { Unknown, Gltf, Pmx, Fbx };  // Gltf = glTF/GLB/VRM
@@ -169,9 +179,12 @@ struct Model {
     std::vector<Texture> textures;
     std::vector<Bone> bones;
     std::array<Morph, static_cast<std::size_t>(Expression::Count)> expressions;
+    std::vector<NamedMorph> morphs;  // 애니메이션이 가중치를 바꾸는 모프 (일반 glTF만)
     std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM만 읽음)
     std::vector<SpringCollider> springColliders;
     Bounds bounds;
+    // 읽지 않고 버린 소품 메시 이름 (VRM이 아닌 glTF에서 몸 밖의 뼈에만 붙은 총 등, ADR-0015)
+    std::vector<std::string> droppedProps;
 
     [[nodiscard]] const Morph& expression(Expression e) const noexcept {
         return expressions[static_cast<std::size_t>(e)];

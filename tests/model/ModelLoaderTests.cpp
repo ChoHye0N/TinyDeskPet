@@ -241,6 +241,82 @@ TEST(ModelLoader, Vrm0Humanoid_ArrayFormIsMapped) {
     EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftThumbMetacarpal);
 }
 
+TEST(ModelLoader, PlainGltf_MapsHumanBonesByNodeName) {
+    // VRM 정보가 없는 glTF(게임에서 내보낸 모델 등)는 FBX·PMX처럼 본 이름으로 매핑.
+    // 같은 이름이 또 나오면 처음 것만
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0},{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2,0]},)"
+        R"({"name":"Bip001 L UpperArm","translation":[0.2,0.4,0]},{"name":"Bip001 Pelvis"},)"
+        R"({"name":"bone_hair_01"}],"scenes":[{"nodes":[1,3,4]}],"scene":0)";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& bones = result.model->bones;
+    ASSERT_EQ(bones.size(), 5U);
+    EXPECT_EQ(bones[1].human, deskpet::model::HumanBone::Hips);
+    EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftUpperArm);
+    EXPECT_EQ(bones[3].human, deskpet::model::HumanBone::None);
+    EXPECT_EQ(bones[4].human, deskpet::model::HumanBone::None);
+}
+
+TEST(ModelLoader, PlainGltf_DropsPropMeshesOutsideTheBody) {
+    // 게임에서 내보낸 모델: 총·소품은 엉덩이(hips) 아래가 아닌 뼈에만 붙어 있음 (ADR-0015).
+    // Bip001 ─ Pelvis(hips) ─ Head ─ 헤일로(고정 메시)      → 유지
+    //        │       └ 몸(스킨: Pelvis)                       → 유지
+    //        └ Weapon ─ 총(스킨: Weapon)                      → 삭제
+    // 소품(고정 메시, 장면 최상위)                            → 삭제
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const int joints = b.addUint8({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "VEC4");
+    const int weights = b.addFloats({1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, "VEC4");
+    const auto mesh = [&](std::string_view name, bool skinned) {
+        std::string attributes = R"("POSITION":)" + std::to_string(t.position) + R"(,"NORMAL":)" +
+                                 std::to_string(t.normal);
+        if (skinned) {
+            attributes += R"(,"JOINTS_0":)" + std::to_string(joints) + R"(,"WEIGHTS_0":)" +
+                          std::to_string(weights);
+        }
+        return R"({"name":")" + std::string(name) + R"(","primitives":[{"attributes":{)" +
+               attributes + R"(},"indices":)" + std::to_string(t.indices) + "}]}";
+    };
+    const std::string rest =
+        R"("meshes":[)" + mesh("Body", true) + "," + mesh("Halo", false) + "," +
+        mesh("Weapon", true) + "," + mesh("Firework", false) +
+        R"(],"nodes":[{"name":"Bip001","children":[1,3]},)"
+        R"({"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2]},)"
+        R"({"name":"Bip001 Head","translation":[0,0.5,0],"children":[5]},)"
+        R"({"name":"Bip001_Weapon","translation":[0.5,0,0]},)"
+        R"({"mesh":0,"skin":0},{"mesh":1},{"mesh":2,"skin":1},{"mesh":3}],)"
+        R"("skins":[{"joints":[1]},{"joints":[3]}],"scenes":[{"nodes":[0,4,6,7]}],"scene":0)";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& model = *result.model;
+    EXPECT_EQ(model.vertices.size(), 6U);  // 몸 + 헤일로
+    EXPECT_EQ(model.primitives.size(), 2U);
+    EXPECT_EQ(model.droppedProps, (std::vector<std::string>{"Weapon", "Firework"}));
+}
+
+TEST(ModelLoader, VrmHumanoid_DoesNotFallBackToNodeNames) {
+    // VRM은 humanBones만 믿음: 거기 없는 본은 이름이 휴머노이드처럼 보여도 매핑하지 않음
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0},{"name":"J_Hips","translation":[0,1,0]},{"name":"Spine"}],)"
+        R"("scenes":[{"nodes":[0,1,2]}],"scene":0,"extensionsUsed":["VRMC_vrm"],)"
+        R"("extensions":{"VRMC_vrm":{"specVersion":"1.0","humanoid":{"humanBones":{)"
+        R"("hips":{"node":1}}}}})";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_EQ(result.model->bones[1].human, deskpet::model::HumanBone::Hips);
+    EXPECT_EQ(result.model->bones[2].human, deskpet::model::HumanBone::None);
+}
+
 // ---------------------------------------------------------------------------
 // 스킨 가중치·표정 (애니메이션, ADR-0010)
 // ---------------------------------------------------------------------------
@@ -287,6 +363,45 @@ TEST(ModelLoader, Vrm1Expression_ReadsMorphTargetBinds) {
     const auto& blink = result.model->expression(deskpet::model::Expression::Blink);
     ASSERT_EQ(blink.vertices, (std::vector<std::uint32_t>{0, 2}));  // 0인 델타는 저장하지 않음
     EXPECT_FLOAT_EQ(blink.deltas[1].y, -1.0f);                      // -2 × 가중치 0.5
+    EXPECT_TRUE(result.model->morphs.empty());  // VRM은 표정으로만 (이름 모프는 일반 glTF만)
+}
+
+TEST(ModelLoader, PlainGltf_KeepsMorphTargetsByNodeName) {
+    // 일반 glTF의 모프 타깃은 애니메이션의 weights 채널이 노드 이름 + 타깃 번호로 가리킴 (ADR-0015)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(
+        b.build(morphMeshJson(b, t) +
+                R"(,"nodes":[{"name":"Mouth_A","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0)"));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& morphs = result.model->morphs;
+    ASSERT_EQ(morphs.size(), 1U);
+    EXPECT_EQ(morphs[0].name, "Mouth_A");
+    EXPECT_EQ(morphs[0].target, 0U);
+    EXPECT_EQ(morphs[0].morph.vertices, (std::vector<std::uint32_t>{0, 2}));
+    EXPECT_FLOAT_EQ(morphs[0].morph.deltas[1].y, -2.0f);
+    EXPECT_FLOAT_EQ(morphs[0].defaultWeight, 0.0f);  // 파일 안 애니메이션이 없으면 0
+}
+
+TEST(ModelLoader, PlainGltf_MorphDefaultWeight_ComesFromFirstAnimationFirstKey) {
+    // 입 모양 메시를 가중치로 고르는 모델은 클립이 없으면 모두 0(모두 보임)이 되므로, 파일 안 첫
+    // 애니메이션의 첫 키를 기본 가중치로 (ADR-0015)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int weights = b.addFloats({1.0f, 0.0f}, "SCALAR");
+    const LoadResult result = load(
+        b.build(morphMeshJson(b, t) +
+                R"(,"nodes":[{"name":"Mouth_A","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0,)"
+                R"("animations":[{"channels":[{"sampler":0,"target":{"node":0,"path":"weights"}}],)"
+                R"("samplers":[{"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(weights) +
+                R"(,"interpolation":"STEP"}]}])"));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    ASSERT_EQ(result.model->morphs.size(), 1U);
+    EXPECT_FLOAT_EQ(result.model->morphs[0].defaultWeight, 1.0f);
 }
 
 TEST(ModelLoader, Vrm0BlendShape_ReadsMeshBindsWithPercentWeight) {
@@ -626,11 +741,11 @@ TEST(ModelLoader, Vrm0Meta_ReadsTitleAuthorAndLicense) {
     const Triangle t = addTriangle(b);
     const std::string json =
         meshJson(t) + "," + kSingleNodeScene +
-        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{"meta":{"title":"Kei","version":"1.0",)"
+        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{"meta":{"title":"Sample","version":"1.0",)"
         R"("author":"Someone","licenseName":"CC_BY","otherLicenseUrl":""}}})";
     const LoadResult result = load(b.build(json));
     ASSERT_TRUE(result.model.has_value()) << result.error;
-    EXPECT_EQ(result.model->meta.name, "Kei");
+    EXPECT_EQ(result.model->meta.name, "Sample");
     EXPECT_EQ(result.model->meta.author, "Someone");
     EXPECT_EQ(result.model->meta.license, "CC_BY");
 }
@@ -641,11 +756,11 @@ TEST(ModelLoader, Vrm1Meta_JoinsAuthorsAndNamesKnownLicense) {
     const std::string json =
         meshJson(t) + "," + kSingleNodeScene +
         R"(,"extensionsUsed":["VRMC_vrm"],"extensions":{"VRMC_vrm":{"specVersion":"1.0",)"
-        R"("humanoid":{"humanBones":{}},"meta":{"name":"Alicia","authors":["A","B"],)"
+        R"("humanoid":{"humanBones":{}},"meta":{"name":"Avatar","authors":["A","B"],)"
         R"("licenseUrl":"https://vrm.dev/licenses/1.0/"}}})";
     const LoadResult result = load(b.build(json));
     ASSERT_TRUE(result.model.has_value()) << result.error;
-    EXPECT_EQ(result.model->meta.name, "Alicia");
+    EXPECT_EQ(result.model->meta.name, "Avatar");
     EXPECT_EQ(result.model->meta.author, "A, B");
     EXPECT_EQ(result.model->meta.license, "VRM Public License 1.0");
 }

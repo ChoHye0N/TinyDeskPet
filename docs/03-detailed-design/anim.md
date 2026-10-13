@@ -35,7 +35,11 @@ public:
     std::size_t size() const;
     int find(model::HumanBone bone) const;          // 없으면 -1
     core::Vec3 bindPosition(int bone) const;
-    void computeSkinMatrices(std::span<const core::Quat> rotations, std::vector<core::Mat4>& out) const;
+    // hidden[본] ≠ 0이면 그 본과 아래 본을 크기 0으로 접음 (클립의 숨김 본, ADR-0015).
+    // offsets[본]: 기본 자세 모델 축의 이동, Pⱼ = P부모 + A부모(pⱼ − p부모 + offsetⱼ)
+    void computeSkinMatrices(std::span<const core::Quat> rotations, std::vector<core::Mat4>& out,
+                             core::Vec3 rootOffset = {}, std::span<const std::uint8_t> hidden = {},
+                             std::span<const core::Vec3> offsets = {}) const;
 };
 
 enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
@@ -140,6 +144,10 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 - **`ProceduralAnimator` 연결**: `computeRotations`에서 그 동작에 클립이 있으면 코드 자세 대신 `sample`·`rootOffset`. 시각은 `AnimationInput::motionTime`(동작이 시작된 뒤 흐른 시간, `animate`가 동작이 바뀔 때마다 0부터 채움. 없으면 `time`) → 클립이 동작 시작에 맞춰 처음부터 나옴. 대기 동작을 끄면(`idleMotion = false`) 첫 프레임에 멈춤 (Present 생략 유지). 전환 보간·착지·발 붙이기·흔들림은 그대로이고, 전환 0.2초 동안 엉덩이 이동도 회전처럼 섞음
 - **몸 위치 (`rootOffset(motion)`)**: 클립 엉덩이 이동 + (Idle·Walk만) 발 붙이기. 발 붙이기는 엉덩이 이동을 넣은 자세로 낮은 발 높이를 재므로, 클립이 이미 몸을 낮췄으면 더 내리지 않음 (내리기만 함)
 - **경계 상자**: 클립이 있는 동작은 길이 전체에서 고르게 최대 24자세 (§4.3). 엉덩이 이동도 들어감
+- **숨김 본 (ADR-0015)**: `hidden()` = 클립 `hiddenBones`와 이름이 같은 본. `writeOutput`이 그 동작의 클립이 있으면 그 마스크, 없으면 불러온 클립들 마스크의 합으로 `computeSkinMatrices`에 넘김 → 정점이 관절 한 점(v' = P)에 모여 보이지 않음. 전환 중에는 새 동작 기준. 경계 상자도 같은 경로라 숨긴 소품은 빠짐
+- **이름 본 이동 (ADR-0015)**: `sampleOffsets(time)` = 이름 트랙의 `offsets` × (대상 엉덩이 높이 / 원본 `hipsHeight`, 모르면 1). `computeRotations`가 받아 `writeOutput`·발 붙이기의 `computePose`에 넘김 (전환 중에는 새 동작 값 그대로)
+- **모프 가중치 (ADR-0015)**: 생성 시 `Model::morphs`를 받아 클립 `weightTracks`를 (모프 번호, 트랙)으로 연결 (이름·타깃 번호가 같은 것, 없으면 버림). `sampleWeights(time)`(트랙이 없는 모프는 `NamedMorph::defaultWeight`, 클립이 하나도 없으면 `writeOutput`이 기본 가중치로 채움) → `AnimationOutput::morphWeights` → 앱이 `MeshCharacter::morphWeights`로 넘기고 렌더러가 표정 모프와 함께 더함. 전환 중 섞지 않음
+- **클립이 없는 동작의 이름 본 (ADR-0015)**: `named()` = 이름 트랙이 움직이는 본. 코드로 만든 자세 끝에 `drapeNamedBones`가 첫 클립(대기 우선)을 0초로 샘플링해 그 본들의 델타(부모 기준)를 덮어씀 → 머플러·꼬리가 기본 자세로 뻗지 않고 늘어짐. 이동 오프셋·모프 가중치도 그 첫 프레임 값 (눈꺼풀, 입 모양)
 
 ### 4.6 커서 바라보기 (LookAt, FR-28)
 
@@ -159,6 +167,8 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `Skeleton.IdentityRotations_GiveIdentitySkin` | 회전 없음 → 모든 스킨 행렬이 항등 |
 | `Skeleton.ParentRotation_MovesChildrenAroundParentJoint` | 위팔 회전이 아래팔·손을 어깨 기준으로 옮김, 배열 순서와 무관 |
 | `Skeleton.ChildDelta_IsAppliedOnTopOfParentPose` | 자식 델타가 부모 자세 위에서 모델 축 기준으로 적용 |
+| `Skeleton.HiddenBone_CollapsesItselfAndChildrenToTheirJoints` | 숨긴 본과 아래 본의 정점이 관절 한 점으로, 다른 본은 그대로 |
+| `Skeleton.BoneOffset_MovesBoneAndChildrenInParentPoseAxes` | 이동 오프셋이 본과 자식을 옮기고, 부모 자세를 따라 돎 |
 | `ProceduralAnimator.Idle_LowersTPoseArms` / `Idle_LowersAPoseArmsToSameDirection` | T포즈·A포즈 모두 같은 위치로 팔 내림 |
 | `Walk_SwingsLegsInOppositeDirections` | 걷기 위상에서 두 발이 앞뒤 반대 |
 | `Expressions_FollowMotion` | 깜빡임, 매달림 → 놀람(깜빡임 억제), 걷기 → 기쁨 |
@@ -177,8 +187,8 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `WalkKeepsLowerFootOnGround` | 걷는 동안 낮은 쪽 발이 바닥 |
 | `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
 | `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
-| `MotionPlayer.*` | 빈 클립은 기본 자세, 월드 델타 → 로컬 델타(트랙 없는 본은 부모를 따라감), A포즈 원본 → T포즈 대상 보정(손도 같이), 같은 기본 자세면 보정 없음, 이름 트랙은 같은 이름 본에만(없는 이름은 버림, 휴머노이드 우선), 프레임 보간·반복, 반복 시작 시각(처음 한 번 끝까지 → 그 구간만), 길이 이상이면 마지막 자세, 엉덩이 이동(높이 비율, 수평 루트 이동 제거), 이동 없는 클립은 0 |
-| `ProceduralAnimatorClip.*` | 지정한 동작만 클립 재생, 경계 상자에 클립 자세 포함, 클립 제거 시 코드 동작 복귀, 엉덩이 이동으로 몸이 들림, 대기 클립이 낮춘 몸을 발 붙이기가 두 번 내리지 않음, 동작이 시작될 때 클립이 처음부터 |
+| `MotionPlayer.*` | 빈 클립은 기본 자세, 월드 델타 → 로컬 델타(트랙 없는 본은 부모를 따라감), A포즈 원본 → T포즈 대상 보정(손도 같이), 같은 기본 자세면 보정 없음, 이름 트랙은 같은 이름 본에만(없는 이름은 버림, 휴머노이드 우선), 프레임 보간·반복, 반복 시작 시각(처음 한 번 끝까지 → 그 구간만), 길이 이상이면 마지막 자세, 엉덩이 이동(높이 비율, 수평 루트 이동 제거), 이동 없는 클립은 0, 숨김 본은 이름으로(없는 이름은 버림), 이름 본 이동은 엉덩이 높이 비율로, 가중치 트랙은 모프 이름·타깃 번호로(없는 이름은 버림) |
+| `ProceduralAnimatorClip.*` | 지정한 동작만 클립 재생, 경계 상자에 클립 자세 포함, 클립 제거 시 코드 동작 복귀, 엉덩이 이동으로 몸이 들림, 대기 클립이 낮춘 몸을 발 붙이기가 두 번 내리지 않음, 동작이 시작될 때 클립이 처음부터, 클립의 숨김 본이 접힘(클립 없는 동작도, 숨기지 않는 클립에선 보임), 클립 없는 동작의 이름 본은 대기 클립 첫 프레임 모양, 모프 가중치·이동 오프셋이 클립에서(클립 없는 동작은 대기 첫 프레임), 클립이 없거나 트랙이 없는 모프는 기본 가중치 |
 | `ProceduralAnimatorLookAt.*` | 목표 없음·정면이면 그대로, 옆·위 목표 쪽으로 머리가 정확히 향함, 좌우·위 각도 제한, `animate`는 서서히 돌고 멈추면 같은 자세 |
 
 `tests/anim/SpringBoneTests.cpp` — 몸통 + 사슬 3개짜리 모델: 힘이 없으면 바인드 포즈 유지, 중력으로 처지되 본 길이 유지, 캐릭터가 움직이면 끝이 뒤처졌다가 돌아옴, 구 충돌체 안으로 들어가지 않음(구가 없을 때와 대조), 순간 이동은 초기화, 멈춘 뒤 회전이 정확히 같음, 격하게 움직여도 각 마디·사슬 전체가 범위 안, 관성 상한, `dt = 0` 프레임은 직전 흔들림 유지(다음 프레임도 0 프레임이 없던 것과 같음), VRM 1.0 관절 사슬은 적힌 본만 흔들리고 마지막 관절은 스스로 돌지 않음, 캡슐 충돌체 안으로 들어가지 않음(양 끝 구로만 처리하면 막지 못하는 배치).

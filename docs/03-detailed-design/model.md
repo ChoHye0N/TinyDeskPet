@@ -28,7 +28,7 @@
 | `src/model/TextureSource.h/.cpp` | 텍스처 바이트 정리, 외부 텍스처 파일 읽기, TGA 디코딩 |
 | `src/model/Humanoid.h/.cpp` | `HumanBone`과 형식별 본 이름 매핑표, `limbChild`(팔다리 다음 본) |
 | `src/model/Motion.h`, `MotionLoader.cpp` | 모션 클립(`MotionClip`)과 진입점: `detectMotionFormat`, `loadMotionFromMemory`, `loadMotionFile` (§4.9) |
-| `src/model/VmdImporter.cpp` | VMD (직접 구현, 표준 MMD 뼈대 + 다리 IK). VRMA는 `GltfImporter.cpp`, FBX 모션은 `FbxImporter.cpp` |
+| `src/model/VmdImporter.cpp` | VMD (직접 구현, 표준 MMD 뼈대 + 다리 IK). VRMA·glTF 모션은 `GltfImporter.cpp`, FBX 모션은 `FbxImporter.cpp` |
 | `src/model/ThirdPartyImpl.cpp` | cgltf·stb_image 구현부 (우리 경고 옵션 미적용 타깃 `deskpet_model_thirdparty`, ufbx.c 포함) |
 | `src/core/Math3D.h` | `Vec3`, `Vec4`, `Mat4` ([core.md §3.8](core.md)) |
 
@@ -129,8 +129,8 @@ PMX의 z 반전 한 번이 "왼손 → 오른손"과 "정면 −Z → +Z"를 동
 3. 이미지: 버퍼 뷰 안의 이미지(GLB) → `makeTexture`. `.gltf`의 외부 이미지 파일 URI → `loadTextureFile`
 4. 머티리얼: `pbrMetallicRoughness` 기본색·텍스처, 알파 모드, 양면
 5. 본: **모든 노드**를 본으로 (인덱스 = 노드 인덱스, VRM `humanBones`가 노드 번호로 가리키므로). 위치 = 월드 행렬의 이동
-6. 휴머노이드: 확장 JSON(`cgltf_extension.data`)에서 `humanBones`만 찾는 최소 스캐너 — 1.0은 `{"hips": {"node": n}}` 객체, 0.x는 `[{"bone": "hips", "node": n, "min": {...}}]` 배열(중첩 객체를 괄호 짝 맞추기로 건너뜀). 0.x 엄지 proximal·intermediate는 1.0 metacarpal·proximal로 (`humanBoneFromVrm0Name`)
-7. 메시: 메시가 달린 모든 노드의 삼각형 프리미티브를 이어 붙임. 바인드 포즈는 아래처럼 굽기
+6. 휴머노이드: 확장 JSON(`cgltf_extension.data`)에서 `humanBones`만 찾는 최소 스캐너 — 1.0은 `{"hips": {"node": n}}` 객체, 0.x는 `[{"bone": "hips", "node": n, "min": {...}}]` 배열(중첩 객체를 괄호 짝 맞추기로 건너뜀). 0.x 엄지 proximal·intermediate는 1.0 metacarpal·proximal로 (`humanBoneFromVrm0Name`). VRM이 아닌 glTF는 노드 이름으로 매핑(`humanBoneFromFbxName` → 아니면 `humanBoneFromMmdName`, 한 휴머노이드 본에 처음 맞는 노드만, ADR-0015). VRM은 이름을 보지 않음
+7. 메시: 메시가 달린 모든 노드의 삼각형 프리미티브를 이어 붙임. 바인드 포즈는 아래처럼 굽기. 단, VRM이 아닌 glTF에서 휴머노이드 hips를 찾았으면 **소품 메시는 건너뜀**(ADR-0015): 스킨 관절이 모두 hips 본 아래가 아닌 메시(스킨이 없으면 메시 노드 자체가 hips 아래가 아닌 메시). 이름은 `Model::droppedProps`(로그에 표시). 일반 glTF는 메시 노드의 모프 타깃을 `Model::morphs`(노드 이름 + 타깃 번호 + 모델 공간 델타 + 기본 가중치)로도 보관 → 모션의 `weights` 트랙이 가리킴 (VRM은 표정만). 기본 가중치 = 파일 안 첫 애니메이션의 그 노드·타깃 `weights` 첫 키(CUBICSPLINE은 값 묶음), 없으면 0
 
 | 노드 | 정점 변환 |
 |---|---|
@@ -195,7 +195,9 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 
 렌더러는 디코딩·축소 직후, **밉맵을 만들기 전에** 16텍셀(512 기준 밉 4단계까지)을 채웁니다. 측정: 펭귄 모델(텍스처 7장, 삼각형 5.3만 개) 로드 + 업로드 0.2초.
 
-### 4.9 모션 (`MotionClip`, ADR-0013·ADR-0014)
+### 4.9 모션 (`MotionClip`, ADR-0013·ADR-0014·ADR-0015)
+
+**클립 고르기 (ADR-0015)**: `loadMotionFromMemory(bytes, extension, clipName)`의 `clipName`은 glTF `animations[].name`·FBX 애니메이션 스택 이름. 비어 있으면 첫 번째, 없는 이름이면 있는 이름을 나열한 오류, VMD에 주면 오류. `loadMotionFile`은 `"파일#이름"`을 나눔: 경로 전체가 파일이 아닐 때만 파일 이름의 마지막 `#` 뒤를 `clipName`으로.
 
 모든 형식을 읽을 때 **30fps, 휴머노이드 본별 월드 델타 Δ = W(t)·W₀⁻¹**(원본 기본 자세 → 지금, 공통 규약의 모델 축)로 바꿉니다. 함께 원본 기본 자세의 팔다리·손가락 방향(`restDirections`, 본 → `limbChild`)을 기록해 재생할 때 대상의 T/A포즈 차이를 보정합니다 ([anim.md §4.5](anim.md)). ADR-0014로 다음을 더 읽습니다.
 
@@ -204,12 +206,16 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 | `boneTracks` | 휴머노이드가 아닌 노드 중 **부모와 다르게 움직이는 것만** 이름 + 월드 델타 (`motion::addBoneTracks`, 회전 차 0.1° 미만은 같은 것으로). 부모를 그대로 따라가는 노드는 트랙이 없어도 결과가 같음. 같은 이름은 처음 것만. FBX·VRMA만 (VMD는 뼈대가 없어 휴머노이드가 아닌 본의 계층을 모름) |
 | `hipsTranslation`, `hipsHeight` | 엉덩이 위치 변화와 원본 기본 자세의 엉덩이 높이, **원본 단위 그대로** (`motion::setHipsTranslation`). 재생할 때 대상/원본 엉덩이 높이 비율을 곱하므로 단위가 상쇄됨. 한 번도 움직이지 않으면(원본 단위 1e-4배 이하) 비워 둠 |
 | `loopStart` | 파일이 아니라 설정 `[animation] *_loop_start`에서 앱이 채움 |
+| `hiddenBones` | 크기 키가 모두 0.1배 미만인 휴머노이드가 아닌 노드 이름 (게임의 소품 숨기기, ADR-0015). glTF만 (크기 채널은 이것에만 씀) |
+| `NamedTrack::offsets` | 휴머노이드가 아닌 노드의 프레임별 이동 변화: (로컬 이동 − 기본 자세 로컬 이동) × 부모의 기본 자세 월드 행렬(크기 포함), 원본 단위. 회전이 부모와 같아도 이동이 1e-5보다 크면 트랙 (ADR-0015). glTF만 |
+| `weightTracks` | `weights` 채널을 타깃별로: 노드 이름, 타깃 번호, 프레임별 가중치. 키마다 타깃 수만큼 값(CUBICSPLINE은 값만). 타깃 수 = 메시 `weights` 수, 없으면 첫 프리미티브의 타깃 수. glTF만 |
+| `hipsHeight` | 엉덩이가 움직이지 않아도 기본 자세 높이가 0보다 크면 채움 (이름 본 이동의 크기 기준) |
 
 | 형식 | 판별 | 변환 |
 |---|---|---|
-| VRMA | glTF/GLB + `VRMC_vrm_animation` (없으면 오류) | `humanoid.humanBones`로 노드 → 본. 첫 애니메이션의 회전·이동 채널 (회전 LINEAR = slerp, 이동 LINEAR = 선형, STEP, CUBICSPLINE은 값만). 노드 회전은 TRS, W = W부모·L (부모 먼저 순서는 직접 계산). 엉덩이 위치 = Σ(조상의 부모 월드 회전 · 로컬 이동), 크기는 무시. 좌표는 VRM 1.0과 같음 |
+| VRMA·glTF | glTF/GLB (판별은 `Vrma`, 확장이 없으면 클립 형식 `Gltf`) | 노드 → 본: `VRMC_vrm_animation.humanoid.humanBones` → 없으면 VRM 모델의 `humanBones` → 없으면 본 이름(§4.3의 6과 같음). 하나도 없으면 오류. 고른 애니메이션의 회전·이동 채널 (회전 LINEAR = slerp, 이동 LINEAR = 선형, STEP, CUBICSPLINE은 값만). 노드 회전은 TRS, W = W부모·L (부모 먼저 순서는 직접 계산). 엉덩이 위치 = Σ(조상의 부모 월드 회전 · 로컬 이동), 크기는 무시. 좌표는 VRM 1.0과 같음 |
 | VMD | `Vocaloid Motion Data 0002`(모델 이름 20바이트) / `... file`(10바이트) | 본 키 111바이트(이름 15 Shift-JIS, 프레임, 이동, 회전, 보간 64). 표준 MMD 뼈대(全ての親 → センター → グルーブ → 腰 → 上半身·下半身 …, 腕捩·手捩, 손가락 포함)로 W = W부모·q. 손가락은 손목 아래 親指０~２·人指·中指·薬指·小指１~３ (팔 방향으로 뻗은 A포즈, 방향만 의미). 보간은 키의 베지어 4개(X·Y·Z·회전, 바이트 [c], [c+4], [c+8], [c+12]). 足ＩＫ 키가 있는 쪽 다리는 2관절 IK(표준 길이, 무릎은 下半身 앞, 비틀림은 골반을 따름, 발 = IK 본 회전). z 반전: 회전 (x, y, z, w) → (−x, −y, z, w). 팔 기본 자세 37° 아래(A포즈). 엉덩이 위치 = 下半身 위치(MMD 단위, センター·グルーブ 이동 반영). 눈·머리카락 등 모르는 본은 건너뜀. 30분 초과 프레임 무시 |
-| FBX | ufbx (`ignore_geometry`) | 첫 애니메이션 스택. 구간이 없으면 키프레임 범위. 본 이름은 Mixamo·3ds Max Biped 관례. `ufbx_evaluate_transform`의 로컬 회전을 부모부터 곱해 W, 기본 자세 = 애니메이션 없는 노드 값. 엉덩이 위치 = 조상 로컬 변환 행렬의 곱(`ufbx_matrix_mul`) |
+| FBX | ufbx (`ignore_geometry`) | 고른 애니메이션 스택. 구간이 없으면 그 스택 레이어 곡선의 키프레임 범위. 본 이름은 Mixamo·3ds Max Biped 관례. `ufbx_evaluate_transform`의 로컬 회전을 부모부터 곱해 W, 기본 자세 = 애니메이션 없는 노드 값. 엉덩이 위치 = 조상 로컬 변환 행렬의 곱(`ufbx_matrix_mul`) |
 
 ### 4.7 오류
 
@@ -276,14 +282,14 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 일반 glTF 본 이름 매핑(중복은 처음 것만)·VRM은 이름 무시, 몸 밖 뼈에만 붙은 소품 메시(스킨·고정) 제외, 일반 glTF 모프 타깃을 노드 이름으로 보관(VRM은 없음)·기본 가중치는 첫 애니메이션 첫 키(없으면 0), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
 | `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
 | `HumanoidTests` | VRM 1.0·0.x(엄지 한 칸 보정)·MMD·Mixamo 이름 매핑, 3ds Max Biped(`Bip01`·`Bip001` 접두사, `_` 구분, 루트·무기는 제외), 형식마다 손가락 이름, 팔다리·손가락 다음 본 |
-| `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, 손가락 키 → 손가락 트랙·방향, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, センター 이동 → 엉덩이 이동(MMD 단위), 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 스스로 움직이는 비휴머노이드 노드만 이름 트랙, 이동 채널 → 엉덩이 이동(회전만이면 없음), 확장 없으면 오류. FBX(ASCII): 회전 곡선 재샘플링, 애니메이션 없으면 오류 |
+| `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, 손가락 키 → 손가락 트랙·방향, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, センター 이동 → 엉덩이 이동(MMD 단위), 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 스스로 움직이는 비휴머노이드 노드만 이름 트랙, 이동 채널 → 엉덩이 이동(회전만이면 없음), 확장·본 이름 모두 없으면 오류. 일반 glTF: Biped 이름 매핑·첫 애니메이션 기본, 클립 내내 크기 0인 본만 숨김 본, 이름 본 이동 → 부모 기본 자세 축의 오프셋, `weights`(STEP) → 타깃별 가중치 트랙, 이름으로 고르기, 없는 이름은 목록과 함께 오류, `파일#이름` 경로(이름에 `#`이 든 파일은 그대로). FBX(ASCII): 회전 곡선 재샘플링, 스택 이름으로 고르기, 애니메이션 없으면 오류. VMD에 클립 이름을 주면 오류 |
 
 수동 확인: VRM 0.x 모델, VRM Add-on for Blender로 SpringBone(구·캡슐)을 넣은 VRM 1.0 모델(로그 "흔들림 N(충돌체 M)"), 3ds Max Biped 뼈대 FBX 모델과 같은 모델의 FBX 모션(로그 "본 41개, 그 밖의 본 N개, 엉덩이 이동 있음"), ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
 
@@ -295,5 +301,5 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | `TODO(M6)` | VRM 메타(이름, 작가, 라이선스) 파싱과 표시 |
 | ~~`TODO(M4)`~~ | ✅ 정점 스킨 가중치(VRM/glTF, PMX, FBX), 표정 모프(VRM, PMX) — ADR-0010 |
 | `TODO(M4)` | FBX 블렌드 셰이프 표정, PMX SDEF 정확한 구면 보간 |
-| ~~`TODO(M4)`~~ | ✅ 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 (§4.9). ✅ 손가락, 비휴머노이드 본, 엉덩이 이동 (ADR-0014). 남은 것: VRMA 표정, VMD 비휴머노이드 본 |
+| ~~`TODO(M4)`~~ | ✅ 모션 파일: VRMA, VMD(MMD), FBX 애니메이션 (§4.9). ✅ 손가락, 비휴머노이드 본, 엉덩이 이동 (ADR-0014). ✅ 일반 glTF 본 이름 매핑, 파일 안 애니메이션 고르기 (ADR-0015). 남은 것: VRMA 표정, VMD 비휴머노이드 본 |
 | `TODO(M5)` | ~~MToon 파라미터~~ ✅ (ADR-0012), ~~VRM 1.0 SpringBone~~ ✅, MMD 툰·스피어 텍스처 |

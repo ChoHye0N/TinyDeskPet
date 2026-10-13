@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -63,6 +64,19 @@ Mat4 worldMatrix(const cgltf_node& node) {
     std::array<float, 16> values{};
     cgltf_node_transform_world(&node, values.data());
     return Mat4::fromColumnMajor(values.data());
+}
+
+// 노드 메시의 모프 타깃 수 = weights 채널이 키마다 주는 값 수. 메시 weights 수, 없으면 첫
+// 프리미티브의 타깃 수
+cgltf_size morphTargetCount(const cgltf_node& node) {
+    const cgltf_mesh* mesh = node.mesh;
+    if (mesh == nullptr) {
+        return 0;
+    }
+    if (mesh->weights_count > 0) {
+        return mesh->weights_count;
+    }
+    return mesh->primitives_count > 0 ? mesh->primitives[0].targets_count : 0;
 }
 
 // 관절 행렬 = 역바인드 × 관절의 현재 월드 (행 벡터 규약). 바인드 포즈에서는 단위 행렬에 가깝습니다.
@@ -352,6 +366,23 @@ void mapVrmHumanoid(const cgltf_data& data, std::vector<Bone>& bones) {
     }
 }
 
+// VRM이 아닌 glTF(게임·DCC에서 내보낸 모델): FBX·PMX처럼 본 이름으로 (Mixamo·3ds Max Biped, 아니면
+// MMD). 한 휴머노이드 본에 이름이 여럿 맞으면 처음 것만 (ADR-0015)
+void mapHumanoidByName(std::vector<Bone>& bones) {
+    std::array<bool, kHumanBoneCount> taken{};
+    for (Bone& bone : bones) {
+        HumanBone human = humanBoneFromFbxName(bone.name);
+        if (human == HumanBone::None) {
+            human = humanBoneFromMmdName(bone.name);
+        }
+        auto& used = taken[static_cast<std::size_t>(human)];
+        if (human != HumanBone::None && !used) {
+            bone.human = human;
+            used = true;
+        }
+    }
+}
+
 class Converter {
 public:
     Converter(const cgltf_data& data, const ImportContext& context)
@@ -363,36 +394,16 @@ public:
         readTextures();
         readMaterials();
         readBones();
-
-        for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
-            const cgltf_node& node = data_.nodes[i];
-            if (node.mesh != nullptr && !readMesh(node, error)) {
-                return std::nullopt;
-            }
-        }
-        if (model_.vertices.empty()) {
-            error = "그릴 수 있는 메시가 없습니다";
+        if (!readMeshes(error)) {
             return std::nullopt;
         }
-
         if (model_.version == VrmVersion::V0) {
-            // VRM 0.x 정면은 -Z. Y축 180° 회전 = (x, z) 부호 반전
-            for (Vertex& v : model_.vertices) {
-                v.position = {-v.position.x, v.position.y, -v.position.z};
-                v.normal = {-v.normal.x, v.normal.y, -v.normal.z};
-            }
-            for (Bone& bone : model_.bones) {
-                bone.position = {-bone.position.x, bone.position.y, -bone.position.z};
-            }
-            for (auto& [node, morphs] : nodeMorphs_) {
-                for (Morph& morph : morphs) {
-                    for (Vec3& d : morph.deltas) {
-                        d = {-d.x, d.y, -d.z};
-                    }
-                }
-            }
+            faceVrm0Forward();
         }
         readExpressions();
+        if (model_.version == VrmVersion::None) {
+            keepNamedMorphs();
+        }
         if (model_.version == VrmVersion::V1) {
             readVrm1SpringBones();
         } else {
@@ -411,6 +422,112 @@ private:
     template <class T>
     int indexOf(const T* item, const T* first) const {
         return item != nullptr ? static_cast<int>(item - first) : -1;
+    }
+
+    // 메시가 달린 노드를 차례로 읽음. 소품 메시는 이름만 남기고 건너뜀
+    bool readMeshes(std::string& error) {
+        for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
+            const cgltf_node& node = data_.nodes[i];
+            if (node.mesh == nullptr) {
+                continue;
+            }
+            if (isProp(node)) {
+                model_.droppedProps.emplace_back(node.mesh->name != nullptr ? node.mesh->name : "");
+            } else if (!readMesh(node, error)) {
+                return false;
+            }
+        }
+        if (model_.vertices.empty()) {
+            error = "그릴 수 있는 메시가 없습니다";
+            return false;
+        }
+        return true;
+    }
+
+    // VRM 0.x 정면은 -Z. Y축 180° 회전 = (x, z) 부호 반전
+    void faceVrm0Forward() {
+        for (Vertex& v : model_.vertices) {
+            v.position = {-v.position.x, v.position.y, -v.position.z};
+            v.normal = {-v.normal.x, v.normal.y, -v.normal.z};
+        }
+        for (Bone& bone : model_.bones) {
+            bone.position = {-bone.position.x, bone.position.y, -bone.position.z};
+        }
+        for (auto& [node, morphs] : nodeMorphs_) {
+            for (Morph& morph : morphs) {
+                for (Vec3& d : morph.deltas) {
+                    d = {-d.x, d.y, -d.z};
+                }
+            }
+        }
+    }
+
+    // VRM은 표정(expressions)으로만 씀. 일반 glTF는 애니메이션 weights 채널용으로 보관 (ADR-0015)
+    void keepNamedMorphs() {
+        for (const auto& [node, morphs] : nodeMorphs_) {
+            const char* name = data_.nodes[static_cast<std::size_t>(node)].name;
+            for (std::size_t t = 0; t < morphs.size(); ++t) {
+                model_.morphs.push_back({name != nullptr ? name : "", t, morphs[t],
+                                         firstKeyWeight(static_cast<std::size_t>(node), t)});
+            }
+        }
+    }
+
+    // 파일 안 첫 애니메이션이 이 노드·타깃에 주는 첫 키 가중치, 없으면 0. 입 모양 메시마다 "숨기기"
+    // 타깃을 두고 애니메이션으로 하나만 보이게 하는 모델은 가중치 0(모두 보임)이면 입이 겹치므로,
+    // 클립이 가중치를 주지 않을 때의 기본값으로 씀
+    [[nodiscard]] float firstKeyWeight(std::size_t node, std::size_t target) const {
+        if (data_.animations_count == 0) {
+            return 0.0f;
+        }
+        const cgltf_animation& animation = data_.animations[0];
+        for (cgltf_size c = 0; c < animation.channels_count; ++c) {
+            const cgltf_animation_channel& channel = animation.channels[c];
+            if (channel.target_path != cgltf_animation_path_type_weights ||
+                channel.target_node != &data_.nodes[node] || channel.sampler == nullptr) {
+                continue;
+            }
+            const cgltf_size targets = morphTargetCount(data_.nodes[node]);
+            // CUBICSPLINE은 키마다 (들어오는 접선, 값, 나가는 접선) 묶음이라 값은 가운데 묶음
+            const cgltf_size first =
+                channel.sampler->interpolation == cgltf_interpolation_type_cubic_spline ? targets
+                                                                                        : 0;
+            float weight = 0.0f;
+            if (target < targets && cgltf_accessor_read_float(channel.sampler->output,
+                                                              first + target, &weight, 1) != 0) {
+                return weight;
+            }
+        }
+        return 0.0f;
+    }
+
+    // 노드가 엉덩이(hips) 본이거나 그 아래에 있는지
+    [[nodiscard]] bool inBody(const cgltf_node* node, int hips) const {
+        for (std::size_t depth = 0; node != nullptr && depth < data_.nodes_count;
+             node = node->parent, ++depth) {
+            if (indexOf(node, data_.nodes) == hips) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 소품 메시 (ADR-0015): VRM이 아닌 glTF에서 몸(엉덩이 아래)과 관계없는 뼈에만 붙은 메시.
+    // 게임에서 내보낸 모델의 총·이펙트 소품은 뼈대 맨 위나 장면 최상위의 별도 뼈에 붙어 있어,
+    // 몸 뼈대로 움직이는 모션에서 엉뚱한 곳에 남음. 헤일로처럼 머리 등에 붙은 장신구는 몸 안이라
+    // 유지. 휴머노이드를 못 찾은 모델은 기준이 없으므로 아무것도 버리지 않음
+    [[nodiscard]] bool isProp(const cgltf_node& node) const {
+        const int hips = model_.version == VrmVersion::None ? model_.findBone(HumanBone::Hips) : -1;
+        if (hips < 0) {
+            return false;
+        }
+        if (node.skin == nullptr) {
+            return !inBody(&node, hips);
+        }
+        const std::span<cgltf_node* const> joints(node.skin->joints, node.skin->joints_count);
+        return !joints.empty() && std::ranges::none_of(joints, [&](const cgltf_node* joint) {
+            return inBody(joint, hips);
+        });
     }
 
     void readTextures() {
@@ -448,7 +565,11 @@ private:
             const Mat4 world = worldMatrix(node);
             bone.position = {world.m[3][0], world.m[3][1], world.m[3][2]};
         }
-        mapVrmHumanoid(data_, model_.bones);
+        if (model_.version == VrmVersion::None) {
+            mapHumanoidByName(model_.bones);
+        } else {
+            mapVrmHumanoid(data_, model_.bones);  // VRM은 humanBones만 (이름은 보지 않음)
+        }
     }
 
     void readMaterials() {
@@ -1172,26 +1293,30 @@ LoadResult convert(cgltf_data* raw, const ImportContext& context) {
     return result;
 }
 
-// VRMA (VRM Animation): glTF 노드 계층 + 애니메이션 + VRMC_vrm_animation.humanoid (ADR-0013).
+// glTF 애니메이션 → 모션 클립. 휴머노이드 본은 VRMA면 VRMC_vrm_animation.humanoid (ADR-0013),
+// 애니메이션이 든 VRM 모델이면 그 humanBones, 일반 glTF면 본 이름 (ADR-0015).
 // 좌표는 VRM 1.0과 같음 (정면 +Z). 노드는 TRS만 지원 (matrix 노드는 회전 없음으로 봄)
-class VrmaConverter {
+class GltfMotionConverter {
 public:
-    explicit VrmaConverter(const cgltf_data& data) : data_(data) {}
+    GltfMotionConverter(const cgltf_data& data, std::string_view clipName)
+        : data_(data), clipName_(clipName) {}
 
     std::optional<MotionClip> run(std::string& error) {
         if (!readHumanoid()) {
-            error = "VRMC_vrm_animation 확장이 없습니다 (VRMA 파일이 아닙니다)";
+            error =
+                "휴머노이드 본이 없습니다 (VRMA의 VRMC_vrm_animation, 또는 Mixamo·3ds Max "
+                "Biped·MMD 본 이름이 필요합니다)";
             return std::nullopt;
         }
-        if (data_.animations_count == 0) {
-            error = "애니메이션이 없습니다";
+        const cgltf_animation* animation = findAnimation(error);
+        if (animation == nullptr) {
             return std::nullopt;
         }
-        readChannels(data_.animations[0]);
+        readChannels(*animation);
         orderNodes();
 
         MotionClip clip;
-        clip.format = MotionFormat::Vrma;
+        clip.format = format_;
         clip.frameCount =
             static_cast<std::size_t>(std::floor(duration_ * MotionClip::kFramesPerSecond + 1e-3f)) +
             1;
@@ -1220,8 +1345,10 @@ public:
             }
         }
         motion::setRestDirections(clip, positions);
-        motion::addBoneTracks(clip, nodes, deltas);
+        motion::addBoneTracks(clip, nodes, deltas, nodeOffsets(clip.frameCount));
         readHipsTranslation(clip);
+        readHiddenBones(clip);
+        readWeightTracks(clip);
         return clip;
     }
 
@@ -1232,6 +1359,63 @@ private:
         std::vector<T> values;
         bool step = false;
     };
+
+    // 휴머노이드가 아닌 노드의 프레임별 이동 변화 (ADR-0015): (로컬 이동 − 기본 자세 로컬 이동)을
+    // 부모의 기본 자세 월드 행렬(크기 포함)로 모델 축에 옮김. 이동 채널이 없는 노드는 비움
+    [[nodiscard]] std::vector<std::vector<Vec3>> nodeOffsets(std::size_t frameCount) const {
+        std::vector<std::vector<Vec3>> offsets(data_.nodes_count);
+        for (std::size_t n = 0; n < data_.nodes_count; ++n) {
+            if (translations_[n].times.empty() || human_[n] != HumanBone::None) {
+                continue;
+            }
+            const cgltf_node& node = data_.nodes[n];
+            const Vec3 rest =
+                node.has_translation != 0
+                    ? Vec3{node.translation[0], node.translation[1], node.translation[2]}
+                    : Vec3{};
+            const Mat4 parent =
+                node.parent != nullptr ? worldMatrix(*node.parent) : Mat4::identity();
+            offsets[n].reserve(frameCount);
+            for (std::size_t frame = 0; frame < frameCount; ++frame) {
+                const float time = static_cast<float>(frame) / MotionClip::kFramesPerSecond;
+                offsets[n].push_back(
+                    core::transformDirection(sample(translations_[n], time) - rest, parent));
+            }
+        }
+        return offsets;
+    }
+
+    // weights 채널 → 타깃별 가중치 트랙 (입 모양 메시 바꾸기 등, ADR-0015)
+    void readWeightTracks(MotionClip& clip) const {
+        for (const WeightChannel& channel : weights_) {
+            const char* name = data_.nodes[channel.node].name;
+            WeightTrack track{name != nullptr ? name : "", channel.target, {}};
+            track.weights.reserve(clip.frameCount);
+            for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
+                track.weights.push_back(sample(
+                    channel.values, static_cast<float>(frame) / MotionClip::kFramesPerSecond));
+            }
+            clip.weightTracks.push_back(std::move(track));
+        }
+    }
+
+    // 크기 키가 모두 0.1배 미만인 휴머노이드가 아닌 노드 (게임의 소품 숨기기, ADR-0015).
+    // 키 사이는 보간이라 키가 모두 작으면 클립 내내 작음
+    void readHiddenBones(MotionClip& clip) const {
+        constexpr float kHiddenScale = 0.1f;
+        for (std::size_t n = 0; n < scales_.size(); ++n) {
+            const std::vector<Vec3>& keys = scales_[n].values;
+            const char* name = data_.nodes[n].name;
+            if (keys.empty() || human_[n] != HumanBone::None || name == nullptr) {
+                continue;
+            }
+            if (std::ranges::all_of(keys, [](Vec3 s) {
+                    return std::max({std::abs(s.x), std::abs(s.y), std::abs(s.z)}) < kHiddenScale;
+                })) {
+                clip.hiddenBones.emplace_back(name);
+            }
+        }
+    }
 
     // 엉덩이 노드의 위치 변화 (조상의 이동·회전 포함)
     void readHipsTranslation(MotionClip& clip) const {
@@ -1249,27 +1433,59 @@ private:
         motion::setHipsTranslation(clip, frames, worldPosition(n, -1.0f, worldRotations(-1.0f)));
     }
 
+    // 노드 → 휴머노이드 본. 하나라도 있으면 true
     bool readHumanoid() {
-        const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
-        const auto start = json.empty() ? std::nullopt : valueOf(json, "humanBones");
-        if (!start || *start >= json.size()) {
-            return false;
-        }
-        const std::size_t end = skipBalanced(json, *start);
-        if (end == std::string_view::npos) {
-            return false;
-        }
         std::vector<Bone> bones(data_.nodes_count);
-        mapHumanBoneEntries(json.substr(*start + 1, end - *start - 2), bones);  // 괄호 안쪽
+        for (cgltf_size n = 0; n < data_.nodes_count; ++n) {
+            bones[n].name = data_.nodes[n].name != nullptr ? data_.nodes[n].name : "";
+        }
+        const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
+        const std::size_t start =
+            json.empty() ? std::string_view::npos
+                         : valueOf(json, "humanBones").value_or(std::string_view::npos);
+        const std::size_t end =
+            start < json.size() ? skipBalanced(json, start) : std::string_view::npos;
+        if (end != std::string_view::npos) {
+            format_ = MotionFormat::Vrma;
+            mapHumanBoneEntries(json.substr(start + 1, end - start - 2), bones);  // 괄호 안쪽
+        } else if (detectVersion(data_) != VrmVersion::None) {
+            mapVrmHumanoid(data_, bones);
+        } else {
+            mapHumanoidByName(bones);
+        }
         human_.resize(bones.size());
         std::ranges::transform(bones, human_.begin(), &Bone::human);
-        return true;
+        return std::ranges::any_of(human_, [](HumanBone h) { return h != HumanBone::None; });
     }
 
-    // 회전·이동 채널 (크기는 쓰지 않음). 이동은 엉덩이 위치에만 씀
+    // clipName_과 이름이 같은 애니메이션 (비어 있으면 첫 번째). 없으면 error에 있는 이름을 나열
+    const cgltf_animation* findAnimation(std::string& error) const {
+        if (data_.animations_count == 0) {
+            error = "애니메이션이 없습니다";
+            return nullptr;
+        }
+        if (clipName_.empty()) {
+            return &data_.animations[0];
+        }
+        std::string names;
+        for (cgltf_size i = 0; i < data_.animations_count; ++i) {
+            const std::string_view name =
+                data_.animations[i].name != nullptr ? data_.animations[i].name : "";
+            if (name == clipName_) {
+                return &data_.animations[i];
+            }
+            names += std::format("{}'{}'", i > 0 ? ", " : "", name);
+        }
+        error =
+            std::format("애니메이션 '{}'이(가) 없습니다. 있는 애니메이션: {}", clipName_, names);
+        return nullptr;
+    }
+
+    // 회전·이동·크기 채널. 이동은 엉덩이 위치에만, 크기는 숨김 본을 고를 때만 씀
     void readChannels(const cgltf_animation& animation) {
         channels_.resize(data_.nodes_count);
         translations_.resize(data_.nodes_count);
+        scales_.resize(data_.nodes_count);
         for (cgltf_size c = 0; c < animation.channels_count; ++c) {
             const cgltf_animation_channel& channel = animation.channels[c];
             if (channel.target_node == nullptr || channel.sampler == nullptr) {
@@ -1283,6 +1499,38 @@ private:
             } else if (channel.target_path == cgltf_animation_path_type_translation) {
                 readSampler(*channel.sampler, translations_[node],
                             [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
+            } else if (channel.target_path == cgltf_animation_path_type_scale) {
+                readSampler(*channel.sampler, scales_[node],
+                            [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
+            } else if (channel.target_path == cgltf_animation_path_type_weights) {
+                readWeights(*channel.sampler, node);
+            }
+        }
+    }
+
+    // weights 채널: 키마다 타깃 수만큼 값이 이어짐 (CUBICSPLINE은 키마다 접선·값·접선 묶음)
+    void readWeights(const cgltf_animation_sampler& sampler, std::size_t node) {
+        const cgltf_size targets = morphTargetCount(data_.nodes[node]);
+        const cgltf_size count = sampler.input->count;
+        const cgltf_size stride =
+            sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;
+        if (targets == 0 || sampler.output->count < count * stride * targets) {
+            return;
+        }
+        for (cgltf_size t = 0; t < targets; ++t) {
+            WeightChannel& channel = weights_.emplace_back();
+            channel.node = node;
+            channel.target = t;
+            channel.values.step = sampler.interpolation == cgltf_interpolation_type_step;
+            for (cgltf_size k = 0; k < count; ++k) {
+                float time = 0.0f;
+                float value = 0.0f;
+                cgltf_accessor_read_float(sampler.input, k, &time, 1);
+                cgltf_accessor_read_float(sampler.output,
+                                          (k * stride + (stride - 1) / 2) * targets + t, &value, 1);
+                channel.values.times.push_back(time);
+                channel.values.values.push_back(value);
+                duration_ = std::max(duration_, time);
             }
         }
     }
@@ -1403,16 +1651,25 @@ private:
     }
 
     const cgltf_data& data_;
+    std::string_view clipName_;
+    MotionFormat format_ = MotionFormat::Gltf;
     std::vector<HumanBone> human_;  // 노드 → 휴머노이드 본
     std::vector<Channel<core::Quat>> channels_;
     std::vector<Channel<Vec3>> translations_;
+    std::vector<Channel<Vec3>> scales_;
+    struct WeightChannel {
+        std::size_t node = 0;
+        std::size_t target = 0;
+        Channel<float> values;
+    };
+    std::vector<WeightChannel> weights_;
     std::vector<std::size_t> order_;
     float duration_ = 0.0f;
 };
 
 }  // namespace
 
-MotionLoadResult importVrma(std::span<const std::uint8_t> bytes) {
+MotionLoadResult importGltfMotion(std::span<const std::uint8_t> bytes, std::string_view clipName) {
     cgltf_options options{};
     cgltf_data* raw = nullptr;
     cgltf_result status = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
@@ -1428,7 +1685,7 @@ MotionLoadResult importVrma(std::span<const std::uint8_t> bytes) {
         return {std::nullopt, resultToString(status)};
     }
     MotionLoadResult result;
-    result.clip = VrmaConverter(*data).run(result.error);
+    result.clip = GltfMotionConverter(*data, clipName).run(result.error);
     return result;
 }
 

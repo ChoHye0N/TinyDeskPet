@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -35,13 +36,18 @@ public:
     [[nodiscard]] std::span<const int> order() const noexcept { return order_; }
 
     // FK만 계산: accumulated[본] = 누적 회전 Aⱼ, posed[본] = 자세를 적용한 관절 위치 Pⱼ.
-    // rootOffset: 루트 본(부모 없음)을 옮길 거리 → 몸 전체가 이동 (착지 때 몸 낮추기)
+    // rootOffset: 루트 본(부모 없음)을 옮길 거리 → 몸 전체가 이동 (착지 때 몸 낮추기).
+    // offsets[본]: 기본 자세 모델 축의 이동 (눈꺼풀 등, ADR-0015). 부모 자세를 따라 돌아서 더해짐:
+    //   Pⱼ = P부모 + A부모(pⱼ − p부모 + offsetⱼ). 비면 0
     void computePose(std::span<const core::Quat> rotations, std::vector<core::Quat>& accumulated,
-                     std::vector<core::Vec3>& posed, core::Vec3 rootOffset = {}) const;
+                     std::vector<core::Vec3>& posed, core::Vec3 rootOffset = {},
+                     std::span<const core::Vec3> offsets = {}) const;
 
-    // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐
+    // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐.
+    // hidden[본] ≠ 0이면 그 본과 아래 본에 붙은 정점을 관절 한 점으로 접어 숨김 (비면 숨김 없음)
     void computeSkinMatrices(std::span<const core::Quat> rotations, std::vector<core::Mat4>& out,
-                             core::Vec3 rootOffset = {}) const;
+                             core::Vec3 rootOffset = {}, std::span<const std::uint8_t> hidden = {},
+                             std::span<const core::Vec3> offsets = {}) const;
 
 private:
     std::vector<core::Vec3> positions_;
@@ -53,6 +59,7 @@ private:
     // computeSkinMatrices의 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> accumulated_;
     mutable std::vector<core::Vec3> posed_;
+    mutable std::vector<std::uint8_t> collapsed_;  // 숨김 (조상이 숨겨진 본 포함)
 };
 
 }  // namespace deskpet::anim

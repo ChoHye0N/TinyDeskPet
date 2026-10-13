@@ -136,15 +136,68 @@ TEST(MotionPlayer, NamedTracks_DriveBonesWithTheSameName) {
     const Quat wag = Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(30.0f));
     const Quat nod = Quat::axisAngle({1.0f, 0.0f, 0.0f}, radians(20.0f));
     auto clip = poseClip({{HumanBone::Head, nod}});
-    clip->boneTracks = {{"tail", {wag}},
-                        {"ribbon", {wag}},
-                        {"head", {Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(50.0f))}}};
+    clip->boneTracks = {{"tail", {wag}, {}},
+                        {"ribbon", {wag}, {}},
+                        {"head", {Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(50.0f))}, {}}};
     const MotionPlayer player(skeleton, clip);
     const Posed p = pose(skeleton, player, 0.0f);
 
     const Vec3 z{0.0f, 0.0f, 1.0f};
     expectNear(p.accumulated[kTail].rotate(z), wag.rotate(z));
     expectNear(p.accumulated[kHead].rotate(z), nod.rotate(z));
+}
+
+TEST(MotionPlayer, HiddenBones_AreMarkedByName) {
+    // 클립 내내 크기가 0인 본(총알 등)은 이름이 같은 대상 본을 숨김. 모델에 없는 이름은 버림
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone bullet;
+    bullet.name = "bullet";
+    bullet.parent = static_cast<int>(kHips);
+    model.bones.push_back(bullet);
+    const std::size_t kBullet = model.bones.size() - 1;
+    const Skeleton skeleton(model);
+
+    auto clip = poseClip({});
+    clip->hiddenBones = {"bullet", "grenade"};
+    const MotionPlayer player(skeleton, clip);
+    ASSERT_EQ(player.hidden().size(), skeleton.size());
+    EXPECT_EQ(player.hidden()[kBullet], 1);
+    EXPECT_EQ(player.hidden()[kHips], 0);
+}
+
+TEST(MotionPlayer, NamedTrackOffsets_AreScaledByHipsHeight) {
+    // 이동 오프셋은 원본 단위라 대상/원본 엉덩이 높이 비율을 곱함 (원본 엉덩이 2 → 대상 1)
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone lid;
+    lid.name = "eyelid";
+    lid.parent = static_cast<int>(kHead);
+    lid.position = {0.05f, 1.6f, 0.1f};
+    model.bones.push_back(lid);
+    const std::size_t kLid = model.bones.size() - 1;
+    const Skeleton skeleton(model);
+
+    auto clip = poseClip({});
+    clip->hipsHeight = 2.0f;
+    clip->boneTracks = {{"eyelid", {Quat{}}, {Vec3{0.0f, -0.04f, 0.0f}}}};
+    const MotionPlayer player(skeleton, clip);
+    std::vector<Vec3> offsets;
+    player.sampleOffsets(0.0f, offsets);
+    ASSERT_EQ(offsets.size(), skeleton.size());
+    expectNear(offsets[kLid], {0.0f, -0.02f, 0.0f});
+    expectNear(offsets[kHead], {});
+}
+
+TEST(MotionPlayer, WeightTracks_MapToModelMorphsByNameAndTarget) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    const std::vector<deskpet::model::NamedMorph> morphs = {
+        {"Mouth_A", 0, {}, 0.0f}, {"Mouth_A", 1, {}, 0.0f}, {"Mouth_B", 0, {}, 0.0f}};
+    auto clip = poseClip({});
+    clip->weightTracks = {{"Mouth_A", 1, {0.5f}}, {"Mouth_C", 0, {1.0f}}};  // C는 모델에 없음
+    const MotionPlayer player(skeleton, clip, morphs);
+    std::vector<float> weights;
+    EXPECT_TRUE(player.sampleWeights(0.0f, weights));
+    EXPECT_EQ(weights, (std::vector<float>{0.0f, 0.5f, 0.0f}));
 }
 
 TEST(MotionPlayer, Frames_AreInterpolatedAndLooped) {

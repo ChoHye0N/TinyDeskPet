@@ -66,31 +66,51 @@ std::string_view Skeleton::name(int bone) const noexcept {
 
 void Skeleton::computePose(std::span<const core::Quat> rotations,
                            std::vector<core::Quat>& accumulated, std::vector<core::Vec3>& posed,
-                           core::Vec3 rootOffset) const {
+                           core::Vec3 rootOffset, std::span<const core::Vec3> offsets) const {
     const std::size_t count = positions_.size();
     accumulated.assign(count, core::Quat{});
     posed.assign(count, core::Vec3{});
     for (const int index : order_) {
         const auto j = static_cast<std::size_t>(index);
         const core::Quat delta = j < rotations.size() ? rotations[j] : core::Quat{};
+        const core::Vec3 offset = j < offsets.size() ? offsets[j] : core::Vec3{};
         const int parent = parents_[j];
         if (parent < 0) {
             accumulated[j] = delta;
-            posed[j] = positions_[j] + rootOffset;  // 루트는 (옮긴) 제자리에서 회전
+            posed[j] = positions_[j] + rootOffset + offset;  // 루트는 (옮긴) 제자리에서 회전
         } else {
             const auto p = static_cast<std::size_t>(parent);
             // 부모 자세가 먼저, 그 위에 이 본의 델타 (해밀턴 곱은 오른쪽이 먼저 적용)
             accumulated[j] = delta * accumulated[p];
-            posed[j] = posed[p] + accumulated[p].rotate(positions_[j] - positions_[p]);
+            posed[j] = posed[p] + accumulated[p].rotate(positions_[j] - positions_[p] + offset);
         }
     }
 }
 
 void Skeleton::computeSkinMatrices(std::span<const core::Quat> rotations,
-                                   std::vector<core::Mat4>& out, core::Vec3 rootOffset) const {
-    computePose(rotations, accumulated_, posed_, rootOffset);
+                                   std::vector<core::Mat4>& out, core::Vec3 rootOffset,
+                                   std::span<const std::uint8_t> hidden,
+                                   std::span<const core::Vec3> offsets) const {
+    computePose(rotations, accumulated_, posed_, rootOffset, offsets);
     out.resize(positions_.size());
+    collapsed_.assign(positions_.size(), 0);
+    if (!hidden.empty()) {
+        for (const int index : order_) {
+            const auto j = static_cast<std::size_t>(index);
+            const int parent = parents_[j];
+            const bool self = j < hidden.size() && hidden[j] != 0;
+            const bool inherited = parent >= 0 && collapsed_[static_cast<std::size_t>(parent)] != 0;
+            collapsed_[j] = self || inherited ? 1 : 0;
+        }
+    }
     for (std::size_t j = 0; j < positions_.size(); ++j) {
+        if (collapsed_[j] != 0) {
+            // v' = P (크기 0): 정점이 모두 관절 한 점에 모여 삼각형이 넓이 0이 됨
+            core::Mat4 m = core::Mat4::translation(posed_[j]);
+            m.m[0][0] = m.m[1][1] = m.m[2][2] = 0.0f;
+            out[j] = m;
+            continue;
+        }
         // v' = A(v - p) + P  →  T(-p) · R(A) · T(P)
         out[j] = core::Mat4::translation(positions_[j] * -1.0f) * accumulated_[j].toMat4() *
                  core::Mat4::translation(posed_[j]);

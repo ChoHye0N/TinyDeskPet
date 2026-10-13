@@ -15,14 +15,19 @@
 #include "anim/Skeleton.h"
 #include "model/Motion.h"
 
+#include <cstdint>
 #include <memory>
+#include <span>
+#include <utility>
 #include <vector>
 
 namespace deskpet::anim {
 
 class MotionPlayer {
 public:
-    MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model::MotionClip> clip);
+    // morphs: 대상 모델의 이름 모프 (Model::morphs). 클립의 가중치 트랙을 이름·타깃 번호로 연결
+    MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model::MotionClip> clip,
+                 std::span<const model::NamedMorph> morphs = {});
 
     [[nodiscard]] float duration() const noexcept { return clip_->duration(); }
     [[nodiscard]] std::size_t frameCount() const noexcept { return clip_->frameCount; }
@@ -37,6 +42,20 @@ public:
     // 모션)과 처음 위치를 빼고 흔들림만 남김 (캐릭터를 옮기는 것은 앱). 이동이 없는 클립은 0
     [[nodiscard]] core::Vec3 rootOffset(float time) const;
 
+    // time(초)의 본별 이동 오프셋 (computePose 규약, 크기 = 본 수, 없으면 0). 이름 트랙의 이동을
+    // 대상/원본 엉덩이 높이 비율로 맞춤 (ADR-0015)
+    void sampleOffsets(float time, std::vector<core::Vec3>& offsets) const;
+
+    // time(초)의 모프 가중치 (크기 = morphs 수, 트랙이 없는 모프는 기본 가중치). 연결된 트랙이
+    // 없으면 false
+    bool sampleWeights(float time, std::vector<float>& weights) const;
+
+    // 본별 숨김 여부 (1 = 숨김, 크기 = 본 수). 클립의 hiddenBones와 이름이 같은 본 (ADR-0015)
+    [[nodiscard]] std::span<const std::uint8_t> hidden() const noexcept { return hidden_; }
+
+    // 본별로 휴머노이드가 아닌 이름 트랙이 움직이는지 (1 = 그렇다, 크기 = 본 수)
+    [[nodiscard]] std::span<const std::uint8_t> named() const noexcept { return named_; }
+
 private:
     struct FramePosition {
         std::size_t i0 = 0;
@@ -45,6 +64,7 @@ private:
         float phase = 0.0f;   // 클립 안의 진행률 (0 ~ 1)
     };
     [[nodiscard]] FramePosition locate(float time) const;
+    void bindByName(const Skeleton& skeleton, std::span<const model::NamedMorph> morphs);
 
     std::shared_ptr<const model::MotionClip> clip_;
     float hipsScale_ = 0.0f;  // 대상 엉덩이 높이 / 원본 엉덩이 높이. 0이면 이동 안 씀
@@ -52,7 +72,15 @@ private:
     std::vector<int> order_;
     // 본 → 클립 트랙 (휴머노이드 트랙 또는 이름이 같은 트랙), 없으면 nullptr. clip_이 소유
     std::vector<const std::vector<core::Quat>*> tracks_;
-    std::vector<core::Quat> corrections_;          // 본별 기본 자세 보정 C
+    std::vector<core::Quat> corrections_;  // 본별 기본 자세 보정 C
+    std::vector<std::uint8_t> hidden_;
+    std::vector<std::uint8_t> named_;
+    // 본 → 이동 오프셋 트랙, 없으면 nullptr. clip_이 소유
+    std::vector<const std::vector<core::Vec3>*> offsetTracks_;
+    float offsetScale_ = 1.0f;           // 대상/원본 엉덩이 높이 (모르면 1)
+    std::vector<float> defaultWeights_;  // 모프별 기본 가중치 (NamedMorph::defaultWeight)
+    // (모프 번호, 가중치 트랙) 쌍. clip_이 소유
+    std::vector<std::pair<std::size_t, const std::vector<float>*>> weightTracks_;
     mutable std::vector<core::Quat> accumulated_;  // sample 중간 결과 (할당 재사용)
 };
 

@@ -327,18 +327,18 @@ bool MeshPass::updateSkin(ID3D11DeviceContext* context, const MeshCharacter& cha
     return true;
 }
 
-// 표정 가중치가 바뀐 프레임에만 오프셋 = Σ 가중치 × 델타를 다시 계산해 올림 (깜빡임은 가끔)
+// 표정·모프 가중치가 바뀐 프레임에만 오프셋 = Σ 가중치 × 델타를 다시 계산해 올림 (깜빡임·입
+// 모양 바꾸기는 가끔)
 bool MeshPass::updateMorphs(ID3D11DeviceContext* context, const model::Model& model,
                             const MeshCharacter& character) {
-    if (!morphDirty_ && character.expressionWeights == lastExpressions_) {
+    if (!morphDirty_ && character.expressionWeights == lastExpressions_ &&
+        character.morphWeights == lastMorphWeights_) {
         return true;
     }
     std::ranges::fill(morphOffsets_, core::Vec3{});
-    for (std::size_t e = 0; e < character.expressionWeights.size(); ++e) {
-        const float weight = character.expressionWeights[e];
-        const model::Morph& morph = model.expressions[e];
+    const auto add = [&](const model::Morph& morph, float weight) {
         if (weight == 0.0f) {
-            continue;
+            return;
         }
         for (std::size_t i = 0; i < morph.vertices.size(); ++i) {
             if (morph.vertices[i] < morphOffsets_.size()) {
@@ -346,6 +346,12 @@ bool MeshPass::updateMorphs(ID3D11DeviceContext* context, const model::Model& mo
                 offset = offset + morph.deltas[i] * weight;
             }
         }
+    };
+    for (std::size_t e = 0; e < character.expressionWeights.size(); ++e) {
+        add(model.expressions[e], character.expressionWeights[e]);
+    }
+    for (std::size_t m = 0; m < character.morphWeights.size() && m < model.morphs.size(); ++m) {
+        add(model.morphs[m].morph, character.morphWeights[m]);
     }
     D3D11_MAPPED_SUBRESOURCE mapped{};
     if (FAILED(context->Map(morphBuffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
@@ -354,6 +360,7 @@ bool MeshPass::updateMorphs(ID3D11DeviceContext* context, const model::Model& mo
     std::memcpy(mapped.pData, morphOffsets_.data(), morphOffsets_.size() * sizeof(core::Vec3));
     context->Unmap(morphBuffer_.Get(), 0);
     lastExpressions_ = character.expressionWeights;
+    lastMorphWeights_ = character.morphWeights;
     morphDirty_ = false;
     return true;
 }

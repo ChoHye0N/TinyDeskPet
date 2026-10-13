@@ -196,7 +196,7 @@ msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
 outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불투명 재질) / off
 
 [model]
-path = models/zmd_EM.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
+path = models/model.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
 
 [animation]
 dragged_clip = models/motions/pickup.fbx  ; 문자열 그대로 (idle_/walk_/dragged_/airborne_clip)
@@ -218,7 +218,7 @@ to_file = true
 |---|---|
 | 파일 없음 | 기본값 + 경고 1개 (`"설정 파일 없음: ... 기본값 사용"`) |
 | 빈 줄, `#`/`;`로 시작하는 줄 | 무시 |
-| 값 뒤의 `;`/`#` 주석 | 제거 후 해석 |
+| 값 뒤의 `;`/`#` 주석 | 공백 뒤에 올 때만 주석으로 보고 제거. 값 안의 `;` `#`(`model.glb#Idle`, ADR-0015)은 값 |
 | 앞뒤 공백 | 제거. 섹션·키 이름은 대소문자 구분 안 함 |
 | `=`가 없는 줄, 닫히지 않은 `[` | 경고 후 무시 (`"N행: 형식 오류"`) |
 | 알 수 없는 섹션/키 | 경고 후 무시 |
@@ -272,7 +272,7 @@ Mat4 perspectiveFovRH(float fovY, float aspect, float nearZ, float farZ);  // �
 | 테스트 파일 | 검증 내용 |
 |---|---|
 | `tests/core/FixedTimestepTests.cpp` | 정확히 1스텝, 누적 후 스텝, 최대 스텝 제한과 누적 버림, 음수·NaN 입력, `alpha()` 범위 |
-| `tests/core/ConfigTests.cpp` | 기본값, 정상 파싱, 주석·공백, 대소문자, 알 수 없는 키 경고, 범위 밖 값, 형식 오류 행 번호, 불리언 표기, 파일 없음, 모델 경로, 모션 파일·반복 시작 시각(음수 거부), 마지막 위치, `setIniValue`(값 교체·주석 유지, 섹션 끝 추가, 새 섹션, CRLF 유지, 다시 파싱) |
+| `tests/core/ConfigTests.cpp` | 기본값, 정상 파싱, 주석·공백(값 안의 `;` `#`은 값), 대소문자, 알 수 없는 키 경고, 범위 밖 값, 형식 오류 행 번호, 불리언 표기, 파일 없음, 모델 경로, 모션 파일·반복 시작 시각(음수 거부), 마지막 위치, `setIniValue`(값 교체·주석 유지, 섹션 끝 추가, 새 섹션, CRLF 유지, 다시 파싱) |
 | `tests/core/LogFileTests.cpp` | 이전 로그 `.1` 보존, 크기 한도와 안내 문구, 열기 실패 시 안전 |
 | `tests/core/LogTests.cpp` | 레벨 필터링, 싱크 교체, 레벨 문자열 변환, 포맷 결과 |
 | `tests/core/MathTests.cpp` | 벡터 연산, 사각형 크기 |
