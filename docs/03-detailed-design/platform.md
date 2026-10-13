@@ -95,6 +95,7 @@ public:
 | `WM_CAPTURECHANGED` | 우리가 놓은 게 아닌데 캡처를 잃음 (Alt+Tab 등) | `PointerUpEvent{Left}` (드래그가 영원히 끝나지 않는 것을 방지) |
 | `WM_LBUTTONDBLCLK` | — | `DoubleClickEvent{Left}` |
 | `WM_RBUTTONUP` | — | `PointerUpEvent{Right}` |
+| `WM_MOUSEWHEEL` | — | `MouseWheelEvent{화면 좌표, 칸 수 = delta / WHEEL_DELTA}` — lParam이 이미 화면 좌표. 포커스가 없는 창도 "비활성 창 스크롤"(기본값)이면 커서 아래 창으로 옴 (설정 창, ADR-0016) |
 | `WM_MOUSEACTIVATE` | `MA_NOACTIVATE` 반환 | 없음 — 펫을 클릭해도 사용자가 쓰던 창의 포커스를 빼앗지 않음 |
 | `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE(SPI_SETWORKAREA)` | — | `WorkAreaChangedEvent` |
 | `WM_CLOSE`, `WM_QUIT` | 창을 직접 파괴하지 않음 | `QuitRequestedEvent` |

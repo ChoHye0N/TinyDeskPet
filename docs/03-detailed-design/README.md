@@ -21,6 +21,7 @@
 | model | [model.md](model.md) | ✅ | `deskpet_model`, `deskpet_model_thirdparty` |
 | anim | [anim.md](anim.md) | ✅ | `deskpet_anim` |
 | character | [character.md](character.md) | ✅ | `deskpet_character` |
+| ui | [ui.md](ui.md) | ✅ | `deskpet_ui`, `deskpet_imgui`, `deskpet_imgui_dx11`(Windows) |
 | platform | [platform.md](platform.md) | API ✅ / 구현 ❌ | `deskpet_platform_api`, `deskpet_platform_win32` |
 | renderer | [renderer.md](renderer.md) | API ✅ / 구현 ❌ | `deskpet_renderer_api`, `deskpet_renderer_d3d11` |
 | app | [app.md](app.md) | ✅ (진입점 제외) | `deskpet_app`, `TinyDeskPet` |

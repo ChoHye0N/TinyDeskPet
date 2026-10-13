@@ -32,6 +32,7 @@ namespace deskpet::app {
 enum class MenuCommand : std::uint8_t {
     About = 1, /* 2: 예전 Jump */ ResetPosition = 3, Quit = 4, ToggleVisible = 5,
     ScaleInfo = 6, ScaleUp = 7, ScaleDown = 8,
+    ModelInfo = 9, ModelLicense = 10, OpenModel = 11, Settings = 12,
 };
 
 enum class ExitCode : std::uint8_t {
@@ -52,6 +53,17 @@ public:
     void setModel(std::shared_ptr<const model::Model> model);  // run() 전. 있으면 슬라임 대신 표시
 
     [[nodiscard]] const character::CharacterController& character() const noexcept;
+
+    // 설정 창 (§4.10, ADR-0016)
+    using ClipLoader = std::function<std::shared_ptr<const model::MotionClip>(
+        anim::Motion, const std::string& configured, float loopStart)>;
+    void setClipLoader(ClipLoader loader);
+    using SettingsWriter = std::function<void(const std::vector<core::IniValue>&)>;
+    void setSettingsWriter(SettingsWriter writer);
+    void setUiFont(const std::filesystem::path& file);
+    void setUiDarkTheme(bool dark);
+    void openSettings();
+    void applySettingsAction(const ui::SettingsAction& action);
 };
 }
 ```
@@ -84,7 +96,9 @@ repeat steps: character.update(timestep.step())
 
 syncWindowToCharacter()
 updateAnimation()   # 캐릭터 Pose → anim::AnimationInput → 스킨 행렬·표정 (모델이 있을 때)
-result = renderer.render(buildScene())
+scene = buildScene()
+if settings open: scene.ui = updateSettings(delta); scene.uiFrame += 1   # §4.10
+result = renderer.render(scene)
 if result == Skipped: window.waitForEvents(16ms)  # Present 생략 → VSync 대기 없음 (DEBT-02)
 if result == Fatal: exitCode = RendererFailed; break
 ```
@@ -93,11 +107,12 @@ if result == Fatal: exitCode = RendererFailed; break
 
 | 이벤트 | 처리 |
 |---|---|
-| `PointerDownEvent{Left}` | `character.onPointerDown(screen)` |
-| `PointerMoveEvent` | `character.onPointerMove(screen)` |
-| `PointerUpEvent{Left}` | `refreshGround()` 후 `character.onPointerUp(screen)` — 다른 모니터에 놓았을 때 그 모니터의 바닥 사용 |
-| `PointerUpEvent{Right}` | `onContextMenu(screen)` |
-| `DoubleClickEvent{Left}` | `character.jump()` |
+| `PointerDownEvent{Left}` | 설정 창이 마우스를 원하면(`wantsMouse`) 설정 창으로 누름 + `uiPointer_`. 아니면 `character.onPointerDown(screen)` |
+| `PointerMoveEvent` | `uiPointer_`가 아니면 `character.onPointerMove(screen)` |
+| `PointerUpEvent{Left}` | `uiPointer_`면 설정 창으로 뗌. 아니면 `refreshGround()` 후 `character.onPointerUp(screen)` — 다른 모니터에 놓았을 때 그 모니터의 바닥 사용 |
+| `PointerUpEvent{Right}` | 설정 창 위가 아니면 `onContextMenu(screen)` |
+| `DoubleClickEvent{Left}` | 설정 창 위면 누름으로 넘김(두 번째 클릭이 이 메시지로 옴). 아니면 `character.jump()` |
+| `MouseWheelEvent` | 설정 창으로 (열려 있을 때만 쓰임) |
 | `WorkAreaChangedEvent` | `refreshGround()`, `refreshBounds()` — 이후 `update`가 낙하/보정 처리 |
 | `QuitRequestedEvent` | `requestQuit()` |
 | `TrayMenuRequestedEvent` | `onContextMenu(screen)` — 캐릭터 우클릭과 같은 메뉴 (FR-18) |
@@ -108,6 +123,7 @@ if result == Fatal: exitCode = RendererFailed; break
 | id | 라벨 | 활성 조건 | 동작 |
 |---|---|---|---|
 | `About` | `TinyDeskPet 0.1.0` (버전 문자열) | 항상 비활성 (정보 표시용) | — |
+| `Settings` | 설정… | 항상 | `openSettings()` (§4.10) |
 | — | 구분선 | | |
 | `ModelInfo` | `이름 — 작가` (이름이 없으면 파일 이름, 읽는 중이면 "모델 불러오는 중…") | 항상 비활성. 모델이 없으면 항목 없음 | — (FR-23) |
 | `ModelLicense` | `라이선스: …` | 항상 비활성. 라이선스 정보가 없으면 항목 없음 | — |
@@ -128,7 +144,7 @@ if result == Fatal: exitCode = RendererFailed; break
 
 **모델 읽기 (작업 스레드, `loadModelAsync`)**: `setModelLoader`로 받은 로더(main: 파일 읽기 + 텍스처 CPU 준비)를 `std::async`로 실행하고, 같은 스레드에서 같은 클립으로 자세 경계 상자(`displayBounds`, 정점 CPU 스키닝)까지 계산합니다. 매 프레임 `applyLoadedModel`이 결과가 준비됐는지(`wait_for(0)`)만 보고, 준비됐으면 모델·애니메이터·카메라·벽을 교체합니다. 실패(nullptr)면 지금 모델 유지. 첫 모델을 읽는 동안은 슬라임도 그리지 않음 (잠깐 보였다가 바뀌지 않게). 새 요청은 앞선 작업이 끝나길 기다린 뒤 시작하고(마지막 요청만 반영), 소멸자도 작업을 기다립니다. 성공한 경로는 `modelPath()` → main이 종료할 때 설정과 다르면 `[model] path`에 저장. Release 측정(VRM 0.x 모델, 정점 19.6만, 텍스처 11): 창은 0.05초에 뜨고, 작업 스레드 0.9초 뒤 모델이 나타남. 렌더 스레드가 멈추는 시간(GPU 업로드)은 0.7초 → 4ms
 
-**클릭 통과 (FR-04, `updateClickThrough`)**: 매 프레임 렌더 뒤 `cursorPosition()`을 창 내부 좌표로 바꿔, 창 밖이면 통과. 창 안이면 `renderer->sampleAlpha(local)`의 알파가 0.1보다 크면(외곽선·안티에일리어싱 가장자리 포함) 클릭을 받고 아니면 통과. 왼쪽 버튼을 누르고 있는 동안(끌기)은 항상 받음. 알파는 2~3프레임 늦게 오지만 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없습니다.
+**클릭 통과 (FR-04, `updateClickThrough`)**: 매 프레임 렌더 뒤 `cursorPosition()`을 창 내부 좌표로 바꿔, 창 밖이면 통과. 창 안이면 `renderer->sampleAlpha(local)`의 알파가 0.1보다 크면(외곽선·안티에일리어싱 가장자리 포함) 클릭을 받고 아니면 통과. 왼쪽 버튼을 누르고 있는 동안(끌기)과 설정 창이 마우스를 원하는 동안(창 위, 창 위젯을 누르는 중)은 항상 받음. 알파는 2~3프레임 늦게 오지만 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없습니다.
 
 **전체 화면 앱 자동 숨김 (`updateFullscreenHiding`)**: 0.5초마다(`lastTime_` 기준) `window->fullscreenAppActive(발 위치)`를 확인해, 전체 화면 앱이 있으면 창을 숨기고 갱신·렌더링을 멈춤(`autoHidden_`). 닫히면 다시 보임. 사용자가 메뉴로 숨긴 상태(`hidden_`)와 따로 관리해서, 자동 숨김이 풀려도 사용자 숨김은 그대로.
 
@@ -246,6 +262,26 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 - **저장 위치 복원:** 바닥을 먼저 구한 뒤 옮깁니다. 옮긴 뒤에 구하면 `teleport`가 옛 바닥에 발을 붙여 엉뚱한 높이에서 바닥을 찾습니다.
 - **설정:** `[character] walk_on_windows`(기본 켬)
 
+### 4.10 설정 창 (`ApplicationSettings.cpp`, ADR-0016)
+
+`ui::SettingsUi`(ui.md)가 화면과 입력을 맡고, 앱은 상태를 채우고 사용자가 한 일을 처리합니다. `settingsUi_`는 렌더러보다 먼저 선언합니다 (렌더러의 ImGui 백엔드가 그 컨텍스트를 쓰므로 나중에 파괴).
+
+- **열기 (`openSettings`)**: DPI 배율을 넘기고, 캐릭터가 그려지는 영역(`characterRect` + `visibleRect`, 오버레이 px)을 가리지 않게 그 옆에 띄움
+- **매 프레임 (`updateSettings`)**: 커서 위치(클릭 통과 중에도 오도록 `cursorPosition()`)를 넣고 `frame` → `ImDrawData`를 `RenderScene::ui`에, `uiFrame`을 올려 Present를 생략하지 않게 함. 닫히면 nullptr
+- **상태 (`settingsState`)**: 모델 이름(없으면 파일 이름)·작가·라이선스·파일, 동작별 지금 클립(`config_.animation.*_clip`)과 선택지, 크기, 옵션. 선택지 = "기본 동작"(값 "") + 모델 파일 안 애니메이션(`model::listMotionClips`, 값 "모델 경로#이름") + 설정 파일에서 지정한 다른 파일(파일 이름으로 표시). 모델이 바뀔 때만 다시 읽음 (`clipChoicesPath_`)
+- **처리 (`applySettingsAction`)**: 바로 적용하고 `SettingsWriter`로 `deskpet.ini`에 바로 씀
+
+| 동작 | 적용 | 저장 |
+|---|---|---|
+| `OpenModel` | `openModelFile()` | 종료할 때 `[model] path` (기존과 같음) |
+| `SetClip` | `config_`의 그 동작 클립 = 값, `ClipLoader`로 읽음(빈 값이면 읽지 않고 기본 동작), `refreshAnimationAsync()` | `[animation] idle_clip` 등 |
+| `SetScale` | `setScalePercent` | `[state] scale` |
+| `SetLookAt` / `SetIdleMotion` | `config_.animation` 값 | `[animation] look_at` / `idle_motion` |
+| `SetWalkOnWindows` | `config_.character` 값, `refreshGround()` | `[character] walk_on_windows` |
+
+- **클립을 바꾼 뒤 (`refreshAnimationAsync`)**: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산(`displayBoundsFor`, 큰 모델은 수백 ms). 결과는 모델 읽기와 같은 `pendingModel_` → `applyLoadedModel`이 새 클립으로 애니메이터를 교체. 읽던 모델이 있으면 먼저 반영(덮어쓰면 그 결과를 잃음). 모델이 없으면 클립만 바꿈
+- **main (`main_win32.cpp`)**: `ClipLoader` = 동작 하나 읽기(`loadMotionClip`, 로그 포함), `SettingsWriter` = `core::saveConfigValues(deskpet.ini)`, 글꼴 = `%WINDIR%\Fonts\malgun.ttf`, 어두운 테마 = 레지스트리 `HKCU\…\Themes\Personalize\AppsUseLightTheme == 0`
+
 ## 5. 테스트 항목
 
 `tests/app/ApplicationTests.cpp` — `FakeWindow`, `FakeRenderer`, 가짜 시간으로 메인 루프를 검증합니다.
@@ -272,6 +308,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | 머리 옆 커서 → 그쪽으로 고개, 설정으로 끄거나 커서가 멀면 정면 | FR-28 |
 | `GroundTests`: 창이 없으면 작업 영역 바닥, 발 아래 윗변, 발 x 밖·발 위 창 무시(서 있을 때 위쪽 여유 안이면 사용), 가장 높은 윗변, 앞 창에 가려진 윗변 무시, 작업 영역 아래 창 무시 / 앱: 창 위로 떨어뜨리면 윗변에 착지, 창이 닫히면 떨어짐, 설정으로 끄면 무시, 저장 위치가 창 위면 그 창에 착지 | M6 |
 | 메뉴에 모델 이름·작가·라이선스(없으면 항목 없음)와 "모델 열기…", 작업 스레드로 읽은 모델이 다음 프레임에 나타남, 첫 모델을 읽는 동안 아무것도 그리지 않음, 실패하면 지금 모델 유지, 대화상자로 고른 파일을 읽음·취소하면 아무것도 안 함 | FR-23 |
+| 메뉴 "설정…" → 설정 창이 캐릭터 옆에 열리고 매 프레임 그려짐(`uiFrame`이 바뀜), 설정 창 위에서 누르고 끌어도 캐릭터를 끌지 않고 창이 클릭을 받음, 설정 동작이 적용되고 바로 저장됨(클립은 설정의 반복 시작 시각으로 읽음), 기본 동작으로 되돌리면 읽지 않고 빈 값 저장 | ADR-0016 |
 
 ## 6. 확장 지점
 

@@ -666,6 +666,26 @@ TEST(FbxMotion, AnimatedRotation_IsResampledAsWorldDelta) {
     EXPECT_NEAR(arm.x, 1.0f, 1e-4f);
 }
 
+TEST(MotionLoader, ListClips_NamesAnimationsInsideTheFile) {
+    // 설정 창에서 모델 파일 안의 애니메이션을 고르는 목록 (ADR-0016)
+    using deskpet::model::listMotionClipsFromMemory;
+    GltfBuilder b;
+    const std::string json = b.build(bipedJson(b));
+    const auto* gltf = reinterpret_cast<const std::uint8_t*>(json.data());
+    EXPECT_EQ(listMotionClipsFromMemory(std::span(gltf, json.size()), ".glb"),
+              (std::vector<std::string>{"Idle", "Wave"}));
+    const auto* fbx = reinterpret_cast<const std::uint8_t*>(kAnimatedFbx.data());
+    EXPECT_EQ(listMotionClipsFromMemory(std::span(fbx, kAnimatedFbx.size()), ".fbx"),
+              (std::vector<std::string>{"Take 001"}));
+    // VMD(모션 하나)·모델 전용 형식·알 수 없는 바이트는 고를 것이 없음
+    const auto vmd = VmdBuilder().build({{kHead, 0, {}, Quat{}}});
+    EXPECT_TRUE(listMotionClipsFromMemory(vmd, ".vmd").empty());
+    const std::string_view junk = "hello";
+    EXPECT_TRUE(listMotionClipsFromMemory(
+                    std::span(reinterpret_cast<const std::uint8_t*>(junk.data()), junk.size()))
+                    .empty());
+}
+
 TEST(FbxMotion, ClipName_SelectsAnimationStackByName) {
     const auto* bytes = reinterpret_cast<const std::uint8_t*>(kAnimatedFbx.data());
     const std::span span(bytes, kAnimatedFbx.size());

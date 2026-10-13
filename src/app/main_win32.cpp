@@ -212,7 +212,32 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
     return std::make_shared<const model::Model>(std::move(*result.model));
 }
 
-// 동작별 모션 파일 (ADR-0013). 실패한 동작은 코드로 만든 동작으로 계속
+// 동작 하나의 모션 파일 (ADR-0013). 실패하면 nullptr (그 동작은 코드로 만든 동작으로 계속)
+std::shared_ptr<const model::MotionClip> loadMotionClip(anim::Motion motion,
+                                                        const std::string& configured,
+                                                        float loopStart, const fs::path& baseDir) {
+    constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
+                                                                    "airborne"};
+    constexpr std::array<const char*, 5> kFormats = {"?", "VRMA", "VMD", "FBX", "glTF"};
+    const char* name = kNames[static_cast<std::size_t>(motion)];
+    model::MotionLoadResult result = model::loadMotionFile(resolvePath(configured, baseDir));
+    if (!result.clip) {
+        logging::warn("모션을 불러오지 못해 기본 동작을 씁니다 ({} = {}): {}", name, configured,
+                      result.error);
+        return nullptr;
+    }
+    model::MotionClip& clip = *result.clip;
+    clip.loopStart = loopStart;
+    logging::info(
+        "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, 숨김 본 {}개, "
+        "모프 가중치 {}개, 엉덩이 이동 {}, 반복 {:.2f}초부터)",
+        name, configured, kFormats[static_cast<std::size_t>(clip.format)], clip.duration(),
+        clip.trackCount(), clip.boneTracks.size(), clip.hiddenBones.size(),
+        clip.weightTracks.size(), clip.hipsTranslation.empty() ? "없음" : "있음", clip.loopStart);
+    return std::make_shared<const model::MotionClip>(std::move(clip));
+}
+
+// 동작별 모션 파일. 비어 있는 동작은 코드로 만든 동작
 app::Application::MotionClips loadMotionClips(const core::AnimationConfig& config,
                                               const fs::path& baseDir) {
     struct Entry {
@@ -226,33 +251,34 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
         {anim::Motion::Dragged, &config.draggedClip, config.draggedLoopStart},
         {anim::Motion::Airborne, &config.airborneClip, config.airborneLoopStart},
     }};
-    constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
-                                                                    "airborne"};
-    constexpr std::array<const char*, 5> kFormats = {"?", "VRMA", "VMD", "FBX", "glTF"};
     app::Application::MotionClips clips{};
     for (const auto& [motion, configured, loopStart] : entries) {
-        const auto m = static_cast<std::size_t>(motion);
-        if (configured->empty()) {
-            continue;
+        if (!configured->empty()) {
+            clips[static_cast<std::size_t>(motion)] =
+                loadMotionClip(motion, *configured, loopStart, baseDir);
         }
-        model::MotionLoadResult result = model::loadMotionFile(resolvePath(*configured, baseDir));
-        if (!result.clip) {
-            logging::warn("모션을 불러오지 못해 기본 동작을 씁니다 ({} = {}): {}", kNames[m],
-                          *configured, result.error);
-            continue;
-        }
-        model::MotionClip& clip = *result.clip;
-        clip.loopStart = loopStart;
-        logging::info(
-            "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, 숨김 본 {}개, "
-            "모프 가중치 {}개, 엉덩이 이동 {}, 반복 {:.2f}초부터)",
-            kNames[m], *configured, kFormats[static_cast<std::size_t>(clip.format)],
-            clip.duration(), clip.trackCount(), clip.boneTracks.size(), clip.hiddenBones.size(),
-            clip.weightTracks.size(), clip.hipsTranslation.empty() ? "없음" : "있음",
-            clip.loopStart);
-        clips[m] = std::make_shared<const model::MotionClip>(std::move(clip));
     }
     return clips;
+}
+
+// Windows 앱 모드가 어둡게인지 (설정 > 개인 설정 > 색). 값이 없으면 밝게
+bool appsUseDarkTheme() {
+    DWORD light = 1;
+    DWORD size = sizeof(light);
+    const LSTATUS status = RegGetValueW(
+        HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
+    return status == ERROR_SUCCESS && light == 0;
+}
+
+// 설정 창 한글 글꼴: 시스템의 맑은 고딕 (배포 파일에 글꼴을 넣지 않음)
+fs::path systemUiFont() {
+    std::array<wchar_t, MAX_PATH> windows{};
+    const UINT length = GetWindowsDirectoryW(windows.data(), static_cast<UINT>(windows.size()));
+    if (length == 0 || length >= windows.size()) {
+        return {};
+    }
+    return fs::path(windows.data()) / L"Fonts" / L"malgun.ttf";
 }
 
 void showError(const std::string& message) {
@@ -287,6 +313,18 @@ int runApplication(HINSTANCE instance) {
                                  std::make_unique<platform::win32::Win32Window>(instance),
                                  std::make_unique<renderer::d3d11::D3D11Renderer>());
     application.setMotionClips(loadMotionClips(loaded.config.animation, baseDir));
+    // 설정 창 (ADR-0016): 고른 클립을 읽고, 바꾼 값은 바로 deskpet.ini에 씀
+    application.setClipLoader(
+        [&baseDir](anim::Motion motion, const std::string& configured, float loopStart) {
+            return loadMotionClip(motion, configured, loopStart, baseDir);
+        });
+    application.setSettingsWriter([&configFile](const std::vector<core::IniValue>& values) {
+        if (!core::saveConfigValues(configFile, values)) {
+            logging::warn("설정을 저장하지 못했습니다 (쓰기 권한 확인)");
+        }
+    });
+    application.setUiFont(systemUiFont());
+    application.setUiDarkTheme(appsUseDarkTheme());
     // 큰 모델은 읽는 데 1초 넘게 걸리므로 작업 스레드에서 (그동안 창·메뉴는 바로 동작)
     application.setModelLoader(&loadModel);
     const fs::path configuredModel = loaded.config.model.path.empty()

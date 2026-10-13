@@ -53,6 +53,15 @@ int roundToInt(float value) {
     return static_cast<int>(std::lround(value));
 }
 
+// 모든 동작 자세(+ 걸을 때 돌린 몸)의 경계 상자. 무거우므로 작업 스레드에서 부름
+model::Bounds displayBoundsFor(const model::Model& model, const Application::MotionClips& clips) {
+    anim::ProceduralAnimator animator(model);
+    for (std::size_t m = 0; m < clips.size(); ++m) {
+        animator.setClip(static_cast<anim::Motion>(m), clips[m]);
+    }
+    return animator.displayBounds(kWalkTurnRadians);
+}
+
 platform::MenuItem makeMenuItem(MenuCommand command, std::string label, bool enabled = true) {
     platform::MenuItem item;
     item.id = static_cast<int>(command);
@@ -110,13 +119,25 @@ void Application::loadModelAsync(std::filesystem::path path) {
             LoadedModel loaded{path, loader(path), {}};
             if (loaded.model) {
                 // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은 클립으로 계산해야 맞음
-                anim::ProceduralAnimator animator(*loaded.model);
-                for (std::size_t m = 0; m < clips.size(); ++m) {
-                    animator.setClip(static_cast<anim::Motion>(m), clips[m]);
-                }
-                loaded.displayBounds = animator.displayBounds(kWalkTurnRadians);
+                loaded.displayBounds = displayBoundsFor(*loaded.model, clips);
             }
             return loaded;
+        });
+}
+
+// 설정 창에서 클립을 바꿈: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산하고, 끝나면
+// applyLoadedModel이 새 클립으로 교체 (큰 모델은 경계 상자 계산이 수백 ms라 프레임이 멈추지 않게)
+void Application::refreshAnimationAsync() {
+    if (pendingModel_.valid()) {
+        pendingModel_.wait();  // 읽던 모델을 먼저 반영 (덮어쓰면 그 결과를 잃음)
+        applyLoadedModel();
+    }
+    if (!model_) {
+        return;  // 클립은 모델을 읽을 때 붙음
+    }
+    pendingModel_ =
+        std::async(std::launch::async, [model = model_, clips = clips_, path = modelPath_] {
+            return LoadedModel{path, model, displayBoundsFor(*model, clips)};
         });
 }
 
@@ -371,7 +392,12 @@ bool Application::tick() {
     updateOverlay();
     updateAnimation(static_cast<float>(steps) * dt);  // 이번 프레임에 진행한 시뮬레이션 시간
 
-    const renderer::FrameResult frame = renderer_->render(buildScene());
+    renderer::RenderScene scene = buildScene();
+    if (ImDrawData* settings = updateSettings(static_cast<float>(frameSeconds))) {
+        scene.ui = settings;
+        scene.uiFrame = ++uiFrame_;  // 열려 있는 동안은 매 프레임 그림 (커서·위젯 반응)
+    }
+    const renderer::FrameResult frame = renderer_->render(scene);
     updateClickThrough();
     switch (frame) {
         case renderer::FrameResult::Ok:
@@ -391,29 +417,34 @@ bool Application::tick() {
 void Application::handleEvent(const core::Event& event) {
     using core::MouseButton;
 
+    // 설정 창 위에서 누른 왼쪽 버튼은 떼기 전까지 설정 창으로만 (캐릭터를 끌거나 점프하지 않음)
+    const auto pressOnSettings = [this](MouseButton button) {
+        if (button == MouseButton::Left && settingsUi_.wantsMouse()) {
+            uiPointer_ = true;
+            settingsUi_.setMouseButton(true);
+        }
+        return uiPointer_;
+    };
     std::visit(Overloaded{
-                   [this](const core::PointerDownEvent& e) {
-                       if (e.button == MouseButton::Left) {
+                   [this, pressOnSettings](const core::PointerDownEvent& e) {
+                       if (!pressOnSettings(e.button) && e.button == MouseButton::Left) {
                            pointerDown_ = true;
                            character_.onPointerDown(e.screen);
                        }
                    },
-                   [this](const core::PointerMoveEvent& e) { character_.onPointerMove(e.screen); },
-                   [this](const core::PointerUpEvent& e) {
-                       if (e.button == MouseButton::Left) {
-                           pointerDown_ = false;
-                           // 다른 모니터로 옮겼을 수 있으므로 놓기 전에 바닥을 다시 계산
-                           refreshGround();
-                           character_.onPointerUp(e.screen);
-                       } else if (e.button == MouseButton::Right) {
-                           onContextMenu({roundToInt(e.screen.x), roundToInt(e.screen.y)});
+                   [this](const core::PointerMoveEvent& e) {
+                       if (!uiPointer_) {
+                           character_.onPointerMove(e.screen);
                        }
                    },
-                   [this](const core::DoubleClickEvent& e) {
-                       if (e.button == MouseButton::Left) {
+                   [this](const core::PointerUpEvent& e) { onPointerUp(e); },
+                   [this, pressOnSettings](const core::DoubleClickEvent& e) {
+                       // 두 번째 누름이 WM_LBUTTONDBLCLK로 오므로 설정 창에는 누름으로 넘김
+                       if (!pressOnSettings(e.button) && e.button == MouseButton::Left) {
                            (void)character_.jump();
                        }
                    },
+                   [this](const core::MouseWheelEvent& e) { settingsUi_.addMouseWheel(e.notches); },
                    [this](const core::WorkAreaChangedEvent&) {
                        refreshGround();
                        refreshBounds();
@@ -427,6 +458,22 @@ void Application::handleEvent(const core::Event& event) {
                event);
 }
 
+void Application::onPointerUp(const core::PointerUpEvent& event) {
+    if (event.button == core::MouseButton::Left) {
+        if (uiPointer_) {
+            uiPointer_ = false;
+            settingsUi_.setMouseButton(false);
+            return;
+        }
+        pointerDown_ = false;
+        // 다른 모니터로 옮겼을 수 있으므로 놓기 전에 바닥을 다시 계산
+        refreshGround();
+        character_.onPointerUp(event.screen);
+    } else if (event.button == core::MouseButton::Right && !settingsUi_.wantsMouse()) {
+        onContextMenu({roundToInt(event.screen.x), roundToInt(event.screen.y)});
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 메뉴 (docs/03-detailed-design/app.md §4.4)
 // ---------------------------------------------------------------------------
@@ -435,6 +482,7 @@ void Application::onContextMenu(core::PointI screen) {
     std::vector<platform::MenuItem> items = {
         makeMenuItem(MenuCommand::About, std::format("TinyDeskPet {}", DESKPET_VERSION_STRING),
                      false),
+        makeMenuItem(MenuCommand::Settings, "설정…"),
         platform::MenuItem::makeSeparator(),
     };
     appendModelMenu(items);
@@ -487,6 +535,7 @@ void Application::executeMenuCommand(int commandId) {
         case MenuCommand::Quit: requestQuit(); break;
         case MenuCommand::ToggleVisible: setVisible(hidden_); break;
         case MenuCommand::OpenModel: openModelFile(); break;
+        case MenuCommand::Settings: openSettings(); break;
         case MenuCommand::About:
         case MenuCommand::ModelInfo:
         case MenuCommand::ModelLicense:
@@ -579,6 +628,7 @@ void Application::applyDpiScale(float scale) {
     }
     dpiScale_ = scale;
     resizeCharacter();
+    settingsUi_.setScale(scale);
     core::logging::info("DPI 배율 변경 {:.2f} → 캐릭터 {}x{}", scale, boxSize_.width,
                         boxSize_.height);
 }
@@ -731,8 +781,10 @@ core::RectI Application::visibleRect() const {
 // 알파는 몇 프레임 늦게 오지만, 커서가 캐릭터에 닿자마자 누르는 경우가 아니면 차이가 없음
 void Application::updateClickThrough() {
     constexpr float kHitAlpha = 0.1f;  // 외곽선·안티에일리어싱으로 반투명한 가장자리도 캐릭터로
-    if (pointerDown_) {
-        window_->setClickThrough(false);  // 끄는 중에는 커서가 투명한 곳으로 가도 계속 받음
+    // 끄는 중에는 커서가 투명한 곳으로 가도 계속 받음. 설정 창 위도 받음 (알파 읽기는 2~3프레임
+    // 늦어서, 창이 막 열렸거나 움직인 직후에도 바로 클릭되게)
+    if (pointerDown_ || uiPointer_ || settingsUi_.wantsMouse()) {
+        window_->setClickThrough(false);
         return;
     }
     const core::PointI cursor = window_->cursorPosition();

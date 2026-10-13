@@ -1125,3 +1125,114 @@ TEST_F(ApplicationTest, SavedPositionAboveWindow_FallsOntoThatWindow) {
     EXPECT_EQ(app->character().state(), State::Idle);
     EXPECT_FLOAT_EQ(app->character().position().y, 700.0f);
 }
+
+// ---------------------------------------------------------------------------
+// 설정 창 (ADR-0016)
+// ---------------------------------------------------------------------------
+
+TEST_F(ApplicationTest, SettingsMenu_OpensSettingsWindowAndDrawsItEveryFrame) {
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::Settings);
+    window_.pollsBeforeQuit = 4;
+    auto app = makeApp();
+    (void)app->run();
+
+    ASSERT_TRUE(app->settingsOpen());
+    EXPECT_NE(renderer_.lastScene.ui, nullptr);
+    // 열려 있는 동안 장면이 매 프레임 달라 Present를 생략하지 않음
+    EXPECT_NE(renderer_.lastScene.uiFrame, renderer_.previousScene.uiFrame);
+    const core::RectI settings = app->settingsRect();
+    EXPECT_LT(settings.right, app->characterRect().right);  // 캐릭터 옆 (화면 오른쪽 끝이라 왼쪽)
+    EXPECT_GE(settings.left, 0);
+}
+
+TEST_F(ApplicationTest, PressOnSettingsWindow_GoesToSettingsNotCharacter) {
+    // 설정 창 위에서 누르고 끌어도 캐릭터를 끌지 않고, 그 동안 창은 클릭을 받음
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::Settings);
+    window_.pollsBeforeQuit = 8;
+    Application* appPtr = nullptr;
+    bool clickableOverSettings = false;
+    window_.onPoll = [&](int poll, FakeWindowState& state) {
+        if (poll < 2 || appPtr == nullptr) {
+            return;
+        }
+        const core::RectI r = appPtr->settingsRect();
+        const Vec2 inside{static_cast<float>(r.left + 200), static_cast<float>(r.bottom - 20)};
+        state.cursor = {static_cast<int>(inside.x), static_cast<int>(inside.y)};
+        if (poll == 4) {
+            state.frames.push_back({core::PointerDownEvent{inside, core::MouseButton::Left}});
+        } else if (poll == 5) {
+            state.frames.push_back({core::PointerMoveEvent{{inside.x - 300.0f, inside.y}}});
+            clickableOverSettings = !state.clickThrough;
+        } else if (poll == 6) {
+            state.frames.push_back({core::PointerUpEvent{inside, core::MouseButton::Left}});
+        }
+    };
+    auto app = makeApp();
+    appPtr = app.get();
+    (void)app->run();
+
+    EXPECT_TRUE(clickableOverSettings);
+    EXPECT_NE(app->character().state(), State::Dragged);
+    EXPECT_EQ(boxTopLeft(*app), kStartTopLeft);  // 캐릭터는 그대로
+}
+
+TEST_F(ApplicationTest, SettingsActions_ApplyAndAreSavedImmediately) {
+    using deskpet::ui::SettingsAction;
+    using Kind = SettingsAction::Kind;
+    config_.animation.idleLoopStart = 1.5f;
+    auto app = makeApp();
+    std::vector<core::IniValue> written;
+    app->setSettingsWriter([&](const std::vector<core::IniValue>& values) {
+        written.insert(written.end(), values.begin(), values.end());
+    });
+    std::vector<std::string> loaded;
+    float loadedLoopStart = 0.0f;
+    app->setClipLoader([&](deskpet::anim::Motion motion, const std::string& configured,
+                           float loopStart) -> std::shared_ptr<const deskpet::model::MotionClip> {
+        EXPECT_EQ(motion, deskpet::anim::Motion::Idle);
+        loaded.push_back(configured);
+        loadedLoopStart = loopStart;
+        return nullptr;
+    });
+
+    app->applySettingsAction({Kind::SetClip, 0, "models/pet.glb#Idle", 0, false});
+    app->applySettingsAction({Kind::SetScale, 0, {}, 150, false});
+    app->applySettingsAction({Kind::SetLookAt, 0, {}, 0, false});
+    app->applySettingsAction({Kind::SetWalkOnWindows, 0, {}, 0, false});
+    app->applySettingsAction({Kind::SetIdleMotion, 0, {}, 0, true});
+
+    EXPECT_EQ(loaded, (std::vector<std::string>{"models/pet.glb#Idle"}));
+    EXPECT_FLOAT_EQ(loadedLoopStart, 1.5f);  // 설정의 반복 시작 시각을 그대로
+    EXPECT_EQ(app->scalePercent(), 150);
+    const auto has = [&](const char* section, const char* key, const char* value) {
+        return std::ranges::any_of(written, [&](const core::IniValue& v) {
+            return v.section == section && v.key == key && v.value == value;
+        });
+    };
+    EXPECT_TRUE(has("animation", "idle_clip", "models/pet.glb#Idle"));
+    EXPECT_TRUE(has("state", "scale", "150"));
+    EXPECT_TRUE(has("animation", "look_at", "false"));
+    EXPECT_TRUE(has("character", "walk_on_windows", "false"));
+    EXPECT_TRUE(has("animation", "idle_motion", "true"));
+}
+
+TEST_F(ApplicationTest, ClearingClip_ReturnsToCodeMotionWithoutLoading) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    config_.animation.walkClip = "walk.vrma";
+    auto app = makeApp();
+    int loads = 0;
+    app->setClipLoader([&](deskpet::anim::Motion, const std::string&, float) {
+        ++loads;
+        return std::shared_ptr<const deskpet::model::MotionClip>{};
+    });
+    std::vector<core::IniValue> written;
+    app->setSettingsWriter([&](const std::vector<core::IniValue>& values) { written = values; });
+
+    app->applySettingsAction({Kind::SetClip, 1, "", 0, false});  // 걷기 → 기본 동작
+    EXPECT_EQ(loads, 0);
+    ASSERT_EQ(written.size(), 1U);
+    EXPECT_EQ(written[0].key, "walk_clip");
+    EXPECT_EQ(written[0].value, "");
+}

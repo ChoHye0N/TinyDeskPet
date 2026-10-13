@@ -27,7 +27,7 @@
 | `src/model/TexturePadding.h/.cpp` | 텍스처 패딩: UV 섬 바깥 여백을 섬 색으로 채워 이음매 선 방지 (§4.8) |
 | `src/model/TextureSource.h/.cpp` | 텍스처 바이트 정리, 외부 텍스처 파일 읽기, TGA 디코딩 |
 | `src/model/Humanoid.h/.cpp` | `HumanBone`과 형식별 본 이름 매핑표, `limbChild`(팔다리 다음 본) |
-| `src/model/Motion.h`, `MotionLoader.cpp` | 모션 클립(`MotionClip`)과 진입점: `detectMotionFormat`, `loadMotionFromMemory`, `loadMotionFile` (§4.9) |
+| `src/model/Motion.h`, `MotionLoader.cpp` | 모션 클립(`MotionClip`)과 진입점: `detectMotionFormat`, `loadMotionFromMemory`, `loadMotionFile`, 파일 안 애니메이션 이름 `listMotionClips`(glTF는 JSON만 파싱, FBX는 스택 이름, 이름 없는 것·VMD·모델 전용 형식은 빈 목록 — 설정 창, ADR-0016) (§4.9) |
 | `src/model/VmdImporter.cpp` | VMD (직접 구현, 표준 MMD 뼈대 + 다리 IK). VRMA·glTF 모션은 `GltfImporter.cpp`, FBX 모션은 `FbxImporter.cpp` |
 | `src/model/ThirdPartyImpl.cpp` | cgltf·stb_image 구현부 (우리 경고 옵션 미적용 타깃 `deskpet_model_thirdparty`, ufbx.c 포함) |
 | `src/core/Math3D.h` | `Vec3`, `Vec4`, `Mat4` ([core.md §3.8](core.md)) |
@@ -289,7 +289,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
 | `HumanoidTests` | VRM 1.0·0.x(엄지 한 칸 보정)·MMD·Mixamo 이름 매핑, 3ds Max Biped(`Bip01`·`Bip001` 접두사, `_` 구분, 루트·무기는 제외), 형식마다 손가락 이름, 팔다리·손가락 다음 본 |
-| `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, 손가락 키 → 손가락 트랙·방향, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, センター 이동 → 엉덩이 이동(MMD 단위), 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 스스로 움직이는 비휴머노이드 노드만 이름 트랙, 이동 채널 → 엉덩이 이동(회전만이면 없음), 확장·본 이름 모두 없으면 오류. 일반 glTF: Biped 이름 매핑·첫 애니메이션 기본, 클립 내내 크기 0인 본만 숨김 본, 이름 본 이동 → 부모 기본 자세 축의 오프셋, `weights`(STEP) → 타깃별 가중치 트랙, 이름으로 고르기, 없는 이름은 목록과 함께 오류, `파일#이름` 경로(이름에 `#`이 든 파일은 그대로). FBX(ASCII): 회전 곡선 재샘플링, 스택 이름으로 고르기, 애니메이션 없으면 오류. VMD에 클립 이름을 주면 오류 |
+| `MotionLoaderTests` | 매직 판별. VMD: 30fps 보간·좌표 변환, 부모 회전 상속, 손가락 키 → 손가락 트랙·방향, A포즈 기본 방향, 足ＩＫ로 무릎이 앞으로, IK 키 없으면 FK, センター 이동 → 엉덩이 이동(MMD 단위), 잘린 파일. VRMA: 월드 델타 재샘플링, 부모 기본 회전이 있을 때 모델 축 변환, 스스로 움직이는 비휴머노이드 노드만 이름 트랙, 이동 채널 → 엉덩이 이동(회전만이면 없음), 확장·본 이름 모두 없으면 오류. 일반 glTF: Biped 이름 매핑·첫 애니메이션 기본, 클립 내내 크기 0인 본만 숨김 본, 이름 본 이동 → 부모 기본 자세 축의 오프셋, `weights`(STEP) → 타깃별 가중치 트랙, 이름으로 고르기, 없는 이름은 목록과 함께 오류, `파일#이름` 경로(이름에 `#`이 든 파일은 그대로). FBX(ASCII): 회전 곡선 재샘플링, 스택 이름으로 고르기, 애니메이션 없으면 오류. VMD에 클립 이름을 주면 오류. 파일 안 애니메이션 목록(glTF·FBX 이름, VMD·알 수 없는 바이트는 빈 목록) |
 
 수동 확인: VRM 0.x 모델, VRM Add-on for Blender로 SpringBone(구·캡슐)을 넣은 VRM 1.0 모델(로그 "흔들림 N(충돌체 M)"), 3ds Max Biped 뼈대 FBX 모델과 같은 모델의 FBX 모션(로그 "본 41개, 그 밖의 본 N개, 엉덩이 이동 있음"), ufbx 테스트 데이터 `maya_kenney_character_7700_binary.fbx`(본 58개 중 휴머노이드 18개).
 

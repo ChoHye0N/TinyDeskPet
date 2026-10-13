@@ -3,6 +3,7 @@
 # 플랫폼 독립 애플리케이션 로직 → Linux에서도 테스트됨
 add_library(deskpet_app STATIC
   Application.cpp
+  ApplicationSettings.cpp
   CameraFit.cpp
   Ground.cpp)
 add_library(deskpet::app ALIAS deskpet_app)
@@ -16,6 +17,7 @@ target_link_libraries(deskpet_app PUBLIC
   deskpet::anim
   deskpet::platform_api
   deskpet::renderer_api
+  deskpet::ui
   Threads::Threads)
 deskpet_apply_compile_options(deskpet_app)
 

@@ -22,6 +22,26 @@ bool startsWith(std::span<const std::uint8_t> bytes, std::string_view magic) {
                       [](char m, std::uint8_t b) { return static_cast<std::uint8_t>(m) == b; });
 }
 
+// 파일 전체를 읽음. 실패하면 오류 문구
+const char* readFile(const std::filesystem::path& path, std::vector<std::uint8_t>& bytes) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return "파일을 열 수 없습니다";
+    }
+    bytes.resize(static_cast<std::size_t>(file.tellg()));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()))) {
+        return "파일을 읽을 수 없습니다";
+    }
+    return nullptr;
+}
+
+std::string extensionOf(const std::filesystem::path& path) {
+    const std::u8string extension = path.extension().u8string();
+    return {extension.begin(), extension.end()};
+}
+
 std::string toLower(std::string_view text) {
     std::string result(text);
     std::ranges::transform(result, result.begin(),
@@ -84,18 +104,31 @@ MotionLoadResult loadMotionFile(const std::filesystem::path& reference) {
             clipName.assign(text.begin() + static_cast<std::ptrdiff_t>(hash) + 1, text.end());
         }
     }
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        return {std::nullopt, "파일을 열 수 없습니다"};
+    std::vector<std::uint8_t> bytes;
+    if (const char* error = readFile(path, bytes)) {
+        return {std::nullopt, error};
     }
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(file.tellg()));
-    file.seekg(0);
-    if (!file.read(reinterpret_cast<char*>(bytes.data()),
-                   static_cast<std::streamsize>(bytes.size()))) {
-        return {std::nullopt, "파일을 읽을 수 없습니다"};
+    return loadMotionFromMemory(bytes, extensionOf(path), clipName);
+}
+
+std::vector<std::string> listMotionClipsFromMemory(std::span<const std::uint8_t> bytes,
+                                                   std::string_view extension) {
+    switch (detectMotionFormat(bytes, extension)) {
+        case MotionFormat::Vrma:
+        case MotionFormat::Gltf: return detail::listGltfAnimations(bytes);
+        case MotionFormat::Fbx: return detail::listFbxAnimations(bytes);
+        case MotionFormat::Vmd:
+        case MotionFormat::Unknown: break;
     }
-    const std::u8string extension = path.extension().u8string();
-    return loadMotionFromMemory(bytes, std::string(extension.begin(), extension.end()), clipName);
+    return {};
+}
+
+std::vector<std::string> listMotionClips(const std::filesystem::path& path) {
+    std::vector<std::uint8_t> bytes;
+    if (readFile(path, bytes) != nullptr) {
+        return {};
+    }
+    return listMotionClipsFromMemory(bytes, extensionOf(path));
 }
 
 namespace motion {

@@ -8,7 +8,10 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
+
+struct ImDrawData;  // Dear ImGui (renderer API는 ImGui 헤더에 의존하지 않음)
 
 namespace deskpet::renderer {
 
@@ -44,10 +47,13 @@ struct RenderScene {
     core::RectI sceneRegion;
     PlaceholderCharacter placeholder;
     MeshCharacter character;
+    // 설정 창 (Dear ImGui, ADR-0016). 닫혀 있으면 nullptr. 소유하지 않음 (ui 모듈의 이번 프레임
+    // 데이터). 열려 있는 동안 앱이 uiFrame을 매 프레임 올려 Present를 생략하지 않게 함
+    ImDrawData* ui = nullptr;
+    std::uint64_t uiFrame = 0;
 
     // 렌더러가 "변화 없음"을 판단할 때 사용 (DEBT-02)
     bool operator==(const RenderScene&) const = default;
-    // TODO(M4): 본 행렬, 모프 가중치
 };
 
 }  // namespace deskpet::renderer
