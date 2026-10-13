@@ -415,6 +415,39 @@ TEST(ProceduralAnimatorClip, MotionsWithoutClip_DrapeNamedBonesLikeIdleClip) {
     EXPECT_GT(end.z, -0.2f);  // 뒤로 뻗지 않음
 }
 
+TEST(ProceduralAnimatorClip, MorphWeightsAndOffsets_ComeFromClip_AndIdleForMotionsWithoutClip) {
+    // 입 모양(모프 가중치)·눈꺼풀(이동 오프셋)은 재생 중인 클립에서. 클립이 없는 동작은 대기 클립
+    // 첫 프레임 (입이 모두 겹쳐 보이거나 눈이 기본 자세로 돌아가지 않게)
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone lid;
+    lid.name = "eyelid";
+    lid.parent = 12;  // head
+    lid.position = {0.05f, 1.6f, 0.1f};
+    model.bones.push_back(lid);
+    const std::size_t kLid = model.bones.size() - 1;
+    model.morphs = {{"Mouth_A", 0, {}}, {"Mouth_B", 0, {}}};
+
+    ProceduralAnimator animator(model);
+    auto idle = std::make_shared<deskpet::model::MotionClip>();
+    idle->frameCount = 1;
+    idle->hipsHeight = 1.0f;
+    idle->boneTracks = {{"eyelid", {deskpet::core::Quat{}}, {Vec3{0.0f, -0.03f, 0.0f}}}};
+    idle->weightTracks = {{"Mouth_A", 0, {1.0f}}, {"Mouth_B", 0, {0.0f}}};
+    animator.setClip(Motion::Idle, idle);
+
+    for (const Motion motion : {Motion::Idle, Motion::Airborne}) {
+        AnimationOutput out;
+        AnimationInput input;
+        input.motion = motion;
+        animator.evaluate(input, out);
+        EXPECT_EQ(out.morphWeights, (std::vector<float>{1.0f, 0.0f}));
+        const Vec3 lidNow = posed(model, out, kLid);
+        const Vec3 head = posed(model, out, 12);
+        // 머리에 대한 눈꺼풀 높이: 기본 0.05에서 0.03 내려감 (자세가 달라도 머리 기준)
+        EXPECT_NEAR((lidNow - head).y, 0.02f, 0.01f) << static_cast<int>(motion);
+    }
+}
+
 TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {
     const auto model = deskpet::test::makeSkeletonModel();
     ProceduralAnimator animator(model);

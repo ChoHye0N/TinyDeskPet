@@ -9,7 +9,8 @@
 
 namespace deskpet::anim {
 
-MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model::MotionClip> clip)
+MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model::MotionClip> clip,
+                           std::span<const model::NamedMorph> morphs)
     : clip_(std::move(clip)),
       tracks_(skeleton.size(), nullptr),
       corrections_(skeleton.size()),
@@ -45,27 +46,7 @@ MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model
             hasOwn[j] = true;
         }
     }
-    // 휴머노이드가 아닌 본(머리카락·꼬리 등): 이름이 같은 트랙. 휴머노이드 트랙이 우선이고,
-    // 모델에 없는 이름의 트랙은 버림 (그 본들은 부모를 따라가거나 SpringBone이 움직임)
-    std::unordered_map<std::string_view, int> byName;
-    for (std::size_t j = 0; j < skeleton.size(); ++j) {
-        byName.emplace(skeleton.name(static_cast<int>(j)), static_cast<int>(j));
-    }
-    named_.assign(skeleton.size(), 0);
-    for (const model::NamedTrack& track : clip_->boneTracks) {
-        const auto found = byName.find(track.name);
-        if (found != byName.end() && !track.rotations.empty() &&
-            tracks_[static_cast<std::size_t>(found->second)] == nullptr) {
-            tracks_[static_cast<std::size_t>(found->second)] = &track.rotations;
-            named_[static_cast<std::size_t>(found->second)] = 1;
-        }
-    }
-    hidden_.assign(skeleton.size(), 0);
-    for (const std::string& name : clip_->hiddenBones) {
-        if (const auto found = byName.find(name); found != byName.end()) {
-            hidden_[static_cast<std::size_t>(found->second)] = 1;
-        }
-    }
+    bindByName(skeleton, morphs);
     // 방향을 모르는 본(몸통, 손, 중간 본)은 부모의 보정을 물려받음: 손은 아래팔과 같이 돎
     for (const int bone : order_) {
         const auto j = static_cast<std::size_t>(bone);
@@ -80,9 +61,80 @@ MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model
     // 엉덩이 이동: 원본과 대상의 엉덩이 높이 비율 (키가 다른 모델도 같은 비율로 앉고 뜀)
     const int hips = skeleton.find(model::HumanBone::Hips);
     const float targetHeight = hips >= 0 ? skeleton.bindPosition(hips).y : 0.0f;
-    if (!clip_->hipsTranslation.empty() && clip_->hipsHeight > 0.0f && targetHeight > 0.0f) {
-        hipsScale_ = targetHeight / clip_->hipsHeight;
+    if (clip_->hipsHeight > 0.0f && targetHeight > 0.0f) {
+        offsetScale_ = targetHeight / clip_->hipsHeight;
+        if (!clip_->hipsTranslation.empty()) {
+            hipsScale_ = offsetScale_;
+        }
     }
+}
+
+// 이름으로 맞추는 것들 (ADR-0014·ADR-0015)
+void MotionPlayer::bindByName(const Skeleton& skeleton, std::span<const model::NamedMorph> morphs) {
+    // 휴머노이드가 아닌 본(머리카락·꼬리 등): 이름이 같은 트랙. 휴머노이드 트랙이 우선이고,
+    // 모델에 없는 이름의 트랙은 버림 (그 본들은 부모를 따라가거나 SpringBone이 움직임)
+    std::unordered_map<std::string_view, int> byName;
+    for (std::size_t j = 0; j < skeleton.size(); ++j) {
+        byName.emplace(skeleton.name(static_cast<int>(j)), static_cast<int>(j));
+    }
+    named_.assign(skeleton.size(), 0);
+    offsetTracks_.assign(skeleton.size(), nullptr);
+    for (const model::NamedTrack& track : clip_->boneTracks) {
+        const auto found = byName.find(track.name);
+        if (found == byName.end() || track.rotations.empty()) {
+            continue;
+        }
+        const auto j = static_cast<std::size_t>(found->second);
+        if (tracks_[j] == nullptr) {
+            tracks_[j] = &track.rotations;
+            named_[j] = 1;
+            offsetTracks_[j] = track.offsets.empty() ? nullptr : &track.offsets;
+        }
+    }
+    hidden_.assign(skeleton.size(), 0);
+    for (const std::string& name : clip_->hiddenBones) {
+        if (const auto found = byName.find(name); found != byName.end()) {
+            hidden_[static_cast<std::size_t>(found->second)] = 1;
+        }
+    }
+    // 모프 가중치: 노드 이름과 타깃 번호가 같은 대상 모델의 모프
+    morphCount_ = morphs.size();
+    for (const model::WeightTrack& track : clip_->weightTracks) {
+        const auto found = std::ranges::find_if(morphs, [&](const model::NamedMorph& m) {
+            return m.name == track.name && m.target == track.target;
+        });
+        if (found != morphs.end() && !track.weights.empty()) {
+            weightTracks_.emplace_back(static_cast<std::size_t>(found - morphs.begin()),
+                                       &track.weights);
+        }
+    }
+}
+
+void MotionPlayer::sampleOffsets(float time, std::vector<core::Vec3>& offsets) const {
+    offsets.assign(offsetTracks_.size(), core::Vec3{});
+    const FramePosition at = locate(time);
+    for (std::size_t j = 0; j < offsetTracks_.size(); ++j) {
+        if (offsetTracks_[j] == nullptr) {
+            continue;
+        }
+        const std::vector<core::Vec3>& track = *offsetTracks_[j];
+        const std::size_t last = track.size() - 1;
+        const core::Vec3 a = track[std::min(at.i0, last)];
+        const core::Vec3 b = track[std::min(at.i1, last)];
+        offsets[j] = (a + (b - a) * at.weight) * offsetScale_;
+    }
+}
+
+bool MotionPlayer::sampleWeights(float time, std::vector<float>& weights) const {
+    weights.assign(morphCount_, 0.0f);
+    const FramePosition at = locate(time);
+    for (const auto& [morph, track] : weightTracks_) {
+        const std::size_t last = track->size() - 1;
+        const float a = (*track)[std::min(at.i0, last)];
+        const float b = (*track)[std::min(at.i1, last)];
+        weights[morph] = a + (b - a) * at.weight;
+    }
+    return !weightTracks_.empty();
 }
 
 MotionPlayer::FramePosition MotionPlayer::locate(float time) const {

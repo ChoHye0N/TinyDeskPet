@@ -43,6 +43,8 @@ using Expressions = std::array<float, static_cast<std::size_t>(model::Expression
 struct AnimationOutput {
     std::vector<core::Mat4> skin;  // 본별 스킨 행렬 (Model::bones 순서)
     Expressions expressions{};
+    // Model::morphs 가중치 (클립의 weights 트랙, ADR-0015). 비어 있으면 모두 0
+    std::vector<float> morphWeights;
 };
 
 class ProceduralAnimator {
@@ -110,6 +112,8 @@ private:
     std::vector<std::uint8_t> proceduralHidden_;  // 클립이 없는 동작에서 숨길 본 (setClip이 갱신)
     mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> drape_;      // drapeNamedBones 중간 결과
+    mutable std::vector<core::Vec3> offsets_;    // 〃 이름 본 이동 (클립 없으면 비움)
+    mutable std::vector<float> morphWeights_;    // 〃 모프 가중치 (클립 없으면 비움)
     mutable core::Vec3 clipOffset_;  // 〃 클립의 엉덩이 이동 (클립이 없으면 0)
     mutable std::vector<core::Quat> poseRotations_;  // rootOffset 중간 결과
     mutable std::vector<core::Vec3> posePositions_;

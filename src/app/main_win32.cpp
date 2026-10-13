@@ -245,10 +245,11 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
         clip.loopStart = loopStart;
         logging::info(
             "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, 숨김 본 {}개, "
-            "엉덩이 이동 {}, 반복 {:.2f}초부터)",
+            "모프 가중치 {}개, 엉덩이 이동 {}, 반복 {:.2f}초부터)",
             kNames[m], *configured, kFormats[static_cast<std::size_t>(clip.format)],
             clip.duration(), clip.trackCount(), clip.boneTracks.size(), clip.hiddenBones.size(),
-            clip.hipsTranslation.empty() ? "없음" : "있음", clip.loopStart);
+            clip.weightTracks.size(), clip.hipsTranslation.empty() ? "없음" : "있음",
+            clip.loopStart);
         clips[m] = std::make_shared<const model::MotionClip>(std::move(clip));
     }
     return clips;

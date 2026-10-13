@@ -381,41 +381,16 @@ public:
         readTextures();
         readMaterials();
         readBones();
-
-        for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
-            const cgltf_node& node = data_.nodes[i];
-            if (node.mesh == nullptr) {
-                continue;
-            }
-            if (isProp(node)) {
-                model_.droppedProps.emplace_back(node.mesh->name != nullptr ? node.mesh->name : "");
-            } else if (!readMesh(node, error)) {
-                return std::nullopt;
-            }
-        }
-        if (model_.vertices.empty()) {
-            error = "그릴 수 있는 메시가 없습니다";
+        if (!readMeshes(error)) {
             return std::nullopt;
         }
-
         if (model_.version == VrmVersion::V0) {
-            // VRM 0.x 정면은 -Z. Y축 180° 회전 = (x, z) 부호 반전
-            for (Vertex& v : model_.vertices) {
-                v.position = {-v.position.x, v.position.y, -v.position.z};
-                v.normal = {-v.normal.x, v.normal.y, -v.normal.z};
-            }
-            for (Bone& bone : model_.bones) {
-                bone.position = {-bone.position.x, bone.position.y, -bone.position.z};
-            }
-            for (auto& [node, morphs] : nodeMorphs_) {
-                for (Morph& morph : morphs) {
-                    for (Vec3& d : morph.deltas) {
-                        d = {-d.x, d.y, -d.z};
-                    }
-                }
-            }
+            faceVrm0Forward();
         }
         readExpressions();
+        if (model_.version == VrmVersion::None) {
+            keepNamedMorphs();
+        }
         if (model_.version == VrmVersion::V1) {
             readVrm1SpringBones();
         } else {
@@ -434,6 +409,54 @@ private:
     template <class T>
     int indexOf(const T* item, const T* first) const {
         return item != nullptr ? static_cast<int>(item - first) : -1;
+    }
+
+    // 메시가 달린 노드를 차례로 읽음. 소품 메시는 이름만 남기고 건너뜀
+    bool readMeshes(std::string& error) {
+        for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
+            const cgltf_node& node = data_.nodes[i];
+            if (node.mesh == nullptr) {
+                continue;
+            }
+            if (isProp(node)) {
+                model_.droppedProps.emplace_back(node.mesh->name != nullptr ? node.mesh->name : "");
+            } else if (!readMesh(node, error)) {
+                return false;
+            }
+        }
+        if (model_.vertices.empty()) {
+            error = "그릴 수 있는 메시가 없습니다";
+            return false;
+        }
+        return true;
+    }
+
+    // VRM 0.x 정면은 -Z. Y축 180° 회전 = (x, z) 부호 반전
+    void faceVrm0Forward() {
+        for (Vertex& v : model_.vertices) {
+            v.position = {-v.position.x, v.position.y, -v.position.z};
+            v.normal = {-v.normal.x, v.normal.y, -v.normal.z};
+        }
+        for (Bone& bone : model_.bones) {
+            bone.position = {-bone.position.x, bone.position.y, -bone.position.z};
+        }
+        for (auto& [node, morphs] : nodeMorphs_) {
+            for (Morph& morph : morphs) {
+                for (Vec3& d : morph.deltas) {
+                    d = {-d.x, d.y, -d.z};
+                }
+            }
+        }
+    }
+
+    // VRM은 표정(expressions)으로만 씀. 일반 glTF는 애니메이션 weights 채널용으로 보관 (ADR-0015)
+    void keepNamedMorphs() {
+        for (const auto& [node, morphs] : nodeMorphs_) {
+            const char* name = data_.nodes[static_cast<std::size_t>(node)].name;
+            for (std::size_t t = 0; t < morphs.size(); ++t) {
+                model_.morphs.push_back({name != nullptr ? name : "", t, morphs[t]});
+            }
+        }
     }
 
     // 노드가 엉덩이(hips) 본이거나 그 아래에 있는지
@@ -1280,9 +1303,10 @@ public:
             }
         }
         motion::setRestDirections(clip, positions);
-        motion::addBoneTracks(clip, nodes, deltas);
+        motion::addBoneTracks(clip, nodes, deltas, nodeOffsets(clip.frameCount));
         readHipsTranslation(clip);
         readHiddenBones(clip);
+        readWeightTracks(clip);
         return clip;
     }
 
@@ -1293,6 +1317,45 @@ private:
         std::vector<T> values;
         bool step = false;
     };
+
+    // 휴머노이드가 아닌 노드의 프레임별 이동 변화 (ADR-0015): (로컬 이동 − 기본 자세 로컬 이동)을
+    // 부모의 기본 자세 월드 행렬(크기 포함)로 모델 축에 옮김. 이동 채널이 없는 노드는 비움
+    [[nodiscard]] std::vector<std::vector<Vec3>> nodeOffsets(std::size_t frameCount) const {
+        std::vector<std::vector<Vec3>> offsets(data_.nodes_count);
+        for (std::size_t n = 0; n < data_.nodes_count; ++n) {
+            if (translations_[n].times.empty() || human_[n] != HumanBone::None) {
+                continue;
+            }
+            const cgltf_node& node = data_.nodes[n];
+            const Vec3 rest =
+                node.has_translation != 0
+                    ? Vec3{node.translation[0], node.translation[1], node.translation[2]}
+                    : Vec3{};
+            const Mat4 parent =
+                node.parent != nullptr ? worldMatrix(*node.parent) : Mat4::identity();
+            offsets[n].reserve(frameCount);
+            for (std::size_t frame = 0; frame < frameCount; ++frame) {
+                const float time = static_cast<float>(frame) / MotionClip::kFramesPerSecond;
+                offsets[n].push_back(
+                    core::transformDirection(sample(translations_[n], time) - rest, parent));
+            }
+        }
+        return offsets;
+    }
+
+    // weights 채널 → 타깃별 가중치 트랙 (입 모양 메시 바꾸기 등, ADR-0015)
+    void readWeightTracks(MotionClip& clip) const {
+        for (const WeightChannel& channel : weights_) {
+            const char* name = data_.nodes[channel.node].name;
+            WeightTrack track{name != nullptr ? name : "", channel.target, {}};
+            track.weights.reserve(clip.frameCount);
+            for (std::size_t frame = 0; frame < clip.frameCount; ++frame) {
+                track.weights.push_back(sample(
+                    channel.values, static_cast<float>(frame) / MotionClip::kFramesPerSecond));
+            }
+            clip.weightTracks.push_back(std::move(track));
+        }
+    }
 
     // 크기 키가 모두 0.1배 미만인 휴머노이드가 아닌 노드 (게임의 소품 숨기기, ADR-0015).
     // 키 사이는 보간이라 키가 모두 작으면 클립 내내 작음
@@ -1397,6 +1460,42 @@ private:
             } else if (channel.target_path == cgltf_animation_path_type_scale) {
                 readSampler(*channel.sampler, scales_[node],
                             [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
+            } else if (channel.target_path == cgltf_animation_path_type_weights) {
+                readWeights(*channel.sampler, node);
+            }
+        }
+    }
+
+    // weights 채널: 키마다 타깃 수만큼 값이 이어짐 (CUBICSPLINE은 키마다 접선·값·접선 묶음)
+    void readWeights(const cgltf_animation_sampler& sampler, std::size_t node) {
+        const cgltf_mesh* mesh = data_.nodes[node].mesh;
+        cgltf_size targets = 0;
+        if (mesh != nullptr) {
+            targets = mesh->weights_count;
+            if (targets == 0 && mesh->primitives_count > 0) {
+                targets = mesh->primitives[0].targets_count;
+            }
+        }
+        const cgltf_size count = sampler.input->count;
+        const cgltf_size stride =
+            sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;
+        if (targets == 0 || sampler.output->count < count * stride * targets) {
+            return;
+        }
+        for (cgltf_size t = 0; t < targets; ++t) {
+            WeightChannel& channel = weights_.emplace_back();
+            channel.node = node;
+            channel.target = t;
+            channel.values.step = sampler.interpolation == cgltf_interpolation_type_step;
+            for (cgltf_size k = 0; k < count; ++k) {
+                float time = 0.0f;
+                float value = 0.0f;
+                cgltf_accessor_read_float(sampler.input, k, &time, 1);
+                cgltf_accessor_read_float(sampler.output,
+                                          (k * stride + (stride - 1) / 2) * targets + t, &value, 1);
+                channel.values.times.push_back(time);
+                channel.values.values.push_back(value);
+                duration_ = std::max(duration_, time);
             }
         }
     }
@@ -1523,6 +1622,12 @@ private:
     std::vector<Channel<core::Quat>> channels_;
     std::vector<Channel<Vec3>> translations_;
     std::vector<Channel<Vec3>> scales_;
+    struct WeightChannel {
+        std::size_t node = 0;
+        std::size_t target = 0;
+        Channel<float> values;
+    };
+    std::vector<WeightChannel> weights_;
     std::vector<std::size_t> order_;
     float duration_ = 0.0f;
 };

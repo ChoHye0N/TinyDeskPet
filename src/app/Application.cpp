@@ -858,6 +858,7 @@ renderer::RenderScene Application::buildScene() const {
             core::Quat::axisAngle({0.0f, 1.0f, 0.0f}, -turnRadians_).rotate({0.0f, 0.0f, 1.0f});
         scene.character.skinMatrices = animation_.skin;
         scene.character.expressionWeights = animation_.expressions;
+        scene.character.morphWeights = animation_.morphWeights;
         scene.sceneRegion = sceneRegionFor(scene.character.viewProjection);
     }
 

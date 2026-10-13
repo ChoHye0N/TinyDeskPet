@@ -480,6 +480,66 @@ TEST(GltfMotion, BonesScaledToZeroForTheWholeClip_BecomeHiddenBones) {
     EXPECT_EQ(result.clip->hiddenBones, (std::vector<std::string>{"bone_Bullet01"}));
 }
 
+TEST(GltfMotion, TranslationOfNamedNodes_BecomesOffsetsInModelAxes) {
+    // 눈꺼풀처럼 이동 키로 움직이는 본: 로컬 이동 변화를 부모의 기본 자세 축(모델 축)으로 바꿔
+    // 저장. Head는 기본 자세에서 Z축 90° 돌아 있어 로컬 −Y 이동이 모델 +X 이동
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int moves = b.addFloats({0.1f, 0, 0, 0.1f, -0.03f, 0}, "VEC3");
+    const float s = std::sin(radians(45.0f));
+    const std::string json =
+        b.build(R"("nodes":[{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[1]},)"
+                R"({"name":"Bip001 Head","translation":[0,0.5,0],"rotation":[0,0,)" +
+                std::to_string(s) + "," + std::to_string(s) +
+                R"(],"children":[2]},{"name":"eye_L","translation":[0.1,0,0]}],)"
+                R"("scenes":[{"nodes":[0]}],"scene":0,"animations":[{"channels":[)"
+                R"({"sampler":0,"target":{"node":2,"path":"translation"}}],"samplers":[{"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(moves) + "}]}]");
+    const MotionLoadResult result = loadText(json, ".glb");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const MotionClip& clip = *result.clip;
+    EXPECT_FLOAT_EQ(clip.hipsHeight, 1.0f);  // 이동 크기를 대상에 맞출 기준 (엉덩이가 안 움직여도)
+    ASSERT_EQ(clip.boneTracks.size(), 1U);  // 회전은 그대로여도 이동이 있으면 트랙
+    const auto& eye = clip.boneTracks[0];
+    EXPECT_EQ(eye.name, "eye_L");
+    ASSERT_EQ(eye.offsets.size(), 31U);
+    EXPECT_NEAR(eye.offsets[0].x, 0.0f, 1e-5f);
+    EXPECT_NEAR(eye.offsets[30].x, 0.03f, 1e-5f);
+    EXPECT_NEAR(eye.offsets[30].y, 0.0f, 1e-5f);
+    expectSameRotation(eye.rotations[30], Quat{});
+}
+
+TEST(GltfMotion, WeightsChannel_BecomesWeightTracksPerTarget) {
+    // 입 모양 메시 바꾸기처럼 모프 가중치를 키로 바꾸는 애니메이션 (STEP: 다음 키까지 그대로)
+    GltfBuilder b;
+    const int position = b.addFloats({0, 0, 0, 1, 0, 0, 0, 1, 0}, "VEC3");
+    const int target = b.addFloats({0, 0, -1, 0, 0, -1, 0, 0, -1}, "VEC3");
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int weights = b.addFloats({1, 0, 0, 1}, "SCALAR");  // 키마다 타깃 2개
+    const std::string json =
+        b.build(R"("meshes":[{"primitives":[{"attributes":{"POSITION":)" +
+                std::to_string(position) + R"(},"targets":[{"POSITION":)" + std::to_string(target) +
+                R"(},{"POSITION":)" + std::to_string(target) +
+                R"(}]}]}],"nodes":[{"name":"Bip001 Pelvis","translation":[0,1,0]},)"
+                R"({"name":"Mouth_A","mesh":0}],"scenes":[{"nodes":[0,1]}],"scene":0,)"
+                R"("animations":[{"channels":[{"sampler":0,"target":{"node":1,"path":"weights"}}],)"
+                R"("samplers":[{"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(weights) +
+                R"(,"interpolation":"STEP"}]}])");
+    const MotionLoadResult result = loadText(json, ".glb");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const auto& tracks = result.clip->weightTracks;
+    ASSERT_EQ(tracks.size(), 2U);
+    EXPECT_EQ(tracks[0].name, "Mouth_A");
+    EXPECT_EQ(tracks[0].target, 0U);
+    EXPECT_EQ(tracks[1].target, 1U);
+    ASSERT_EQ(tracks[0].weights.size(), 31U);
+    EXPECT_FLOAT_EQ(tracks[0].weights[15], 1.0f);  // STEP
+    EXPECT_FLOAT_EQ(tracks[0].weights[30], 0.0f);
+    EXPECT_FLOAT_EQ(tracks[1].weights[0], 0.0f);
+    EXPECT_FLOAT_EQ(tracks[1].weights[30], 1.0f);
+}
+
 TEST(MotionLoader, FileReference_ClipNameAfterHash_SelectsAnimation) {
     GltfBuilder b;
     const std::string json = b.build(bipedJson(b));

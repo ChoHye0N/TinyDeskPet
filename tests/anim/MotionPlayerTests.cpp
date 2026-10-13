@@ -165,6 +165,41 @@ TEST(MotionPlayer, HiddenBones_AreMarkedByName) {
     EXPECT_EQ(player.hidden()[kHips], 0);
 }
 
+TEST(MotionPlayer, NamedTrackOffsets_AreScaledByHipsHeight) {
+    // 이동 오프셋은 원본 단위라 대상/원본 엉덩이 높이 비율을 곱함 (원본 엉덩이 2 → 대상 1)
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone lid;
+    lid.name = "eyelid";
+    lid.parent = static_cast<int>(kHead);
+    lid.position = {0.05f, 1.6f, 0.1f};
+    model.bones.push_back(lid);
+    const std::size_t kLid = model.bones.size() - 1;
+    const Skeleton skeleton(model);
+
+    auto clip = poseClip({});
+    clip->hipsHeight = 2.0f;
+    clip->boneTracks = {{"eyelid", {Quat{}}, {Vec3{0.0f, -0.04f, 0.0f}}}};
+    const MotionPlayer player(skeleton, clip);
+    std::vector<Vec3> offsets;
+    player.sampleOffsets(0.0f, offsets);
+    ASSERT_EQ(offsets.size(), skeleton.size());
+    expectNear(offsets[kLid], {0.0f, -0.02f, 0.0f});
+    expectNear(offsets[kHead], {});
+}
+
+TEST(MotionPlayer, WeightTracks_MapToModelMorphsByNameAndTarget) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const Skeleton skeleton(model);
+    const std::vector<deskpet::model::NamedMorph> morphs = {
+        {"Mouth_A", 0, {}}, {"Mouth_A", 1, {}}, {"Mouth_B", 0, {}}};
+    auto clip = poseClip({});
+    clip->weightTracks = {{"Mouth_A", 1, {0.5f}}, {"Mouth_C", 0, {1.0f}}};  // C는 모델에 없음
+    const MotionPlayer player(skeleton, clip, morphs);
+    std::vector<float> weights;
+    EXPECT_TRUE(player.sampleWeights(0.0f, weights));
+    EXPECT_EQ(weights, (std::vector<float>{0.0f, 0.5f, 0.0f}));
+}
+
 TEST(MotionPlayer, Frames_AreInterpolatedAndLooped) {
     const auto model = deskpet::test::makeSkeletonModel();
     const Skeleton skeleton(model);

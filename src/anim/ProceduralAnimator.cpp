@@ -176,7 +176,7 @@ void ProceduralAnimator::setClip(Motion motion, std::shared_ptr<const model::Mot
     auto& slot = clips_[static_cast<std::size_t>(motion)];
     slot.reset();
     if (clip && clip->frameCount > 0) {
-        slot.emplace(skeleton_, std::move(clip));
+        slot.emplace(skeleton_, std::move(clip), model_.morphs);
     }
     // 클립이 없는 동작에서 숨길 본 = 어느 클립이든 숨기는 본 (소품은 코드로 만든 자세를 모르므로
     // 그대로 두면 기본 자세 위치에 떠 있음)
@@ -195,12 +195,19 @@ void ProceduralAnimator::setClip(Motion motion, std::shared_ptr<const model::Mot
 void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     rotations_.assign(skeleton_.size(), core::Quat{});
     clipOffset_ = {};
+    offsets_.clear();
+    morphWeights_.clear();
     if (const auto& clip = clips_[static_cast<std::size_t>(input.motion)]) {
         // 대기 동작을 끄면 첫 프레임에 멈춤 (화면이 안 바뀌어 Present 생략, DEBT-02)
         const bool still = input.motion == Motion::Idle && !input.idleMotion;
-        const float time = input.motionTime >= 0.0f ? input.motionTime : input.time;
-        clip->sample(still ? 0.0f : time, rotations_);
-        clipOffset_ = clip->rootOffset(still ? 0.0f : time);
+        float time = input.motionTime >= 0.0f ? input.motionTime : input.time;
+        if (still) {
+            time = 0.0f;
+        }
+        clip->sample(time, rotations_);
+        clip->sampleOffsets(time, offsets_);
+        clip->sampleWeights(time, morphWeights_);
+        clipOffset_ = clip->rootOffset(time);
         return;
     }
     const PoseParams p = paramsFor(input);
@@ -231,12 +238,20 @@ void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
 // 우선)의 첫 프레임 모양을 부모 기준으로 씀 (ADR-0015). 게임에서 추출한 모델은 기본 자세에서 이런
 // 본이 수평으로 뻗어 있어, 그대로 두면 뻣뻣하게 튀어나오고 화면 맞춤 영역도 넓어짐
 void ProceduralAnimator::drapeNamedBones() const {
-    const auto source = std::ranges::find_if(clips_, [](const auto& c) { return c.has_value(); });
-    if (source == clips_.end()) {
+    const MotionPlayer* source = nullptr;
+    for (const std::optional<MotionPlayer>& clip : clips_) {
+        if (clip.has_value()) {
+            source = &*clip;
+            break;
+        }
+    }
+    if (source == nullptr) {
         return;
     }
-    const MotionPlayer& player = **source;
+    const MotionPlayer& player = *source;
     player.sample(0.0f, drape_);
+    player.sampleOffsets(0.0f, offsets_);  // 눈꺼풀 등 이동, 입 모양도 첫 프레임 그대로
+    player.sampleWeights(0.0f, morphWeights_);
     const std::span<const std::uint8_t> named = player.named();
     for (std::size_t j = 0; j < named.size() && j < rotations_.size(); ++j) {
         if (named[j] != 0) {
@@ -338,7 +353,7 @@ core::Vec3 ProceduralAnimator::rootOffset(Motion motion) const {
     }
     const std::array<int, 2> feet = {skeleton_.find(HumanBone::LeftFoot),
                                      skeleton_.find(HumanBone::RightFoot)};
-    skeleton_.computePose(rotations_, poseRotations_, posePositions_, clipOffset_);
+    skeleton_.computePose(rotations_, poseRotations_, posePositions_, clipOffset_, offsets_);
     float bindLowest = std::numeric_limits<float>::max();
     float posedLowest = std::numeric_limits<float>::max();
     for (const int foot : feet) {
@@ -359,7 +374,8 @@ void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressi
     // 재생 중인 클립이 숨기는 본 (게임의 소품 숨기기, ADR-0015). 전환 중에도 새 동작 기준
     const auto& clip = clips_[static_cast<std::size_t>(input.motion)];
     skeleton_.computeSkinMatrices(rotations_, out.skin, offset,
-                                  clip ? clip->hidden() : std::span(proceduralHidden_));
+                                  clip ? clip->hidden() : std::span(proceduralHidden_), offsets_);
+    out.morphWeights = morphWeights_;
     out.expressions = base;
     // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];

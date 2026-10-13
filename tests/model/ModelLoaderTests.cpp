@@ -363,6 +363,24 @@ TEST(ModelLoader, Vrm1Expression_ReadsMorphTargetBinds) {
     const auto& blink = result.model->expression(deskpet::model::Expression::Blink);
     ASSERT_EQ(blink.vertices, (std::vector<std::uint32_t>{0, 2}));  // 0인 델타는 저장하지 않음
     EXPECT_FLOAT_EQ(blink.deltas[1].y, -1.0f);                      // -2 × 가중치 0.5
+    EXPECT_TRUE(result.model->morphs.empty());  // VRM은 표정으로만 (이름 모프는 일반 glTF만)
+}
+
+TEST(ModelLoader, PlainGltf_KeepsMorphTargetsByNodeName) {
+    // 일반 glTF의 모프 타깃은 애니메이션의 weights 채널이 노드 이름 + 타깃 번호로 가리킴 (ADR-0015)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(
+        b.build(morphMeshJson(b, t) +
+                R"(,"nodes":[{"name":"Mouth_A","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0)"));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& morphs = result.model->morphs;
+    ASSERT_EQ(morphs.size(), 1U);
+    EXPECT_EQ(morphs[0].name, "Mouth_A");
+    EXPECT_EQ(morphs[0].target, 0U);
+    EXPECT_EQ(morphs[0].morph.vertices, (std::vector<std::uint32_t>{0, 2}));
+    EXPECT_FLOAT_EQ(morphs[0].morph.deltas[1].y, -2.0f);
 }
 
 TEST(ModelLoader, Vrm0BlendShape_ReadsMeshBindsWithPercentWeight) {

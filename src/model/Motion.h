@@ -34,6 +34,17 @@ enum class MotionFormat : std::uint8_t { Unknown, Vrma, Vmd, Fbx, Gltf };
 struct NamedTrack {
     std::string name;
     std::vector<core::Quat> rotations;
+    // 프레임별 이동 변화 (ADR-0015): 로컬 이동 − 기본 자세 로컬 이동을 부모의 기본 자세 축(모델
+    // 축)으로 바꾼 값, 원본 단위. 비어 있으면 이동 없음 (눈꺼풀·눈썹처럼 이동 키로 움직이는 본)
+    std::vector<core::Vec3> offsets;
+};
+
+// 모프 가중치 트랙 (glTF weights 채널, ADR-0015). 대상 모델에서 노드 이름과 타깃 번호가 같은
+// 모프(Model::morphs)에 적용
+struct WeightTrack {
+    std::string name;
+    std::size_t target = 0;
+    std::vector<float> weights;  // 프레임별
 };
 
 struct MotionClip {
@@ -51,7 +62,10 @@ struct MotionClip {
     // 비어 있으면 위치를 쓰지 않음. 재생할 때 대상 엉덩이 높이 / hipsHeight 배로 맞추므로 단위는
     // 원본 그대로 둠 (VMD는 MMD 단위)
     std::vector<core::Vec3> hipsTranslation;
-    float hipsHeight = 0.0f;  // 원본 기본 자세의 엉덩이 높이 (원본 단위, 바닥 = 0)
+    // 원본 기본 자세의 엉덩이 높이 (원본 단위, 바닥 = 0). 엉덩이 이동·이름 본 이동을 대상 크기에
+    // 맞추는 기준. 0이면 모름
+    float hipsHeight = 0.0f;
+    std::vector<WeightTrack> weightTracks;
     // 클립 내내 크기가 0.1배 미만인 휴머노이드가 아닌 본 이름 (ADR-0015). 게임은 소품(총알 등)을
     // 크기 0으로 줄여 숨기므로, 이 클립을 재생하는 동안 이름이 같은 본과 그 아래를 접어 숨김.
     // glTF만 읽음
@@ -105,8 +119,11 @@ struct SourceNode {
     int parent = -1;  // 노드 번호, 없으면 -1
     bool humanoid = false;
 };
+// offsets[노드]: 프레임별 이동 변화 (NamedTrack::offsets와 같은 규약, 비어 있으면 없음). 이동만
+// 하는 노드도 트랙이 됨
 void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
-                   const std::vector<std::vector<core::Quat>>& deltas);
+                   const std::vector<std::vector<core::Quat>>& deltas,
+                   const std::vector<std::vector<core::Vec3>>& offsets = {});
 
 // 엉덩이의 프레임별 위치(원본 단위)와 기본 자세 위치로 hipsTranslation·hipsHeight를 채움.
 // 한 번도 움직이지 않으면 비워 둠 (재생할 때 위치 계산을 건너뜀)

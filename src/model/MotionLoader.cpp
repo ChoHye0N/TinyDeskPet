@@ -118,9 +118,11 @@ void setRestDirections(MotionClip& clip,
 }
 
 void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
-                   const std::vector<std::vector<core::Quat>>& deltas) {
+                   const std::vector<std::vector<core::Quat>>& deltas,
+                   const std::vector<std::vector<core::Vec3>>& offsets) {
     // 같은 회전이면 쿼터니언 내적의 절댓값이 1 (q와 −q는 같은 회전). 0.1°쯤까지는 같은 것으로
     constexpr float kSameRotation = 1.0f - 1e-6f;
+    constexpr float kNoMove = 1e-5f;  // 이동은 원본 단위 1e-5 이하를 0으로 (m면 0.01mm)
     std::unordered_set<std::string_view> added;
     for (std::size_t n = 0; n < nodes.size() && n < deltas.size(); ++n) {
         const SourceNode& node = nodes[n];
@@ -130,15 +132,21 @@ void addBoneTracks(MotionClip& clip, std::span<const SourceNode> nodes,
         const auto parent = static_cast<std::size_t>(node.parent);
         const std::vector<core::Quat>* up =
             node.parent >= 0 && parent < deltas.size() ? &deltas[parent] : nullptr;
-        bool moves = false;
-        for (std::size_t f = 0; f < deltas[n].size() && !moves; ++f) {
+        bool rotates = false;
+        for (std::size_t f = 0; f < deltas[n].size() && !rotates; ++f) {
             const core::Quat a = deltas[n][f];
             const core::Quat b = up != nullptr && f < up->size() ? (*up)[f] : core::Quat{};
-            moves = std::abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) < kSameRotation;
+            rotates = std::abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) < kSameRotation;
         }
-        if (moves) {
+        const std::vector<core::Vec3>* moved = n < offsets.size() ? &offsets[n] : nullptr;
+        const bool translates =
+            moved != nullptr && std::ranges::any_of(*moved, [](core::Vec3 d) {
+                return std::max({std::abs(d.x), std::abs(d.y), std::abs(d.z)}) > kNoMove;
+            });
+        if (rotates || translates) {
             added.insert(node.name);
-            clip.boneTracks.push_back({std::string(node.name), deltas[n]});
+            clip.boneTracks.push_back({std::string(node.name), deltas[n],
+                                       translates ? *moved : std::vector<core::Vec3>{}});
         }
     }
 }
@@ -150,10 +158,13 @@ void setHipsTranslation(MotionClip& clip, std::span<const core::Vec3> positions,
         const core::Vec3 d = p - rest;
         return std::abs(d.x) > tolerance || std::abs(d.y) > tolerance || std::abs(d.z) > tolerance;
     });
-    if (!moves || rest.y <= 0.0f) {
-        return;  // 이동 없음, 또는 엉덩이가 바닥 아래인 원본 (높이 비율을 잴 수 없음)
+    if (rest.y <= 0.0f) {
+        return;  // 엉덩이가 바닥 아래인 원본 (높이 비율을 잴 수 없음)
     }
-    clip.hipsHeight = rest.y;
+    clip.hipsHeight = rest.y;  // 이름 본 이동의 크기 기준이기도 해서 엉덩이가 안 움직여도 채움
+    if (!moves) {
+        return;
+    }
     clip.hipsTranslation.clear();
     clip.hipsTranslation.reserve(positions.size());
     for (const core::Vec3 p : positions) {

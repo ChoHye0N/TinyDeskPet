@@ -32,6 +32,7 @@ struct MeshCharacter {
     // 애니메이션 (ADR-0010). 스킨 행렬이 비어 있으면 바인드 포즈 그대로
     std::vector<core::Mat4> skinMatrices;  // Model::bones 순서
     std::array<float, static_cast<std::size_t>(model::Expression::Count)> expressionWeights{};
+    std::vector<float> morphWeights;  // Model::morphs 순서 (비면 모두 0, ADR-0015)
 
     bool operator==(const MeshCharacter&) const = default;
 };

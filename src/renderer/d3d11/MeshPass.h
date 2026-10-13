@@ -91,6 +91,7 @@ private:
     ComPtr<ID3D11Buffer> morphBuffer_;  // 정점별 표정 오프셋 합 (두 번째 정점 스트림)
     std::vector<core::Vec3> morphOffsets_;  // CPU 쪽 계산 공간 (할당 재사용)
     std::array<float, static_cast<std::size_t>(model::Expression::Count)> lastExpressions_{};
+    std::vector<float> lastMorphWeights_;
     bool morphDirty_ = true;
 };
 
