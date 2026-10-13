@@ -161,6 +161,16 @@ TEST(Config, MotionClips_DefaultToEmptyAndAreReadPerMotion) {
     EXPECT_EQ(result.config.animation.airborneClip, "motions/fall.vrma");
 }
 
+TEST(Config, HashOrSemicolonInsideValue_IsNotAComment) {
+    // 주석은 줄 맨 앞이나 공백 뒤의 ; # 만. "파일#클립"(ADR-0015)과 이름에 ; #이 든 경로를 지킴
+    const auto result = parseConfig(
+        "[animation]\nidle_clip = models/Michiru.glb#Cafe_Idle   ; 대기\n"
+        "walk_clip = motions/a;b#c.vrma\t# 걷기\n");
+    EXPECT_TRUE(result.warnings.empty());
+    EXPECT_EQ(result.config.animation.idleClip, "models/Michiru.glb#Cafe_Idle");
+    EXPECT_EQ(result.config.animation.walkClip, "motions/a;b#c.vrma");
+}
+
 TEST(Config, MotionLoopStart_DefaultsToZeroAndRejectsNegative) {
     const auto& defaults = parseConfig("").config.animation;
     EXPECT_FLOAT_EQ(defaults.idleLoopStart, 0.0f);

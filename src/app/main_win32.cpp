@@ -220,7 +220,7 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
     }};
     constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
                                                                     "airborne"};
-    constexpr std::array<const char*, 4> kFormats = {"?", "VRMA", "VMD", "FBX"};
+    constexpr std::array<const char*, 5> kFormats = {"?", "VRMA", "VMD", "FBX", "glTF"};
     app::Application::MotionClips clips{};
     for (const auto& [motion, configured, loopStart] : entries) {
         const auto m = static_cast<std::size_t>(motion);

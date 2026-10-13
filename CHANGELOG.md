@@ -8,6 +8,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- VRM이 아닌 glTF·GLB 모델(게임에서 내보낸 모델 등)의 휴머노이드 본을 본 이름(Mixamo·3ds Max Biped·MMD)으로 매핑. 지금까지는 휴머노이드 0개로 읽혀 동작·모션이 붙지 않았음
+- 모션 파일 안의 애니메이션을 이름으로 고르기: `idle_clip = models/Michiru.glb#Cafe_Idle` (glTF·FBX, ADR-0015). `VRMC_vrm_animation`이 없는 일반 glTF 애니메이션도 재생. 없는 이름이면 로그에 있는 이름을 나열
+
+### Fixed
+
+- 설정 값 안의 `#`·`;`을 주석으로 잘라내던 문제. 이제 줄 맨 앞이나 공백 뒤의 `;` `#`만 주석
+- 애니메이션 스택이 여럿인 FBX에서 재생 구간이 없는 스택의 길이를 다른 스택의 키프레임까지 합쳐 재던 문제
+
 ## [1.1.0] - 2026-10-13
 
 프로그램 이름이 **TinyDeskPet**으로 바뀌었습니다. 모션 파일이 손가락·머리카락·꼬리·몸 높이까지 재생되고, VRM 1.0 SpringBone과 3ds Max Biped 뼈대 FBX를 지원합니다.

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 namespace deskpet::model::detail {
 
@@ -18,9 +19,12 @@ namespace deskpet::model::detail {
 [[nodiscard]] LoadResult importFbx(std::span<const std::uint8_t> bytes,
                                    const ImportContext& context);
 
-// 모션 (Motion.h의 MotionClip 규약으로 변환, ADR-0013)
-[[nodiscard]] MotionLoadResult importVrma(std::span<const std::uint8_t> bytes);
+// 모션 (Motion.h의 MotionClip 규약으로 변환, ADR-0013). clipName: 파일 안 애니메이션 이름
+// (비어 있으면 첫 번째, ADR-0015)
+[[nodiscard]] MotionLoadResult importGltfMotion(std::span<const std::uint8_t> bytes,
+                                                std::string_view clipName);
 [[nodiscard]] MotionLoadResult importVmd(std::span<const std::uint8_t> bytes);
-[[nodiscard]] MotionLoadResult importFbxMotion(std::span<const std::uint8_t> bytes);
+[[nodiscard]] MotionLoadResult importFbxMotion(std::span<const std::uint8_t> bytes,
+                                               std::string_view clipName);
 
 }  // namespace deskpet::model::detail

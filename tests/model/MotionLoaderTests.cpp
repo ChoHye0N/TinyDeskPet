@@ -8,6 +8,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numbers>
 #include <span>
 #include <string>
@@ -381,11 +383,99 @@ TEST(VrmaMotion, RotationOnly_HasNoHipsTranslation) {
     EXPECT_TRUE(result.clip->hipsTranslation.empty());
 }
 
-TEST(VrmaMotion, PlainGltfWithoutExtension_ReturnsError) {
+TEST(VrmaMotion, PlainGltfWithoutHumanoidNames_ReturnsError) {
     GltfBuilder b;
     const MotionLoadResult result = loadText(b.build(R"("nodes":[{"name":"a"}])"), ".glb");
     EXPECT_FALSE(result.clip.has_value());
     EXPECT_FALSE(result.error.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 일반 glTF 애니메이션 (VRMC_vrm_animation 없음, 본 이름으로 휴머노이드 매핑)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 3ds Max Biped 이름: Pelvis(0) ─ Spine(1)
+//                              └ L UpperArm(2) ─ L Forearm(3)
+// 애니메이션 "Idle"은 위팔을 그대로, "Wave"는 0 → 1초에 Z축 0 → 90°
+std::string bipedJson(GltfBuilder& b) {
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const float s = std::sin(radians(45.0f));
+    const int still = b.addFloats({0, 0, 0, 1, 0, 0, 0, 1}, "VEC4");
+    const int wave = b.addFloats({0, 0, 0, 1, 0, 0, s, s}, "VEC4");
+    const auto animation = [&](std::string_view name, int output) {
+        return R"({"name":")" + std::string(name) +
+               R"(","channels":[{"sampler":0,"target":{"node":2,"path":"rotation"}}],)"
+               R"("samplers":[{"input":)" +
+               std::to_string(times) + R"(,"output":)" + std::to_string(output) + "}]}";
+    };
+    return R"("nodes":[{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[1,2]},)"
+           R"({"name":"Bip001 Spine","translation":[0,0.2,0]},)"
+           R"({"name":"Bip001 L UpperArm","translation":[0.2,0.3,0],"children":[3]},)"
+           R"({"name":"Bip001 L Forearm","translation":[0.3,0,0]}],)"
+           R"("scenes":[{"nodes":[0]}],"scene":0,"animations":[)" +
+           animation("Idle", still) + "," + animation("Wave", wave) + "]";
+}
+
+}  // namespace
+
+TEST(GltfMotion, NodeNames_MapToHumanBones_AndFirstAnimationIsDefault) {
+    GltfBuilder b;
+    const MotionLoadResult result = loadText(b.build(bipedJson(b)), ".glb");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    const MotionClip& clip = *result.clip;
+    EXPECT_EQ(clip.format, MotionFormat::Gltf);
+    ASSERT_EQ(clip.frameCount, 31U);
+    expectSameRotation(clip.track(HumanBone::LeftUpperArm)[30], Quat{});  // "Idle"
+    EXPECT_FALSE(clip.track(HumanBone::Hips).empty());
+    EXPECT_FALSE(clip.track(HumanBone::Spine).empty());
+    EXPECT_FALSE(clip.track(HumanBone::LeftLowerArm).empty());
+    const Vec3 arm = clip.restDirections[static_cast<std::size_t>(HumanBone::LeftUpperArm)];
+    EXPECT_NEAR(arm.x, 1.0f, 1e-5f);
+}
+
+TEST(GltfMotion, ClipName_SelectsAnimation) {
+    GltfBuilder b;
+    const std::string json = b.build(bipedJson(b));
+    const auto* bytes = reinterpret_cast<const std::uint8_t*>(json.data());
+    const MotionLoadResult result =
+        loadMotionFromMemory(std::span(bytes, json.size()), ".glb", "Wave");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    expectSameRotation(result.clip->track(HumanBone::LeftUpperArm)[15],
+                       Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(45.0f)));
+}
+
+TEST(GltfMotion, UnknownClipName_ReturnsErrorListingClips) {
+    GltfBuilder b;
+    const std::string json = b.build(bipedJson(b));
+    const auto* bytes = reinterpret_cast<const std::uint8_t*>(json.data());
+    const MotionLoadResult result =
+        loadMotionFromMemory(std::span(bytes, json.size()), ".glb", "Run");
+    EXPECT_FALSE(result.clip.has_value());
+    EXPECT_NE(result.error.find("Run"), std::string::npos);
+    EXPECT_NE(result.error.find("Idle"), std::string::npos);
+    EXPECT_NE(result.error.find("Wave"), std::string::npos);
+}
+
+TEST(MotionLoader, FileReference_ClipNameAfterHash_SelectsAnimation) {
+    GltfBuilder b;
+    const std::string json = b.build(bipedJson(b));
+    const auto dir = std::filesystem::temp_directory_path() / "deskpet_motion_file_test";
+    std::filesystem::create_directories(dir);
+    // 파일 이름 자체에 '#'이 있으면 그 파일을 그대로 읽음
+    for (const char* name : {"model.glb", "model#2.glb"}) {
+        std::ofstream(dir / name, std::ios::binary) << json;
+    }
+
+    const auto wave = deskpet::model::loadMotionFile(dir / "model.glb#Wave");
+    ASSERT_TRUE(wave.clip.has_value()) << wave.error;
+    expectSameRotation(wave.clip->track(HumanBone::LeftUpperArm)[30],
+                       Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(90.0f)));
+    const auto whole = deskpet::model::loadMotionFile(dir / "model#2.glb");
+    ASSERT_TRUE(whole.clip.has_value()) << whole.error;
+    expectSameRotation(whole.clip->track(HumanBone::LeftUpperArm)[30], Quat{});
+    std::filesystem::remove_all(dir);
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +584,17 @@ TEST(FbxMotion, AnimatedRotation_IsResampledAsWorldDelta) {
     EXPECT_NEAR(arm.x, 1.0f, 1e-4f);
 }
 
+TEST(FbxMotion, ClipName_SelectsAnimationStackByName) {
+    const auto* bytes = reinterpret_cast<const std::uint8_t*>(kAnimatedFbx.data());
+    const std::span span(bytes, kAnimatedFbx.size());
+    const MotionLoadResult found = loadMotionFromMemory(span, ".fbx", "Take 001");
+    ASSERT_TRUE(found.clip.has_value()) << found.error;
+    EXPECT_EQ(found.clip->frameCount, 31U);
+    const MotionLoadResult missing = loadMotionFromMemory(span, ".fbx", "Run");
+    EXPECT_FALSE(missing.clip.has_value());
+    EXPECT_NE(missing.error.find("Take 001"), std::string::npos);
+}
+
 TEST(FbxMotion, FileWithoutAnimation_ReturnsError) {
     constexpr std::string_view kStatic = R"(; FBX 7.4.0 project file
 FBXHeaderExtension:  {
@@ -510,6 +611,14 @@ Connections:  {
 }
 )";
     const MotionLoadResult result = loadText(kStatic, ".fbx");
+    EXPECT_FALSE(result.clip.has_value());
+    EXPECT_FALSE(result.error.empty());
+}
+
+TEST(VmdMotion, ClipName_ReturnsError) {
+    // VMD는 파일 하나에 모션 하나라 이름으로 고를 수 없음 (잘못된 설정을 조용히 넘기지 않음)
+    const auto vmd = VmdBuilder().build({{kHead, 0, {}, Quat{}}});
+    const MotionLoadResult result = loadMotionFromMemory(vmd, ".vmd", "Idle");
     EXPECT_FALSE(result.clip.has_value());
     EXPECT_FALSE(result.error.empty());
 }

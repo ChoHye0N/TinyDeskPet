@@ -222,10 +222,16 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
     return table;
 }
 
-// 값 뒤에 붙은 주석(; 또는 #)을 잘라냅니다.
+// 주석(; 또는 #)을 잘라냅니다. 줄 맨 앞이나 공백 뒤에 올 때만 주석이라, 값 안의 ; #
+// ("Michiru.glb#Cafe_Idle", 이름에 ;이 든 경로)은 그대로 둠
 std::string_view stripInlineComment(std::string_view line) {
-    const auto pos = line.find_first_of(";#");
-    return pos == std::string_view::npos ? line : line.substr(0, pos);
+    for (auto pos = line.find_first_of(";#"); pos != std::string_view::npos;
+         pos = line.find_first_of(";#", pos + 1)) {
+        if (pos == 0 || line[pos - 1] == ' ' || line[pos - 1] == '\t') {
+            return line.substr(0, pos);
+        }
+    }
+    return line;
 }
 
 // 줄 단위로 나눔. 줄바꿈 문자는 각 줄에 포함된 채로 둠 (원문 그대로 다시 이어 붙이기 위함)

@@ -241,6 +241,44 @@ TEST(ModelLoader, Vrm0Humanoid_ArrayFormIsMapped) {
     EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftThumbMetacarpal);
 }
 
+TEST(ModelLoader, PlainGltf_MapsHumanBonesByNodeName) {
+    // VRM 정보가 없는 glTF(게임에서 내보낸 모델 등)는 FBX·PMX처럼 본 이름으로 매핑.
+    // 같은 이름이 또 나오면 처음 것만
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0},{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2]},)"
+        R"({"name":"Bip001 L UpperArm","translation":[0.2,0.4,0]},{"name":"Bip001 Pelvis"},)"
+        R"({"name":"bone_hair_01"}],"scenes":[{"nodes":[0,1,3,4]}],"scene":0)";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& bones = result.model->bones;
+    ASSERT_EQ(bones.size(), 5U);
+    EXPECT_EQ(bones[1].human, deskpet::model::HumanBone::Hips);
+    EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftUpperArm);
+    EXPECT_EQ(bones[3].human, deskpet::model::HumanBone::None);
+    EXPECT_EQ(bones[4].human, deskpet::model::HumanBone::None);
+}
+
+TEST(ModelLoader, VrmHumanoid_DoesNotFallBackToNodeNames) {
+    // VRM은 humanBones만 믿음: 거기 없는 본은 이름이 휴머노이드처럼 보여도 매핑하지 않음
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        meshJson(t) +
+        R"(,"nodes":[{"mesh":0},{"name":"J_Hips","translation":[0,1,0]},{"name":"Spine"}],)"
+        R"("scenes":[{"nodes":[0,1,2]}],"scene":0,"extensionsUsed":["VRMC_vrm"],)"
+        R"("extensions":{"VRMC_vrm":{"specVersion":"1.0","humanoid":{"humanBones":{)"
+        R"("hips":{"node":1}}}}})";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_EQ(result.model->bones[1].human, deskpet::model::HumanBone::Hips);
+    EXPECT_EQ(result.model->bones[2].human, deskpet::model::HumanBone::None);
+}
+
 // ---------------------------------------------------------------------------
 // 스킨 가중치·표정 (애니메이션, ADR-0010)
 // ---------------------------------------------------------------------------

@@ -352,6 +352,23 @@ void mapVrmHumanoid(const cgltf_data& data, std::vector<Bone>& bones) {
     }
 }
 
+// VRM이 아닌 glTF(게임·DCC에서 내보낸 모델): FBX·PMX처럼 본 이름으로 (Mixamo·3ds Max Biped, 아니면
+// MMD). 한 휴머노이드 본에 이름이 여럿 맞으면 처음 것만 (ADR-0015)
+void mapHumanoidByName(std::vector<Bone>& bones) {
+    std::array<bool, kHumanBoneCount> taken{};
+    for (Bone& bone : bones) {
+        HumanBone human = humanBoneFromFbxName(bone.name);
+        if (human == HumanBone::None) {
+            human = humanBoneFromMmdName(bone.name);
+        }
+        auto& used = taken[static_cast<std::size_t>(human)];
+        if (human != HumanBone::None && !used) {
+            bone.human = human;
+            used = true;
+        }
+    }
+}
+
 class Converter {
 public:
     Converter(const cgltf_data& data, const ImportContext& context)
@@ -448,7 +465,11 @@ private:
             const Mat4 world = worldMatrix(node);
             bone.position = {world.m[3][0], world.m[3][1], world.m[3][2]};
         }
-        mapVrmHumanoid(data_, model_.bones);
+        if (model_.version == VrmVersion::None) {
+            mapHumanoidByName(model_.bones);
+        } else {
+            mapVrmHumanoid(data_, model_.bones);  // VRM은 humanBones만 (이름은 보지 않음)
+        }
     }
 
     void readMaterials() {
@@ -1172,26 +1193,30 @@ LoadResult convert(cgltf_data* raw, const ImportContext& context) {
     return result;
 }
 
-// VRMA (VRM Animation): glTF 노드 계층 + 애니메이션 + VRMC_vrm_animation.humanoid (ADR-0013).
+// glTF 애니메이션 → 모션 클립. 휴머노이드 본은 VRMA면 VRMC_vrm_animation.humanoid (ADR-0013),
+// 애니메이션이 든 VRM 모델이면 그 humanBones, 일반 glTF면 본 이름 (ADR-0015).
 // 좌표는 VRM 1.0과 같음 (정면 +Z). 노드는 TRS만 지원 (matrix 노드는 회전 없음으로 봄)
-class VrmaConverter {
+class GltfMotionConverter {
 public:
-    explicit VrmaConverter(const cgltf_data& data) : data_(data) {}
+    GltfMotionConverter(const cgltf_data& data, std::string_view clipName)
+        : data_(data), clipName_(clipName) {}
 
     std::optional<MotionClip> run(std::string& error) {
         if (!readHumanoid()) {
-            error = "VRMC_vrm_animation 확장이 없습니다 (VRMA 파일이 아닙니다)";
+            error =
+                "휴머노이드 본이 없습니다 (VRMA의 VRMC_vrm_animation, 또는 Mixamo·3ds Max "
+                "Biped·MMD 본 이름이 필요합니다)";
             return std::nullopt;
         }
-        if (data_.animations_count == 0) {
-            error = "애니메이션이 없습니다";
+        const cgltf_animation* animation = findAnimation(error);
+        if (animation == nullptr) {
             return std::nullopt;
         }
-        readChannels(data_.animations[0]);
+        readChannels(*animation);
         orderNodes();
 
         MotionClip clip;
-        clip.format = MotionFormat::Vrma;
+        clip.format = format_;
         clip.frameCount =
             static_cast<std::size_t>(std::floor(duration_ * MotionClip::kFramesPerSecond + 1e-3f)) +
             1;
@@ -1249,21 +1274,50 @@ private:
         motion::setHipsTranslation(clip, frames, worldPosition(n, -1.0f, worldRotations(-1.0f)));
     }
 
+    // 노드 → 휴머노이드 본. 하나라도 있으면 true
     bool readHumanoid() {
+        std::vector<Bone> bones(data_.nodes_count);
+        for (cgltf_size n = 0; n < data_.nodes_count; ++n) {
+            bones[n].name = data_.nodes[n].name != nullptr ? data_.nodes[n].name : "";
+        }
         const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
         const auto start = json.empty() ? std::nullopt : valueOf(json, "humanBones");
-        if (!start || *start >= json.size()) {
-            return false;
+        const std::size_t end =
+            start && *start < json.size() ? skipBalanced(json, *start) : std::string_view::npos;
+        if (end != std::string_view::npos) {
+            format_ = MotionFormat::Vrma;
+            mapHumanBoneEntries(json.substr(*start + 1, end - *start - 2), bones);  // 괄호 안쪽
+        } else if (detectVersion(data_) != VrmVersion::None) {
+            mapVrmHumanoid(data_, bones);
+        } else {
+            mapHumanoidByName(bones);
         }
-        const std::size_t end = skipBalanced(json, *start);
-        if (end == std::string_view::npos) {
-            return false;
-        }
-        std::vector<Bone> bones(data_.nodes_count);
-        mapHumanBoneEntries(json.substr(*start + 1, end - *start - 2), bones);  // 괄호 안쪽
         human_.resize(bones.size());
         std::ranges::transform(bones, human_.begin(), &Bone::human);
-        return true;
+        return std::ranges::any_of(human_, [](HumanBone h) { return h != HumanBone::None; });
+    }
+
+    // clipName_과 이름이 같은 애니메이션 (비어 있으면 첫 번째). 없으면 error에 있는 이름을 나열
+    const cgltf_animation* findAnimation(std::string& error) const {
+        if (data_.animations_count == 0) {
+            error = "애니메이션이 없습니다";
+            return nullptr;
+        }
+        if (clipName_.empty()) {
+            return &data_.animations[0];
+        }
+        std::string names;
+        for (cgltf_size i = 0; i < data_.animations_count; ++i) {
+            const std::string_view name =
+                data_.animations[i].name != nullptr ? data_.animations[i].name : "";
+            if (name == clipName_) {
+                return &data_.animations[i];
+            }
+            names += std::format("{}'{}'", i > 0 ? ", " : "", name);
+        }
+        error =
+            std::format("애니메이션 '{}'이(가) 없습니다. 있는 애니메이션: {}", clipName_, names);
+        return nullptr;
     }
 
     // 회전·이동 채널 (크기는 쓰지 않음). 이동은 엉덩이 위치에만 씀
@@ -1403,6 +1457,8 @@ private:
     }
 
     const cgltf_data& data_;
+    std::string_view clipName_;
+    MotionFormat format_ = MotionFormat::Gltf;
     std::vector<HumanBone> human_;  // 노드 → 휴머노이드 본
     std::vector<Channel<core::Quat>> channels_;
     std::vector<Channel<Vec3>> translations_;
@@ -1412,7 +1468,7 @@ private:
 
 }  // namespace
 
-MotionLoadResult importVrma(std::span<const std::uint8_t> bytes) {
+MotionLoadResult importGltfMotion(std::span<const std::uint8_t> bytes, std::string_view clipName) {
     cgltf_options options{};
     cgltf_data* raw = nullptr;
     cgltf_result status = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
@@ -1428,7 +1484,7 @@ MotionLoadResult importVrma(std::span<const std::uint8_t> bytes) {
         return {std::nullopt, resultToString(status)};
     }
     MotionLoadResult result;
-    result.clip = VrmaConverter(*data).run(result.error);
+    result.clip = GltfMotionConverter(*data, clipName).run(result.error);
     return result;
 }
 

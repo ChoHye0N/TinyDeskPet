@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <fstream>
 #include <string>
@@ -39,7 +40,8 @@ MotionFormat detectMotionFormat(std::span<const std::uint8_t> bytes, std::string
     if (startsWith(bytes, "Vocaloid Motion Data")) {
         return MotionFormat::Vmd;
     }
-    // 모델과 같은 판별 (glTF/GLB → VRMA, FBX). PMX 등 모션이 아닌 형식은 Unknown
+    // 모델과 같은 판별 (glTF/GLB → VRMA 계열, 일반 glTF인지는 읽을 때 앎). PMX 등 모션이 아닌
+    // 형식은 Unknown
     switch (detectModelFormat(bytes, extension)) {
         case ModelFormat::Gltf: return MotionFormat::Vrma;
         case ModelFormat::Fbx: return MotionFormat::Fbx;
@@ -49,20 +51,39 @@ MotionFormat detectMotionFormat(std::span<const std::uint8_t> bytes, std::string
 }
 
 MotionLoadResult loadMotionFromMemory(std::span<const std::uint8_t> bytes,
-                                      std::string_view extension) {
+                                      std::string_view extension, std::string_view clipName) {
     switch (detectMotionFormat(bytes, extension)) {
-        case MotionFormat::Vrma: return detail::importVrma(bytes);
-        case MotionFormat::Vmd: return detail::importVmd(bytes);
-        case MotionFormat::Fbx: return detail::importFbxMotion(bytes);
+        case MotionFormat::Vrma:
+        case MotionFormat::Gltf: return detail::importGltfMotion(bytes, clipName);
+        case MotionFormat::Vmd:
+            if (!clipName.empty()) {
+                return {std::nullopt,
+                        std::format("VMD는 파일 하나에 모션이 하나라 클립 이름('{}')을 "
+                                    "지정할 수 없습니다",
+                                    clipName)};
+            }
+            return detail::importVmd(bytes);
+        case MotionFormat::Fbx: return detail::importFbxMotion(bytes, clipName);
         case MotionFormat::Unknown: break;
     }
     return {std::nullopt,
-            std::format("지원하지 않는 모션 형식입니다 (확장자 '{}'). VRMA, VMD, FBX만 읽을 수 "
-                        "있습니다",
+            std::format("지원하지 않는 모션 형식입니다 (확장자 '{}'). VRMA·glTF, VMD, FBX만 읽을 "
+                        "수 있습니다",
                         extension)};
 }
 
-MotionLoadResult loadMotionFile(const std::filesystem::path& path) {
+MotionLoadResult loadMotionFile(const std::filesystem::path& reference) {
+    // "파일#클립": 경로 전체가 파일이 아닐 때만 마지막 '#' 뒤를 클립 이름으로
+    std::filesystem::path path = reference;
+    std::string clipName;
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(reference, ec)) {
+        const std::u8string text = reference.filename().u8string();
+        if (const auto hash = text.rfind(u8'#'); hash != std::u8string::npos && hash > 0) {
+            path = reference.parent_path() / std::u8string_view(text).substr(0, hash);
+            clipName.assign(text.begin() + static_cast<std::ptrdiff_t>(hash) + 1, text.end());
+        }
+    }
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         return {std::nullopt, "파일을 열 수 없습니다"};
@@ -74,7 +95,7 @@ MotionLoadResult loadMotionFile(const std::filesystem::path& path) {
         return {std::nullopt, "파일을 읽을 수 없습니다"};
     }
     const std::u8string extension = path.extension().u8string();
-    return loadMotionFromMemory(bytes, std::string(extension.begin(), extension.end()));
+    return loadMotionFromMemory(bytes, std::string(extension.begin(), extension.end()), clipName);
 }
 
 namespace motion {
