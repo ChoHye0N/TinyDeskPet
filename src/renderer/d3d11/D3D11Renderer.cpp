@@ -3,6 +3,7 @@
 #include "core/Log.h"
 #include "renderer/SampleCount.h"
 #include "renderer/d3d11/DxCheck.h"
+#include "renderer/d3d11/ImGuiPass.h"
 #include "renderer/d3d11/MeshPass.h"
 #include "renderer/d3d11/PlaceholderPass.h"
 
@@ -48,6 +49,7 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
     scenePasses_.push_back(
         std::make_unique<MeshPass>(options_.outline));  // 3D를 먼저 그림 (ADR-0008)
     overlayPasses_.push_back(std::make_unique<PlaceholderPass>());
+    overlayPasses_.push_back(std::make_unique<ImGuiPass>());  // 설정 창은 맨 위 (ADR-0016)
 
     initialized_ = createDeviceResources();
     if (!initialized_) {
@@ -72,9 +74,10 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
     }
 
     // 1) 프레임 텍스처 지우기. 3D만 있는 프레임은 지난번 3D를 복사한 곳만 지우면 충분 (나머지는
-    //    이미 투명). 슬라임(Direct2D)·첫 프레임·크기 변경 뒤에는 전체를 지움
+    //    이미 투명). 슬라임(Direct2D)·설정 창(ImGui)·첫 프레임·크기 변경 뒤에는 전체를 지움
     const bool has3D = scene.character.model != nullptr;
-    const bool partial = has3D && partialReady_ && !needsPresent_ && context1_;
+    const bool hasUi = scene.ui != nullptr;
+    const bool partial = has3D && !hasUi && partialReady_ && !needsPresent_ && context1_;
     ID3D11RenderTargetView* renderTarget = renderTarget_.Get();
     constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     if (partial) {
@@ -115,8 +118,9 @@ FrameResult D3D11Renderer::render(const RenderScene& scene) {
     if (!check(hr, "Present")) {
         return FrameResult::Fatal;
     }
-    lastRegion_ = has3D ? region : full;
-    partialReady_ = has3D;
+    // 설정 창이 있던 프레임 다음에는 전체를 처리해 창 자리를 지움
+    lastRegion_ = has3D && !hasUi ? region : full;
+    partialReady_ = has3D && !hasUi;
     lastScene_ = scene;
     needsPresent_ = false;
     return FrameResult::Ok;

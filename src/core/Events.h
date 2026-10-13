@@ -36,6 +36,12 @@ struct DoubleClickEvent {
     MouseButton button = MouseButton::Left;
 };
 
+// 마우스 휠. notches: 위로 굴리면 +1 (한 칸), 정밀 휠은 소수 (설정 창 목록 스크롤)
+struct MouseWheelEvent {
+    Vec2 screen;
+    float notches = 0.0f;
+};
+
 // 작업 표시줄 이동, 해상도 변경 등으로 모니터 작업 영역이 바뀌었을 때
 struct WorkAreaChangedEvent {};
 
@@ -52,8 +58,8 @@ struct DpiChangedEvent {
     float scale = 1.0f;
 };
 
-using Event =
-    std::variant<PointerDownEvent, PointerUpEvent, PointerMoveEvent, DoubleClickEvent,
-                 WorkAreaChangedEvent, QuitRequestedEvent, TrayMenuRequestedEvent, DpiChangedEvent>;
+using Event = std::variant<PointerDownEvent, PointerUpEvent, PointerMoveEvent, DoubleClickEvent,
+                           MouseWheelEvent, WorkAreaChangedEvent, QuitRequestedEvent,
+                           TrayMenuRequestedEvent, DpiChangedEvent>;
 
 }  // namespace deskpet::core

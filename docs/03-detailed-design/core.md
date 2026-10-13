@@ -55,11 +55,13 @@ struct PointerDownEvent    { Vec2 screen; MouseButton button; };
 struct PointerUpEvent      { Vec2 screen; MouseButton button; };
 struct PointerMoveEvent    { Vec2 screen; };
 struct DoubleClickEvent    { Vec2 screen; MouseButton button; };
+struct MouseWheelEvent     { Vec2 screen; float notches; };  // 위로 굴리면 +1 (설정 창 스크롤)
 struct WorkAreaChangedEvent {};
 struct QuitRequestedEvent  {};
 
 using Event = std::variant<PointerDownEvent, PointerUpEvent, PointerMoveEvent,
-                           DoubleClickEvent, WorkAreaChangedEvent, QuitRequestedEvent>;
+                           DoubleClickEvent, MouseWheelEvent, WorkAreaChangedEvent,
+                           QuitRequestedEvent, TrayMenuRequestedEvent, DpiChangedEvent>;
 }
 ```
 

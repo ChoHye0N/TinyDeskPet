@@ -419,6 +419,22 @@ private:
 
 }  // namespace
 
+std::vector<std::string> listFbxAnimations(std::span<const std::uint8_t> bytes) {
+    ufbx_load_opts options{};
+    options.ignore_geometry = true;  // 스택 이름만 필요
+    ufbx_error error{};
+    const ScenePtr scene(ufbx_load_memory(bytes.data(), bytes.size(), &options, &error));
+    std::vector<std::string> names;
+    if (scene) {
+        for (const ufbx_anim_stack* stack : scene->anim_stacks) {
+            if (stack->name.length > 0) {
+                names.push_back(toString(stack->name));
+            }
+        }
+    }
+    return names;
+}
+
 MotionLoadResult importFbxMotion(std::span<const std::uint8_t> bytes, std::string_view clipName) {
     ufbx_load_opts options{};
     options.target_axes = ufbx_axes_right_handed_y_up;

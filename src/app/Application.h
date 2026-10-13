@@ -12,6 +12,7 @@
 #include "core/FixedTimestep.h"
 #include "platform/IWindow.h"
 #include "renderer/IRenderer.h"
+#include "ui/SettingsUi.h"
 
 #include <array>
 #include <cstdint>
@@ -20,6 +21,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace deskpet::app {
@@ -36,6 +38,7 @@ enum class MenuCommand : std::uint8_t {
     ModelInfo = 9,      // "이름 — 작가" (정보 표시용, 비활성, FR-23)
     ModelLicense = 10,  // "라이선스: …" (정보 표시용, 비활성)
     OpenModel = 11,     // 모델 열기… (파일 대화상자)
+    Settings = 12,      // 설정… (ImGui 설정 창, ADR-0016)
 };
 
 // 캐릭터 크기 조절 범위 (%, FR-06)
@@ -84,6 +87,24 @@ public:
     // 마지막으로 읽기에 성공한 모델 파일 (setModel로 받은 모델이면 비어 있음)
     [[nodiscard]] const std::filesystem::path& modelPath() const noexcept { return modelPath_; }
 
+    // 설정 창에서 고른 모션 클립을 읽는 함수 (configured = 설정 값 "파일#이름", 실패하면 nullptr).
+    // 메인 스레드에서 불림 (ADR-0016)
+    using ClipLoader = std::function<std::shared_ptr<const model::MotionClip>(
+        anim::Motion motion, const std::string& configured, float loopStart)>;
+    void setClipLoader(ClipLoader loader);
+    // 설정 창에서 바꾼 값을 deskpet.ini에 바로 쓰는 함수
+    using SettingsWriter = std::function<void(const std::vector<core::IniValue>& values)>;
+    void setSettingsWriter(SettingsWriter writer);
+    // 설정 창 글꼴(TrueType 파일)과 테마. run() 전에
+    void setUiFont(const std::filesystem::path& file) { settingsUi_.setFont(file); }
+    void setUiDarkTheme(bool dark) { settingsUi_.setDarkTheme(dark); }
+    void openSettings();
+    [[nodiscard]] bool settingsOpen() const noexcept { return settingsUi_.isOpen(); }
+    // 테스트·디버그용: 마지막 프레임의 설정 창 (화면 좌표)
+    [[nodiscard]] core::RectI settingsRect() const;
+    // 테스트용: 설정 창에서 사용자가 한 일을 그대로 처리
+    void applySettingsAction(const ui::SettingsAction& action);
+
     [[nodiscard]] const character::CharacterController& character() const noexcept {
         return character_;
     }
@@ -104,6 +125,7 @@ private:
     [[nodiscard]] bool tick();  // 한 프레임. false면 루프 종료
 
     void handleEvent(const core::Event& event);
+    void onPointerUp(const core::PointerUpEvent& event);
     void onContextMenu(core::PointI screen);
     void executeMenuCommand(int commandId);
 
@@ -134,6 +156,23 @@ private:
     void updateClickThrough();
     [[nodiscard]] core::RectI sceneRegionFor(const core::Mat4& viewProjection) const;
     [[nodiscard]] renderer::RenderScene buildScene() const;
+
+    // 설정 창 (ApplicationSettings.cpp)
+    [[nodiscard]] ImDrawData* updateSettings(float dt);  // 닫혀 있으면 nullptr
+    [[nodiscard]] ui::SettingsState settingsState() const;
+    void refreshClipChoices();  // 모델 파일 안 애니메이션 목록 (모델이 바뀌면)
+    void refreshAnimationAsync();  // 클립이 바뀜 → 작업 스레드에서 자세 경계 상자 다시 계산
+    void writeSettings(const std::vector<core::IniValue>& values) const;
+
+    // 설정 창이 ImGui 컨텍스트를 소유하고 렌더러 백엔드가 그 컨텍스트를 씀 → 렌더러보다 먼저
+    // 선언해 나중에 파괴되게 함
+    ui::SettingsUi settingsUi_;
+    bool uiPointer_ = false;  // 설정 창 위에서 누른 버튼을 떼기 전까지 캐릭터에 넘기지 않음
+    std::uint64_t uiFrame_ = 0;  // 열려 있는 동안 매 프레임 올려 Present를 생략하지 않게 함
+    ClipLoader clipLoader_;
+    SettingsWriter settingsWriter_;
+    std::vector<ui::ClipChoice> clipChoices_;  // modelPath_ 파일 안 애니메이션 (+ 기본 동작)
+    std::filesystem::path clipChoicesPath_;  // clipChoices_를 만든 모델 파일
 
     core::AppConfig config_;
     float dpiScale_ = 1.0f;

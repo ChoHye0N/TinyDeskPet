@@ -8,7 +8,9 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace deskpet::model::detail {
 
@@ -24,6 +26,9 @@ namespace deskpet::model::detail {
 [[nodiscard]] MotionLoadResult importGltfMotion(std::span<const std::uint8_t> bytes,
                                                 std::string_view clipName);
 [[nodiscard]] MotionLoadResult importVmd(std::span<const std::uint8_t> bytes);
+// 파일 안 애니메이션 이름 (이름 없는 것은 뺌, 읽을 수 없으면 빈 목록)
+[[nodiscard]] std::vector<std::string> listGltfAnimations(std::span<const std::uint8_t> bytes);
+[[nodiscard]] std::vector<std::string> listFbxAnimations(std::span<const std::uint8_t> bytes);
 [[nodiscard]] MotionLoadResult importFbxMotion(std::span<const std::uint8_t> bytes,
                                                std::string_view clipName);
 

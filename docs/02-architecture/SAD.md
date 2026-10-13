@@ -70,6 +70,7 @@ flowchart TB
     end
     subgraph L2["도메인 (플랫폼 독립)"]
         Char["character<br/>상태 머신 · 물리 · 포즈"]
+        Ui["ui<br/>설정 창 (Dear ImGui)"]
     end
     subgraph L1A["플랫폼 추상화"]
         PApi["platform API<br/>IWindow"]
@@ -89,6 +90,9 @@ flowchart TB
     Main --> Win32
     Main --> D3D
     App --> Char
+    App --> Ui
+    Ui --> Core
+    D3D -. "ImGui 백엔드" .-> Ui
     App --> PApi
     App --> RApi
     Win32 -. 구현 .-> PApi
@@ -109,7 +113,7 @@ flowchart TB
 | 규칙 | 설명 | 강제 방법 |
 |---|---|---|
 | R1 | 화살표 방향으로만 의존한다. 하위 레이어는 상위를 모른다 | CMake 타깃 링크 관계 |
-| R2 | `core`, `model`, `anim`, `character`, `app`은 `<windows.h>`나 DirectX 헤더를 include 하지 않는다 | Linux CI 빌드가 실패하므로 자동 검출 |
+| R2 | `core`, `model`, `anim`, `character`, `ui`, `app`은 `<windows.h>`나 DirectX 헤더를 include 하지 않는다 | Linux CI 빌드가 실패하므로 자동 검출 |
 | R3 | `character`는 렌더러를 모른다. 렌더러도 `character`를 모른다. 둘 사이 변환은 `app`이 한다 | 타깃 링크 관계 |
 | R4 | 구체 클래스(`Win32Window`, `D3D11Renderer`)를 아는 곳은 `main_win32.cpp` 하나뿐이다 | 코드 리뷰 |
 
@@ -123,6 +127,7 @@ flowchart TB
 | `model` | VRM·glTF / PMX / FBX 파일 → 공통 규약의 렌더링용 데이터(정점·인덱스·머티리얼·텍스처·본), 바인드 포즈 굽기, 휴머노이드 본 이름 통일 (ADR-0009) | GPU 업로드, PNG/JPEG 디코딩 |
 | `anim` | 휴머노이드 본 회전(상태별 코드 동작)·FK·스킨 행렬·표정 가중치 (ADR-0010) | 캐릭터 상태 결정, GPU 업로드 |
 | `character` | 캐릭터 상태(대기/드래그/공중), 위치·속도, 중력, 애니메이션용 포즈 값 계산 | 창 이동, 그리기 |
+| `ui` | 설정 창 (Dear ImGui): 앱 상태를 보여 주고 사용자가 한 일(`SettingsAction`)을 돌려줌, 테마·아이콘 (ADR-0016) | 앱 상태 변경, 설정 파일 쓰기, GPU 그리기(렌더러 백엔드가 함) |
 | `platform` (API) | 창 생성, 이벤트 수집, 창 위치·클릭 영역·메뉴, 작업 영역 조회를 **인터페이스로** 정의 | 구현 |
 | `platform/win32` | 위 인터페이스를 Win32로 구현 | 게임 로직 |
 | `renderer` (API) | 렌더러 인터페이스와 렌더링 입력 데이터(`RenderScene`) 정의 | 구현 |

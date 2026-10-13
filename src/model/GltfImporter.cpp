@@ -1669,6 +1669,23 @@ private:
 
 }  // namespace
 
+std::vector<std::string> listGltfAnimations(std::span<const std::uint8_t> bytes) {
+    // 이름만 필요하므로 JSON만 파싱 (버퍼를 읽지 않아 큰 GLB도 빠름)
+    cgltf_options options{};
+    cgltf_data* raw = nullptr;
+    if (cgltf_parse(&options, bytes.data(), bytes.size(), &raw) != cgltf_result_success) {
+        return {};
+    }
+    const DataPtr data(raw);
+    std::vector<std::string> names;
+    for (cgltf_size i = 0; i < data->animations_count; ++i) {
+        if (const char* name = data->animations[i].name; name != nullptr && *name != '\0') {
+            names.emplace_back(name);
+        }
+    }
+    return names;
+}
+
 MotionLoadResult importGltfMotion(std::span<const std::uint8_t> bytes, std::string_view clipName) {
     cgltf_options options{};
     cgltf_data* raw = nullptr;

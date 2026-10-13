@@ -101,6 +101,13 @@ struct MotionLoadResult {
                                                     std::string_view extension = {},
                                                     std::string_view clipName = {});
 
+// 파일 안에서 고를 수 있는 애니메이션 이름 (glTF animations[].name, FBX 애니메이션 스택 이름,
+// 이름 없는 것은 뺌). VMD처럼 모션이 하나뿐인 형식, 모델 전용 형식, 읽을 수 없는 파일은 빈 목록.
+// 설정 창의 클립 선택 목록 (ADR-0016)
+[[nodiscard]] std::vector<std::string> listMotionClipsFromMemory(
+    std::span<const std::uint8_t> bytes, std::string_view extension = {});
+[[nodiscard]] std::vector<std::string> listMotionClips(const std::filesystem::path& path);
+
 // "파일#클립 이름" 형식이면 그 파일의 그 클립 (예: models/model.glb#Idle).
 // 경로 전체가 있는 파일이면 '#'도 파일 이름으로 봄
 [[nodiscard]] MotionLoadResult loadMotionFile(const std::filesystem::path& reference);

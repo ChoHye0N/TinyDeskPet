@@ -2,6 +2,7 @@
 add_library(deskpet_renderer_d3d11 STATIC
   D3D11Renderer.cpp
   DxCheck.cpp
+  ImGuiPass.cpp
   MeshPass.cpp
   PlaceholderPass.cpp
   WicTexture.cpp)
@@ -9,7 +10,7 @@ add_library(deskpet::renderer_d3d11 ALIAS deskpet_renderer_d3d11)
 
 target_link_libraries(deskpet_renderer_d3d11
   PUBLIC deskpet::renderer_api
-  PRIVATE d3d11 dxgi d2d1 dcomp dxguid windowscodecs)
+  PRIVATE d3d11 dxgi d2d1 dcomp dxguid windowscodecs deskpet_imgui_dx11)
 deskpet_apply_compile_options(deskpet_renderer_d3d11)
 
 # -----------------------------------------------------------------------------

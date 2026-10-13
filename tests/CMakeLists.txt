@@ -36,6 +36,7 @@ add_executable(deskpet_tests
   model/TextureSourceTests.cpp
   character/CharacterControllerTests.cpp
   renderer/SampleCountTests.cpp
+  ui/SettingsUiTests.cpp
   app/ApplicationTests.cpp
   app/CameraFitTests.cpp
   app/GroundTests.cpp

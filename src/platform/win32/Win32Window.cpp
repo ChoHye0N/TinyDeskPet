@@ -434,6 +434,17 @@ LRESULT Win32Window::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 core::PointerUpEvent{messageScreenPosition(), core::MouseButton::Right});
             return 0;
 
+        case WM_MOUSEWHEEL: {
+            // 포커스가 없는 창이라도 "비활성 창 스크롤"(Windows 10 기본값)이면 커서 아래 창으로 옴.
+            // lParam은 다른 마우스 메시지와 달리 이미 화면 좌표. 한 칸 = WHEEL_DELTA(120)
+            const float notches = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) /
+                                  static_cast<float>(WHEEL_DELTA);
+            pending_.emplace_back(core::MouseWheelEvent{{static_cast<float>(GET_X_LPARAM(lParam)),
+                                                         static_cast<float>(GET_Y_LPARAM(lParam))},
+                                                        notches});
+            return 0;
+        }
+
         case WM_DISPLAYCHANGE: pending_.emplace_back(core::WorkAreaChangedEvent{}); break;
 
         case WM_SETTINGCHANGE:
