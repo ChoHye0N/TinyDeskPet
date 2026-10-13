@@ -92,6 +92,7 @@ private:
     };
     [[nodiscard]] LookAngles lookAnglesFor(const AnimationInput& input) const;
     void applyLook(LookAngles look) const;  // 목·머리·눈에 나눠 돌림
+    void drapeNamedBones() const;  // 클립이 없는 동작의 이름 본 = 클립 첫 프레임
     // 몸 전체를 옮길 거리: 클립의 엉덩이 이동 + (서 있거나 걸을 때) 발을 바닥에 맞추는 내림
     [[nodiscard]] core::Vec3 rootOffset(Motion motion) const;
     void writeOutput(const AnimationInput& input, const Expressions& base, AnimationOutput& out,
@@ -106,7 +107,9 @@ private:
     Limb leftArm_;
     Limb rightArm_;
     std::array<std::optional<MotionPlayer>, kMotionCount> clips_;  // Motion 순서
+    std::vector<std::uint8_t> proceduralHidden_;  // 클립이 없는 동작에서 숨길 본 (setClip이 갱신)
     mutable std::vector<core::Quat> rotations_;  // evaluate 중간 결과 (할당 재사용)
+    mutable std::vector<core::Quat> drape_;      // drapeNamedBones 중간 결과
     mutable core::Vec3 clipOffset_;  // 〃 클립의 엉덩이 이동 (클립이 없으면 0)
     mutable std::vector<core::Quat> poseRotations_;  // rootOffset 중간 결과
     mutable std::vector<core::Vec3> posePositions_;

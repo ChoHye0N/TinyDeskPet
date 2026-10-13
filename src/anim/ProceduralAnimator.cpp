@@ -178,6 +178,18 @@ void ProceduralAnimator::setClip(Motion motion, std::shared_ptr<const model::Mot
     if (clip && clip->frameCount > 0) {
         slot.emplace(skeleton_, std::move(clip));
     }
+    // 클립이 없는 동작에서 숨길 본 = 어느 클립이든 숨기는 본 (소품은 코드로 만든 자세를 모르므로
+    // 그대로 두면 기본 자세 위치에 떠 있음)
+    proceduralHidden_.assign(skeleton_.size(), 0);
+    for (const auto& player : clips_) {
+        if (!player) {
+            continue;
+        }
+        const std::span<const std::uint8_t> hidden = player->hidden();
+        for (std::size_t j = 0; j < hidden.size() && j < proceduralHidden_.size(); ++j) {
+            proceduralHidden_[j] = proceduralHidden_[j] != 0 || hidden[j] != 0 ? 1 : 0;
+        }
+    }
 }
 
 void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
@@ -211,6 +223,25 @@ void ProceduralAnimator::computeRotations(const AnimationInput& input) const {
     if (p.headTilt != 0.0f) {
         setRotation(skeleton_.find(HumanBone::Head),
                     core::Quat::axisAngle(kAxisZ, radians(p.headTilt)));
+    }
+    drapeNamedBones();
+}
+
+// 휴머노이드가 아닌 이름 본(머플러·꼬리 등)은 코드로 만든 자세가 움직이지 않으므로, 클립(대기
+// 우선)의 첫 프레임 모양을 부모 기준으로 씀 (ADR-0015). 게임에서 추출한 모델은 기본 자세에서 이런
+// 본이 수평으로 뻗어 있어, 그대로 두면 뻣뻣하게 튀어나오고 화면 맞춤 영역도 넓어짐
+void ProceduralAnimator::drapeNamedBones() const {
+    const auto source = std::ranges::find_if(clips_, [](const auto& c) { return c.has_value(); });
+    if (source == clips_.end()) {
+        return;
+    }
+    const MotionPlayer& player = **source;
+    player.sample(0.0f, drape_);
+    const std::span<const std::uint8_t> named = player.named();
+    for (std::size_t j = 0; j < named.size() && j < rotations_.size(); ++j) {
+        if (named[j] != 0) {
+            rotations_[j] = drape_[j];  // 부모에 대한 델타라 몸 자세가 달라도 붙어 있음
+        }
     }
 }
 
@@ -325,7 +356,10 @@ core::Vec3 ProceduralAnimator::rootOffset(Motion motion) const {
 
 void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressions& base,
                                      AnimationOutput& out, core::Vec3 offset) const {
-    skeleton_.computeSkinMatrices(rotations_, out.skin, offset);
+    // 재생 중인 클립이 숨기는 본 (게임의 소품 숨기기, ADR-0015). 전환 중에도 새 동작 기준
+    const auto& clip = clips_[static_cast<std::size_t>(input.motion)];
+    skeleton_.computeSkinMatrices(rotations_, out.skin, offset,
+                                  clip ? clip->hidden() : std::span(proceduralHidden_));
     out.expressions = base;
     // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];

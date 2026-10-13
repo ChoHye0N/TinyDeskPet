@@ -197,6 +197,14 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
         name, format, m.vertices.size(), m.materials.size(), m.textures.size(), preparedTextures,
         m.bones.size(), humanoid, m.springGroups.size(), m.springColliders.size(),
         m.bounds.size().y, elapsed.count());
+    if (!m.droppedProps.empty()) {
+        std::string names;
+        for (const std::string& prop : m.droppedProps) {
+            names += (names.empty() ? "" : ", ") + prop;
+        }
+        logging::info("소품 메시 {}개 제외 (몸 밖의 뼈에만 붙음): {}", m.droppedProps.size(),
+                      names);
+    }
     if (!m.meta.name.empty()) {
         logging::info("모델 정보: {} / 작가 {} / 라이선스 {}", m.meta.name, m.meta.author,
                       m.meta.license);
@@ -236,10 +244,10 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
         model::MotionClip& clip = *result.clip;
         clip.loopStart = loopStart;
         logging::info(
-            "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, "
+            "모션 로드: {} = {} ({}, {:.2f}초, 본 {}개, 그 밖의 본 {}개, 숨김 본 {}개, "
             "엉덩이 이동 {}, 반복 {:.2f}초부터)",
             kNames[m], *configured, kFormats[static_cast<std::size_t>(clip.format)],
-            clip.duration(), clip.trackCount(), clip.boneTracks.size(),
+            clip.duration(), clip.trackCount(), clip.boneTracks.size(), clip.hiddenBones.size(),
             clip.hipsTranslation.empty() ? "없음" : "있음", clip.loopStart);
         clips[m] = std::make_shared<const model::MotionClip>(std::move(clip));
     }

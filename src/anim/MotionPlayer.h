@@ -15,7 +15,9 @@
 #include "anim/Skeleton.h"
 #include "model/Motion.h"
 
+#include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace deskpet::anim {
@@ -37,6 +39,12 @@ public:
     // 모션)과 처음 위치를 빼고 흔들림만 남김 (캐릭터를 옮기는 것은 앱). 이동이 없는 클립은 0
     [[nodiscard]] core::Vec3 rootOffset(float time) const;
 
+    // 본별 숨김 여부 (1 = 숨김, 크기 = 본 수). 클립의 hiddenBones와 이름이 같은 본 (ADR-0015)
+    [[nodiscard]] std::span<const std::uint8_t> hidden() const noexcept { return hidden_; }
+
+    // 본별로 휴머노이드가 아닌 이름 트랙이 움직이는지 (1 = 그렇다, 크기 = 본 수)
+    [[nodiscard]] std::span<const std::uint8_t> named() const noexcept { return named_; }
+
 private:
     struct FramePosition {
         std::size_t i0 = 0;
@@ -52,7 +60,9 @@ private:
     std::vector<int> order_;
     // 본 → 클립 트랙 (휴머노이드 트랙 또는 이름이 같은 트랙), 없으면 nullptr. clip_이 소유
     std::vector<const std::vector<core::Quat>*> tracks_;
-    std::vector<core::Quat> corrections_;          // 본별 기본 자세 보정 C
+    std::vector<core::Quat> corrections_;  // 본별 기본 자세 보정 C
+    std::vector<std::uint8_t> hidden_;
+    std::vector<std::uint8_t> named_;
     mutable std::vector<core::Quat> accumulated_;  // sample 중간 결과 (할당 재사용)
 };
 

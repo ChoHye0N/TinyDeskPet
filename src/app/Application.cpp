@@ -167,6 +167,10 @@ void Application::applyAnimation() {
 
 void Application::refitCamera() {
     if (model_) {
+        const model::Bounds& fit = displayBounds_;
+        core::logging::debug(
+            "화면 맞춤 경계 (m): x {:.2f} ~ {:.2f}, y {:.2f} ~ {:.2f}, z {:.2f} ~ {:.2f}",
+            fit.min.x, fit.max.x, fit.min.y, fit.max.y, fit.min.z, fit.max.z);
         camera_ = fitCameraToBounds(displayBounds_, boxSize_);
         // 발 평면에서 1m가 화면에서 몇 px인지 → 창이 움직인 px를 모델 공간 m로 바꿀 때 씀
         const core::Vec4 a = core::transform({0.0f, 0.0f, 0.0f}, camera_);

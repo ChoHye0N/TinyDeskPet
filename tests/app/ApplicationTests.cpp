@@ -952,12 +952,12 @@ TEST_F(ApplicationTest, ContextMenu_ShowsModelInfoAndOpenItem) {
     window_.frames.push_back(kRightClick());
     window_.pollsBeforeQuit = 2;
     auto app = makeApp();
-    app->setModel(makeNamedModel("Kei"));
+    app->setModel(makeNamedModel("Sample"));
     (void)app->run();
 
     const auto* info = findMenuItem(window_.lastMenu, MenuCommand::ModelInfo);
     ASSERT_NE(info, nullptr);
-    EXPECT_EQ(info->label, "Kei — Author");
+    EXPECT_EQ(info->label, "Sample — Author");
     EXPECT_FALSE(info->enabled);
     const auto* license = findMenuItem(window_.lastMenu, MenuCommand::ModelLicense);
     ASSERT_NE(license, nullptr);

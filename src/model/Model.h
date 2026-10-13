@@ -172,6 +172,8 @@ struct Model {
     std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM만 읽음)
     std::vector<SpringCollider> springColliders;
     Bounds bounds;
+    // 읽지 않고 버린 소품 메시 이름 (VRM이 아닌 glTF에서 몸 밖의 뼈에만 붙은 총 등, ADR-0015)
+    std::vector<std::string> droppedProps;
 
     [[nodiscard]] const Morph& expression(Expression e) const noexcept {
         return expressions[static_cast<std::size_t>(e)];

@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -383,7 +384,12 @@ public:
 
         for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
             const cgltf_node& node = data_.nodes[i];
-            if (node.mesh != nullptr && !readMesh(node, error)) {
+            if (node.mesh == nullptr) {
+                continue;
+            }
+            if (isProp(node)) {
+                model_.droppedProps.emplace_back(node.mesh->name != nullptr ? node.mesh->name : "");
+            } else if (!readMesh(node, error)) {
                 return std::nullopt;
             }
         }
@@ -428,6 +434,35 @@ private:
     template <class T>
     int indexOf(const T* item, const T* first) const {
         return item != nullptr ? static_cast<int>(item - first) : -1;
+    }
+
+    // 노드가 엉덩이(hips) 본이거나 그 아래에 있는지
+    [[nodiscard]] bool inBody(const cgltf_node* node, int hips) const {
+        for (std::size_t depth = 0; node != nullptr && depth < data_.nodes_count;
+             node = node->parent, ++depth) {
+            if (indexOf(node, data_.nodes) == hips) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 소품 메시 (ADR-0015): VRM이 아닌 glTF에서 몸(엉덩이 아래)과 관계없는 뼈에만 붙은 메시.
+    // 게임에서 내보낸 모델의 총·이펙트 소품은 뼈대 맨 위나 장면 최상위의 별도 뼈에 붙어 있어,
+    // 몸 뼈대로 움직이는 모션에서 엉뚱한 곳에 남음. 헤일로처럼 머리 등에 붙은 장신구는 몸 안이라
+    // 유지. 휴머노이드를 못 찾은 모델은 기준이 없으므로 아무것도 버리지 않음
+    [[nodiscard]] bool isProp(const cgltf_node& node) const {
+        const int hips = model_.version == VrmVersion::None ? model_.findBone(HumanBone::Hips) : -1;
+        if (hips < 0) {
+            return false;
+        }
+        if (node.skin == nullptr) {
+            return !inBody(&node, hips);
+        }
+        const std::span<cgltf_node* const> joints(node.skin->joints, node.skin->joints_count);
+        return !joints.empty() && std::ranges::none_of(joints, [&](const cgltf_node* joint) {
+            return inBody(joint, hips);
+        });
     }
 
     void readTextures() {
@@ -1247,6 +1282,7 @@ public:
         motion::setRestDirections(clip, positions);
         motion::addBoneTracks(clip, nodes, deltas);
         readHipsTranslation(clip);
+        readHiddenBones(clip);
         return clip;
     }
 
@@ -1257,6 +1293,24 @@ private:
         std::vector<T> values;
         bool step = false;
     };
+
+    // 크기 키가 모두 0.1배 미만인 휴머노이드가 아닌 노드 (게임의 소품 숨기기, ADR-0015).
+    // 키 사이는 보간이라 키가 모두 작으면 클립 내내 작음
+    void readHiddenBones(MotionClip& clip) const {
+        constexpr float kHiddenScale = 0.1f;
+        for (std::size_t n = 0; n < scales_.size(); ++n) {
+            const std::vector<Vec3>& keys = scales_[n].values;
+            const char* name = data_.nodes[n].name;
+            if (keys.empty() || human_[n] != HumanBone::None || name == nullptr) {
+                continue;
+            }
+            if (std::ranges::all_of(keys, [](Vec3 s) {
+                    return std::max({std::abs(s.x), std::abs(s.y), std::abs(s.z)}) < kHiddenScale;
+                })) {
+                clip.hiddenBones.emplace_back(name);
+            }
+        }
+    }
 
     // 엉덩이 노드의 위치 변화 (조상의 이동·회전 포함)
     void readHipsTranslation(MotionClip& clip) const {
@@ -1281,12 +1335,14 @@ private:
             bones[n].name = data_.nodes[n].name != nullptr ? data_.nodes[n].name : "";
         }
         const std::string_view json = extensionJson(data_, "VRMC_vrm_animation");
-        const auto start = json.empty() ? std::nullopt : valueOf(json, "humanBones");
+        const std::size_t start =
+            json.empty() ? std::string_view::npos
+                         : valueOf(json, "humanBones").value_or(std::string_view::npos);
         const std::size_t end =
-            start && *start < json.size() ? skipBalanced(json, *start) : std::string_view::npos;
+            start < json.size() ? skipBalanced(json, start) : std::string_view::npos;
         if (end != std::string_view::npos) {
             format_ = MotionFormat::Vrma;
-            mapHumanBoneEntries(json.substr(*start + 1, end - *start - 2), bones);  // 괄호 안쪽
+            mapHumanBoneEntries(json.substr(start + 1, end - start - 2), bones);  // 괄호 안쪽
         } else if (detectVersion(data_) != VrmVersion::None) {
             mapVrmHumanoid(data_, bones);
         } else {
@@ -1320,10 +1376,11 @@ private:
         return nullptr;
     }
 
-    // 회전·이동 채널 (크기는 쓰지 않음). 이동은 엉덩이 위치에만 씀
+    // 회전·이동·크기 채널. 이동은 엉덩이 위치에만, 크기는 숨김 본을 고를 때만 씀
     void readChannels(const cgltf_animation& animation) {
         channels_.resize(data_.nodes_count);
         translations_.resize(data_.nodes_count);
+        scales_.resize(data_.nodes_count);
         for (cgltf_size c = 0; c < animation.channels_count; ++c) {
             const cgltf_animation_channel& channel = animation.channels[c];
             if (channel.target_node == nullptr || channel.sampler == nullptr) {
@@ -1336,6 +1393,9 @@ private:
                 });
             } else if (channel.target_path == cgltf_animation_path_type_translation) {
                 readSampler(*channel.sampler, translations_[node],
+                            [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
+            } else if (channel.target_path == cgltf_animation_path_type_scale) {
+                readSampler(*channel.sampler, scales_[node],
                             [](std::array<float, 4> v) { return Vec3{v[0], v[1], v[2]}; });
             }
         }
@@ -1462,6 +1522,7 @@ private:
     std::vector<HumanBone> human_;  // 노드 → 휴머노이드 본
     std::vector<Channel<core::Quat>> channels_;
     std::vector<Channel<Vec3>> translations_;
+    std::vector<Channel<Vec3>> scales_;
     std::vector<std::size_t> order_;
     float duration_ = 0.0f;
 };

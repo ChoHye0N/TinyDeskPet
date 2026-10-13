@@ -87,10 +87,28 @@ void Skeleton::computePose(std::span<const core::Quat> rotations,
 }
 
 void Skeleton::computeSkinMatrices(std::span<const core::Quat> rotations,
-                                   std::vector<core::Mat4>& out, core::Vec3 rootOffset) const {
+                                   std::vector<core::Mat4>& out, core::Vec3 rootOffset,
+                                   std::span<const std::uint8_t> hidden) const {
     computePose(rotations, accumulated_, posed_, rootOffset);
     out.resize(positions_.size());
+    collapsed_.assign(positions_.size(), 0);
+    if (!hidden.empty()) {
+        for (const int index : order_) {
+            const auto j = static_cast<std::size_t>(index);
+            const int parent = parents_[j];
+            const bool self = j < hidden.size() && hidden[j] != 0;
+            const bool inherited = parent >= 0 && collapsed_[static_cast<std::size_t>(parent)] != 0;
+            collapsed_[j] = self || inherited ? 1 : 0;
+        }
+    }
     for (std::size_t j = 0; j < positions_.size(); ++j) {
+        if (collapsed_[j] != 0) {
+            // v' = P (크기 0): 정점이 모두 관절 한 점에 모여 삼각형이 넓이 0이 됨
+            core::Mat4 m = core::Mat4::translation(posed_[j]);
+            m.m[0][0] = m.m[1][1] = m.m[2][2] = 0.0f;
+            out[j] = m;
+            continue;
+        }
         // v' = A(v - p) + P  →  T(-p) · R(A) · T(P)
         out[j] = core::Mat4::translation(positions_[j] * -1.0f) * accumulated_[j].toMat4() *
                  core::Mat4::translation(posed_[j]);

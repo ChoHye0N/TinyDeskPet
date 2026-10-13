@@ -52,6 +52,10 @@ struct MotionClip {
     // 원본 그대로 둠 (VMD는 MMD 단위)
     std::vector<core::Vec3> hipsTranslation;
     float hipsHeight = 0.0f;  // 원본 기본 자세의 엉덩이 높이 (원본 단위, 바닥 = 0)
+    // 클립 내내 크기가 0.1배 미만인 휴머노이드가 아닌 본 이름 (ADR-0015). 게임은 소품(총알 등)을
+    // 크기 0으로 줄여 숨기므로, 이 클립을 재생하는 동안 이름이 같은 본과 그 아래를 접어 숨김.
+    // glTF만 읽음
+    std::vector<std::string> hiddenBones;
     // 처음 한 번 끝까지 재생한 뒤 반복을 시작할 시각 (s). 0이면 처음부터 반복, 길이 이상이면 마지막
     // 자세 유지. 파일이 아니라 설정([animation] *_loop_start)에서 옴
     float loopStart = 0.0f;
@@ -83,9 +87,9 @@ struct MotionLoadResult {
                                                     std::string_view extension = {},
                                                     std::string_view clipName = {});
 
-// "파일#클립 이름" 형식이면 그 파일의 그 클립 (예: models/Michiru.glb#Cafe_Idle).
+// "파일#클립 이름" 형식이면 그 파일의 그 클립 (예: models/model.glb#Idle).
 // 경로 전체가 있는 파일이면 '#'도 파일 이름으로 봄
-[[nodiscard]] MotionLoadResult loadMotionFile(const std::filesystem::path& path);
+[[nodiscard]] MotionLoadResult loadMotionFile(const std::filesystem::path& reference);
 
 // 원본 뼈대 → 클립 변환을 돕는 공통 부분 (형식별 로더가 사용)
 namespace motion {

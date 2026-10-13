@@ -458,6 +458,28 @@ TEST(GltfMotion, UnknownClipName_ReturnsErrorListingClips) {
     EXPECT_NE(result.error.find("Wave"), std::string::npos);
 }
 
+TEST(GltfMotion, BonesScaledToZeroForTheWholeClip_BecomeHiddenBones) {
+    // 게임은 소품(총알 등)을 크기 0.02배 키로 숨김. 클립 내내 0.1배 미만인 본만 숨김 본으로
+    GltfBuilder b;
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int tiny = b.addFloats({0.02f, 0.02f, 0.02f, 0.02f, 0.02f, 0.02f}, "VEC3");
+    const int popping = b.addFloats({0.02f, 0.02f, 0.02f, 1, 1, 1}, "VEC3");
+    const std::string json =
+        b.build(R"("nodes":[{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[1,2,3]},)"
+                R"({"name":"bone_Bullet01"},{"name":"bone_Bullet02"},{"name":"Bip001 Head"}],)"
+                R"("scenes":[{"nodes":[0]}],"scene":0,"animations":[{"channels":[)"
+                R"({"sampler":0,"target":{"node":1,"path":"scale"}},)"
+                R"({"sampler":1,"target":{"node":2,"path":"scale"}},)"
+                R"({"sampler":0,"target":{"node":3,"path":"scale"}}],"samplers":[)"
+                R"({"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(tiny) + R"(},{"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(popping) + "}]}]");
+    const MotionLoadResult result = loadText(json, ".glb");
+    ASSERT_TRUE(result.clip.has_value()) << result.error;
+    // 중간에 커지는 본(재장전 때 보이는 총알)과 휴머노이드 본은 숨기지 않음
+    EXPECT_EQ(result.clip->hiddenBones, (std::vector<std::string>{"bone_Bullet01"}));
+}
+
 TEST(MotionLoader, FileReference_ClipNameAfterHash_SelectsAnimation) {
     GltfBuilder b;
     const std::string json = b.build(bipedJson(b));

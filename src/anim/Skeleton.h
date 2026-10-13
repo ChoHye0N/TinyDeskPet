@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -39,9 +40,11 @@ public:
     void computePose(std::span<const core::Quat> rotations, std::vector<core::Quat>& accumulated,
                      std::vector<core::Vec3>& posed, core::Vec3 rootOffset = {}) const;
 
-    // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐
+    // rotations[본] = 델타 회전 (크기는 size()). out은 재사용되며 size()개로 맞춰짐.
+    // hidden[본] ≠ 0이면 그 본과 아래 본에 붙은 정점을 관절 한 점으로 접어 숨김 (비면 숨김 없음)
     void computeSkinMatrices(std::span<const core::Quat> rotations, std::vector<core::Mat4>& out,
-                             core::Vec3 rootOffset = {}) const;
+                             core::Vec3 rootOffset = {},
+                             std::span<const std::uint8_t> hidden = {}) const;
 
 private:
     std::vector<core::Vec3> positions_;
@@ -53,6 +56,7 @@ private:
     // computeSkinMatrices의 중간 결과 (할당 재사용)
     mutable std::vector<core::Quat> accumulated_;
     mutable std::vector<core::Vec3> posed_;
+    mutable std::vector<std::uint8_t> collapsed_;  // 숨김 (조상이 숨겨진 본 포함)
 };
 
 }  // namespace deskpet::anim

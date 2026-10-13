@@ -248,9 +248,9 @@ TEST(ModelLoader, PlainGltf_MapsHumanBonesByNodeName) {
     const Triangle t = addTriangle(b);
     const std::string rest =
         meshJson(t) +
-        R"(,"nodes":[{"mesh":0},{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2]},)"
+        R"(,"nodes":[{"mesh":0},{"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2,0]},)"
         R"({"name":"Bip001 L UpperArm","translation":[0.2,0.4,0]},{"name":"Bip001 Pelvis"},)"
-        R"({"name":"bone_hair_01"}],"scenes":[{"nodes":[0,1,3,4]}],"scene":0)";
+        R"({"name":"bone_hair_01"}],"scenes":[{"nodes":[1,3,4]}],"scene":0)";
     const LoadResult result = load(b.build(rest));
 
     ASSERT_TRUE(result.model.has_value()) << result.error;
@@ -260,6 +260,44 @@ TEST(ModelLoader, PlainGltf_MapsHumanBonesByNodeName) {
     EXPECT_EQ(bones[2].human, deskpet::model::HumanBone::LeftUpperArm);
     EXPECT_EQ(bones[3].human, deskpet::model::HumanBone::None);
     EXPECT_EQ(bones[4].human, deskpet::model::HumanBone::None);
+}
+
+TEST(ModelLoader, PlainGltf_DropsPropMeshesOutsideTheBody) {
+    // 게임에서 내보낸 모델: 총·소품은 엉덩이(hips) 아래가 아닌 뼈에만 붙어 있음 (ADR-0015).
+    // Bip001 ─ Pelvis(hips) ─ Head ─ 헤일로(고정 메시)      → 유지
+    //        │       └ 몸(스킨: Pelvis)                       → 유지
+    //        └ Weapon ─ 총(스킨: Weapon)                      → 삭제
+    // 소품(고정 메시, 장면 최상위)                            → 삭제
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const int joints = b.addUint8({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "VEC4");
+    const int weights = b.addFloats({1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}, "VEC4");
+    const auto mesh = [&](std::string_view name, bool skinned) {
+        std::string attributes = R"("POSITION":)" + std::to_string(t.position) + R"(,"NORMAL":)" +
+                                 std::to_string(t.normal);
+        if (skinned) {
+            attributes += R"(,"JOINTS_0":)" + std::to_string(joints) + R"(,"WEIGHTS_0":)" +
+                          std::to_string(weights);
+        }
+        return R"({"name":")" + std::string(name) + R"(","primitives":[{"attributes":{)" +
+               attributes + R"(},"indices":)" + std::to_string(t.indices) + "}]}";
+    };
+    const std::string rest =
+        R"("meshes":[)" + mesh("Body", true) + "," + mesh("Halo", false) + "," +
+        mesh("Weapon", true) + "," + mesh("Firework", false) +
+        R"(],"nodes":[{"name":"Bip001","children":[1,3]},)"
+        R"({"name":"Bip001 Pelvis","translation":[0,1,0],"children":[2]},)"
+        R"({"name":"Bip001 Head","translation":[0,0.5,0],"children":[5]},)"
+        R"({"name":"Bip001_Weapon","translation":[0.5,0,0]},)"
+        R"({"mesh":0,"skin":0},{"mesh":1},{"mesh":2,"skin":1},{"mesh":3}],)"
+        R"("skins":[{"joints":[1]},{"joints":[3]}],"scenes":[{"nodes":[0,4,6,7]}],"scene":0)";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    const auto& model = *result.model;
+    EXPECT_EQ(model.vertices.size(), 6U);  // 몸 + 헤일로
+    EXPECT_EQ(model.primitives.size(), 2U);
+    EXPECT_EQ(model.droppedProps, (std::vector<std::string>{"Weapon", "Firework"}));
 }
 
 TEST(ModelLoader, VrmHumanoid_DoesNotFallBackToNodeNames) {
@@ -664,11 +702,11 @@ TEST(ModelLoader, Vrm0Meta_ReadsTitleAuthorAndLicense) {
     const Triangle t = addTriangle(b);
     const std::string json =
         meshJson(t) + "," + kSingleNodeScene +
-        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{"meta":{"title":"Kei","version":"1.0",)"
+        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{"meta":{"title":"Sample","version":"1.0",)"
         R"("author":"Someone","licenseName":"CC_BY","otherLicenseUrl":""}}})";
     const LoadResult result = load(b.build(json));
     ASSERT_TRUE(result.model.has_value()) << result.error;
-    EXPECT_EQ(result.model->meta.name, "Kei");
+    EXPECT_EQ(result.model->meta.name, "Sample");
     EXPECT_EQ(result.model->meta.author, "Someone");
     EXPECT_EQ(result.model->meta.license, "CC_BY");
 }
@@ -679,11 +717,11 @@ TEST(ModelLoader, Vrm1Meta_JoinsAuthorsAndNamesKnownLicense) {
     const std::string json =
         meshJson(t) + "," + kSingleNodeScene +
         R"(,"extensionsUsed":["VRMC_vrm"],"extensions":{"VRMC_vrm":{"specVersion":"1.0",)"
-        R"("humanoid":{"humanBones":{}},"meta":{"name":"Alicia","authors":["A","B"],)"
+        R"("humanoid":{"humanBones":{}},"meta":{"name":"Avatar","authors":["A","B"],)"
         R"("licenseUrl":"https://vrm.dev/licenses/1.0/"}}})";
     const LoadResult result = load(b.build(json));
     ASSERT_TRUE(result.model.has_value()) << result.error;
-    EXPECT_EQ(result.model->meta.name, "Alicia");
+    EXPECT_EQ(result.model->meta.name, "Avatar");
     EXPECT_EQ(result.model->meta.author, "A, B");
     EXPECT_EQ(result.model->meta.license, "VRM Public License 1.0");
 }

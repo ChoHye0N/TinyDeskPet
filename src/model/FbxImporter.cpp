@@ -282,26 +282,7 @@ public:
             return std::nullopt;
         }
 
-        double begin = stack.time_begin;
-        double end = stack.time_end;
-        if (end <= begin) {
-            // 재생 구간(LocalStart/Stop)이 없는 파일: 이 스택의 키프레임이 있는 구간 전체
-            begin = std::numeric_limits<double>::max();
-            end = std::numeric_limits<double>::lowest();
-            for (const ufbx_anim_layer* layer : stack.layers) {
-                for (const ufbx_anim_value* value : layer->anim_values) {
-                    for (const ufbx_anim_curve* curve : value->curves) {
-                        if (curve != nullptr && curve->keyframes.count > 0) {
-                            begin = std::min(begin, curve->min_time);
-                            end = std::max(end, curve->max_time);
-                        }
-                    }
-                }
-            }
-            if (end < begin) {
-                begin = end = 0.0;
-            }
-        }
+        const auto [begin, end] = playRange(stack);
         const double length = end - begin;
         MotionClip clip;
         clip.format = MotionFormat::Fbx;
@@ -351,6 +332,26 @@ public:
     }
 
 private:
+    // 재생 구간 (시작, 끝). 구간(LocalStart/Stop)이 없는 파일은 이 스택의 키프레임이 있는 구간 전체
+    static std::pair<double, double> playRange(const ufbx_anim_stack& stack) {
+        if (stack.time_end > stack.time_begin) {
+            return {stack.time_begin, stack.time_end};
+        }
+        double begin = std::numeric_limits<double>::max();
+        double end = std::numeric_limits<double>::lowest();
+        for (const ufbx_anim_layer* layer : stack.layers) {
+            for (const ufbx_anim_value* value : layer->anim_values) {
+                for (const ufbx_anim_curve* curve : value->curves) {
+                    if (curve != nullptr && curve->keyframes.count > 0) {
+                        begin = std::min(begin, curve->min_time);
+                        end = std::max(end, curve->max_time);
+                    }
+                }
+            }
+        }
+        return end < begin ? std::pair{0.0, 0.0} : std::pair{begin, end};
+    }
+
     // clipName_과 이름이 같은 애니메이션 스택 (비어 있으면 첫 번째, ADR-0015). 없으면 error에 있는
     // 이름을 나열
     const ufbx_anim_stack* findStack(std::string& error) const {

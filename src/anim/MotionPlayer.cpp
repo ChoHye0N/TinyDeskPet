@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -50,11 +51,19 @@ MotionPlayer::MotionPlayer(const Skeleton& skeleton, std::shared_ptr<const model
     for (std::size_t j = 0; j < skeleton.size(); ++j) {
         byName.emplace(skeleton.name(static_cast<int>(j)), static_cast<int>(j));
     }
+    named_.assign(skeleton.size(), 0);
     for (const model::NamedTrack& track : clip_->boneTracks) {
         const auto found = byName.find(track.name);
         if (found != byName.end() && !track.rotations.empty() &&
             tracks_[static_cast<std::size_t>(found->second)] == nullptr) {
             tracks_[static_cast<std::size_t>(found->second)] = &track.rotations;
+            named_[static_cast<std::size_t>(found->second)] = 1;
+        }
+    }
+    hidden_.assign(skeleton.size(), 0);
+    for (const std::string& name : clip_->hiddenBones) {
+        if (const auto found = byName.find(name); found != byName.end()) {
+            hidden_[static_cast<std::size_t>(found->second)] = 1;
         }
     }
     // 방향을 모르는 본(몸통, 손, 중간 본)은 부모의 보정을 물려받음: 손은 아래팔과 같이 돎

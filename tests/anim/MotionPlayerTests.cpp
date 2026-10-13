@@ -147,6 +147,24 @@ TEST(MotionPlayer, NamedTracks_DriveBonesWithTheSameName) {
     expectNear(p.accumulated[kHead].rotate(z), nod.rotate(z));
 }
 
+TEST(MotionPlayer, HiddenBones_AreMarkedByName) {
+    // 클립 내내 크기가 0인 본(총알 등)은 이름이 같은 대상 본을 숨김. 모델에 없는 이름은 버림
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone bullet;
+    bullet.name = "bullet";
+    bullet.parent = static_cast<int>(kHips);
+    model.bones.push_back(bullet);
+    const std::size_t kBullet = model.bones.size() - 1;
+    const Skeleton skeleton(model);
+
+    auto clip = poseClip({});
+    clip->hiddenBones = {"bullet", "grenade"};
+    const MotionPlayer player(skeleton, clip);
+    ASSERT_EQ(player.hidden().size(), skeleton.size());
+    EXPECT_EQ(player.hidden()[kBullet], 1);
+    EXPECT_EQ(player.hidden()[kHips], 0);
+}
+
 TEST(MotionPlayer, Frames_AreInterpolatedAndLooped) {
     const auto model = deskpet::test::makeSkeletonModel();
     const Skeleton skeleton(model);

@@ -351,6 +351,70 @@ TEST(ProceduralAnimatorClip, AssignedMotion_PlaysClipInsteadOfProceduralPose) {
     EXPECT_LT(posed(model, out, 3).y, 1.0f);
 }
 
+TEST(ProceduralAnimatorClip, HiddenBones_OfThePlayingClip_AreCollapsed) {
+    // 클립이 숨기는 본(게임의 소품 숨기기, ADR-0015)은 그 클립을 재생하는 동안만 접힘
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    auto clip = raisedArmClip();
+    clip->hiddenBones = {"hand_L"};
+    animator.setClip(Motion::Walk, clip);
+
+    AnimationOutput out;
+    AnimationInput input;
+    input.motion = Motion::Walk;
+    animator.evaluate(input, out);
+    const Vec3 tip = deskpet::core::transformPoint(model.vertices[0].position, out.skin[3]);
+    const Vec3 hand = posed(model, out, 3);
+    EXPECT_NEAR(tip.x, hand.x, 1e-4f);  // 손끝 정점이 손 관절로 모임
+    EXPECT_NEAR(tip.y, hand.y, 1e-4f);
+
+    // 클립이 없는 동작(코드로 만든 자세)도 숨김: 소품은 이 자세를 모르므로 기본 자세 그대로 떠 있게
+    // 됨
+    input.motion = Motion::Idle;
+    animator.evaluate(input, out);
+    const Vec3 hidden = deskpet::core::transformPoint(model.vertices[0].position, out.skin[3]);
+    EXPECT_NEAR(hidden.y, posed(model, out, 3).y, 1e-4f);
+
+    // 그 본을 숨기지 않는 클립에서는 보임 (게임도 클립마다 보이고 숨김)
+    animator.setClip(Motion::Idle, raisedArmClip());
+    animator.evaluate(input, out);
+    const Vec3 shown = deskpet::core::transformPoint(model.vertices[0].position, out.skin[3]);
+    EXPECT_GT(std::abs(shown.y - posed(model, out, 3).y), 0.1f);
+}
+
+TEST(ProceduralAnimatorClip, MotionsWithoutClip_DrapeNamedBonesLikeIdleClip) {
+    // 머플러·꼬리 같은 본은 코드로 만든 자세가 움직이지 않음. 기본 자세가 수평으로 뻗은 모델(게임
+    // 추출)은 그대로 두면 뻣뻣하게 튀어나오므로, 클립이 없는 동작에서도 대기 클립 첫 프레임 모양
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Bone tail;
+    tail.name = "tail";
+    tail.parent = 1;  // hips
+    tail.position = {0.0f, 1.0f, -0.1f};
+    model.bones.push_back(tail);
+    deskpet::model::Bone tip;
+    tip.name = "tailTip";
+    tip.parent = static_cast<int>(model.bones.size()) - 1;
+    tip.position = {0.0f, 1.0f, -0.6f};  // 뒤로 수평
+    model.bones.push_back(tip);
+    const std::size_t kTip = model.bones.size() - 1;
+
+    ProceduralAnimator animator(model);
+    auto idle = std::make_shared<deskpet::model::MotionClip>();
+    idle->frameCount = 1;
+    const deskpet::core::Quat droop =
+        deskpet::core::Quat::axisAngle({1.0f, 0.0f, 0.0f}, -std::numbers::pi_v<float> / 2.0f);
+    idle->boneTracks = {{"tail", {droop}}};  // 꼬리를 아래로 늘어뜨림
+    animator.setClip(Motion::Idle, idle);
+
+    AnimationOutput out;
+    AnimationInput input;
+    input.motion = Motion::Airborne;  // 클립 없음
+    animator.evaluate(input, out);
+    const Vec3 end = posed(model, out, kTip);
+    EXPECT_LT(end.y, 0.6f);   // 아래로 늘어짐
+    EXPECT_GT(end.z, -0.2f);  // 뒤로 뻗지 않음
+}
+
 TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {
     const auto model = deskpet::test::makeSkeletonModel();
     ProceduralAnimator animator(model);

@@ -196,7 +196,7 @@ msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
 outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불투명 재질) / off
 
 [model]
-path = models/zmd_EM.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
+path = models/model.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
 
 [animation]
 dragged_clip = models/motions/pickup.fbx  ; 문자열 그대로 (idle_/walk_/dragged_/airborne_clip)
@@ -218,7 +218,7 @@ to_file = true
 |---|---|
 | 파일 없음 | 기본값 + 경고 1개 (`"설정 파일 없음: ... 기본값 사용"`) |
 | 빈 줄, `#`/`;`로 시작하는 줄 | 무시 |
-| 값 뒤의 `;`/`#` 주석 | 공백 뒤에 올 때만 주석으로 보고 제거. 값 안의 `;` `#`(`Michiru.glb#Cafe_Idle`, ADR-0015)은 값 |
+| 값 뒤의 `;`/`#` 주석 | 공백 뒤에 올 때만 주석으로 보고 제거. 값 안의 `;` `#`(`model.glb#Idle`, ADR-0015)은 값 |
 | 앞뒤 공백 | 제거. 섹션·키 이름은 대소문자 구분 안 함 |
 | `=`가 없는 줄, 닫히지 않은 `[` | 경고 후 무시 (`"N행: 형식 오류"`) |
 | 알 수 없는 섹션/키 | 경고 후 무시 |

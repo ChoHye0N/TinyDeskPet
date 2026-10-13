@@ -28,4 +28,4 @@ ADR(Architecture Decision Record)은 **중요한 기술 결정과 그 이유**�
 | [0012](0012-mtoon-linear-color.md) | MToon 셰이딩과 선형 색공간 (셰이더에서 sRGB 변환) | 승인 |
 | [0013](0013-motion-clip-retargeting.md) | 모션 파일 재생 — 월드 델타로 통일한 리타기팅 | 대체됨: ADR-0014 |
 | [0014](0014-motion-clip-extensions.md) | 모션 클립 확장 — 손가락·비휴머노이드 본·엉덩이 이동·반복 구간 | 승인 |
-| [0015](0015-plain-gltf-humanoid-and-clip-selection.md) | 일반 glTF의 본 이름 매핑과 파일 안 애니메이션 고르기 | 승인 |
+| [0015](0015-plain-gltf-humanoid-and-clip-selection.md) | 일반 glTF의 본 이름 매핑, 소품 메시 버리기, 파일 안 애니메이션 고르기 | 승인 |
