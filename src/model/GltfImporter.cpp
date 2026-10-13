@@ -66,6 +66,19 @@ Mat4 worldMatrix(const cgltf_node& node) {
     return Mat4::fromColumnMajor(values.data());
 }
 
+// 노드 메시의 모프 타깃 수 = weights 채널이 키마다 주는 값 수. 메시 weights 수, 없으면 첫
+// 프리미티브의 타깃 수
+cgltf_size morphTargetCount(const cgltf_node& node) {
+    const cgltf_mesh* mesh = node.mesh;
+    if (mesh == nullptr) {
+        return 0;
+    }
+    if (mesh->weights_count > 0) {
+        return mesh->weights_count;
+    }
+    return mesh->primitives_count > 0 ? mesh->primitives[0].targets_count : 0;
+}
+
 // 관절 행렬 = 역바인드 × 관절의 현재 월드 (행 벡터 규약). 바인드 포즈에서는 단위 행렬에 가깝습니다.
 std::vector<Mat4> jointMatrices(const cgltf_skin& skin) {
     std::vector<Mat4> result(skin.joints_count, Mat4::identity());
@@ -454,9 +467,38 @@ private:
         for (const auto& [node, morphs] : nodeMorphs_) {
             const char* name = data_.nodes[static_cast<std::size_t>(node)].name;
             for (std::size_t t = 0; t < morphs.size(); ++t) {
-                model_.morphs.push_back({name != nullptr ? name : "", t, morphs[t]});
+                model_.morphs.push_back({name != nullptr ? name : "", t, morphs[t],
+                                         firstKeyWeight(static_cast<std::size_t>(node), t)});
             }
         }
+    }
+
+    // 파일 안 첫 애니메이션이 이 노드·타깃에 주는 첫 키 가중치, 없으면 0. 입 모양 메시마다 "숨기기"
+    // 타깃을 두고 애니메이션으로 하나만 보이게 하는 모델은 가중치 0(모두 보임)이면 입이 겹치므로,
+    // 클립이 가중치를 주지 않을 때의 기본값으로 씀
+    [[nodiscard]] float firstKeyWeight(std::size_t node, std::size_t target) const {
+        if (data_.animations_count == 0) {
+            return 0.0f;
+        }
+        const cgltf_animation& animation = data_.animations[0];
+        for (cgltf_size c = 0; c < animation.channels_count; ++c) {
+            const cgltf_animation_channel& channel = animation.channels[c];
+            if (channel.target_path != cgltf_animation_path_type_weights ||
+                channel.target_node != &data_.nodes[node] || channel.sampler == nullptr) {
+                continue;
+            }
+            const cgltf_size targets = morphTargetCount(data_.nodes[node]);
+            // CUBICSPLINE은 키마다 (들어오는 접선, 값, 나가는 접선) 묶음이라 값은 가운데 묶음
+            const cgltf_size first =
+                channel.sampler->interpolation == cgltf_interpolation_type_cubic_spline ? targets
+                                                                                        : 0;
+            float weight = 0.0f;
+            if (target < targets && cgltf_accessor_read_float(channel.sampler->output,
+                                                              first + target, &weight, 1) != 0) {
+                return weight;
+            }
+        }
+        return 0.0f;
     }
 
     // 노드가 엉덩이(hips) 본이거나 그 아래에 있는지
@@ -1468,14 +1510,7 @@ private:
 
     // weights 채널: 키마다 타깃 수만큼 값이 이어짐 (CUBICSPLINE은 키마다 접선·값·접선 묶음)
     void readWeights(const cgltf_animation_sampler& sampler, std::size_t node) {
-        const cgltf_mesh* mesh = data_.nodes[node].mesh;
-        cgltf_size targets = 0;
-        if (mesh != nullptr) {
-            targets = mesh->weights_count;
-            if (targets == 0 && mesh->primitives_count > 0) {
-                targets = mesh->primitives[0].targets_count;
-            }
-        }
+        const cgltf_size targets = morphTargetCount(data_.nodes[node]);
         const cgltf_size count = sampler.input->count;
         const cgltf_size stride =
             sampler.interpolation == cgltf_interpolation_type_cubic_spline ? 3 : 1;

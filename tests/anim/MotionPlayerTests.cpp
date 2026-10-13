@@ -136,9 +136,9 @@ TEST(MotionPlayer, NamedTracks_DriveBonesWithTheSameName) {
     const Quat wag = Quat::axisAngle({0.0f, 1.0f, 0.0f}, radians(30.0f));
     const Quat nod = Quat::axisAngle({1.0f, 0.0f, 0.0f}, radians(20.0f));
     auto clip = poseClip({{HumanBone::Head, nod}});
-    clip->boneTracks = {{"tail", {wag}},
-                        {"ribbon", {wag}},
-                        {"head", {Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(50.0f))}}};
+    clip->boneTracks = {{"tail", {wag}, {}},
+                        {"ribbon", {wag}, {}},
+                        {"head", {Quat::axisAngle({0.0f, 0.0f, 1.0f}, radians(50.0f))}, {}}};
     const MotionPlayer player(skeleton, clip);
     const Posed p = pose(skeleton, player, 0.0f);
 
@@ -191,7 +191,7 @@ TEST(MotionPlayer, WeightTracks_MapToModelMorphsByNameAndTarget) {
     const auto model = deskpet::test::makeSkeletonModel();
     const Skeleton skeleton(model);
     const std::vector<deskpet::model::NamedMorph> morphs = {
-        {"Mouth_A", 0, {}}, {"Mouth_A", 1, {}}, {"Mouth_B", 0, {}}};
+        {"Mouth_A", 0, {}, 0.0f}, {"Mouth_A", 1, {}, 0.0f}, {"Mouth_B", 0, {}, 0.0f}};
     auto clip = poseClip({});
     clip->weightTracks = {{"Mouth_A", 1, {0.5f}}, {"Mouth_C", 0, {1.0f}}};  // C는 모델에 없음
     const MotionPlayer player(skeleton, clip, morphs);

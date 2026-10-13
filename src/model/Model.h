@@ -152,6 +152,8 @@ struct NamedMorph {
     std::string name;        // 메시가 달린 노드 이름
     std::size_t target = 0;  // 그 메시의 모프 타깃 번호
     Morph morph;
+    // 클립이 가중치를 주지 않을 때 쓰는 값: 파일 안 첫 애니메이션의 첫 키, 없으면 0
+    float defaultWeight = 0.0f;
 };
 
 enum class VrmVersion : std::uint8_t { None, V0, V1 };  // None = VRM 확장 없는 일반 glTF

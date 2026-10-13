@@ -403,7 +403,7 @@ TEST(ProceduralAnimatorClip, MotionsWithoutClip_DrapeNamedBonesLikeIdleClip) {
     idle->frameCount = 1;
     const deskpet::core::Quat droop =
         deskpet::core::Quat::axisAngle({1.0f, 0.0f, 0.0f}, -std::numbers::pi_v<float> / 2.0f);
-    idle->boneTracks = {{"tail", {droop}}};  // 꼬리를 아래로 늘어뜨림
+    idle->boneTracks = {{"tail", {droop}, {}}};  // 꼬리를 아래로 늘어뜨림
     animator.setClip(Motion::Idle, idle);
 
     AnimationOutput out;
@@ -425,7 +425,7 @@ TEST(ProceduralAnimatorClip, MorphWeightsAndOffsets_ComeFromClip_AndIdleForMotio
     lid.position = {0.05f, 1.6f, 0.1f};
     model.bones.push_back(lid);
     const std::size_t kLid = model.bones.size() - 1;
-    model.morphs = {{"Mouth_A", 0, {}}, {"Mouth_B", 0, {}}};
+    model.morphs = {{"Mouth_A", 0, {}, 0.0f}, {"Mouth_B", 0, {}, 0.0f}};
 
     ProceduralAnimator animator(model);
     auto idle = std::make_shared<deskpet::model::MotionClip>();
@@ -446,6 +446,25 @@ TEST(ProceduralAnimatorClip, MorphWeightsAndOffsets_ComeFromClip_AndIdleForMotio
         // 머리에 대한 눈꺼풀 높이: 기본 0.05에서 0.03 내려감 (자세가 달라도 머리 기준)
         EXPECT_NEAR((lidNow - head).y, 0.02f, 0.01f) << static_cast<int>(motion);
     }
+}
+
+TEST(ProceduralAnimatorClip, MorphDefaultWeights_ApplyWhenNoClipGivesThem) {
+    // 클립이 없거나 클립에 그 모프의 가중치 트랙이 없으면 모델의 기본 가중치 (입이 겹치지 않게)
+    auto model = deskpet::test::makeSkeletonModel();
+    model.morphs = {{"Mouth_A", 0, {}, 1.0f}, {"Mouth_B", 0, {}, 0.0f}};
+    ProceduralAnimator animator(model);
+
+    AnimationOutput out;
+    AnimationInput input;
+    animator.evaluate(input, out);  // 클립 없음
+    EXPECT_EQ(out.morphWeights, (std::vector<float>{1.0f, 0.0f}));
+
+    auto idle = std::make_shared<deskpet::model::MotionClip>();
+    idle->frameCount = 1;
+    idle->weightTracks = {{"Mouth_B", 0, {1.0f}}};  // B만 바꿈 → A는 기본값 그대로
+    animator.setClip(Motion::Idle, idle);
+    animator.evaluate(input, out);
+    EXPECT_EQ(out.morphWeights, (std::vector<float>{1.0f, 1.0f}));
 }
 
 TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {

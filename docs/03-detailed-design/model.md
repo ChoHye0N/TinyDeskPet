@@ -130,7 +130,7 @@ PMX의 z 반전 한 번이 "왼손 → 오른손"과 "정면 −Z → +Z"를 동
 4. 머티리얼: `pbrMetallicRoughness` 기본색·텍스처, 알파 모드, 양면
 5. 본: **모든 노드**를 본으로 (인덱스 = 노드 인덱스, VRM `humanBones`가 노드 번호로 가리키므로). 위치 = 월드 행렬의 이동
 6. 휴머노이드: 확장 JSON(`cgltf_extension.data`)에서 `humanBones`만 찾는 최소 스캐너 — 1.0은 `{"hips": {"node": n}}` 객체, 0.x는 `[{"bone": "hips", "node": n, "min": {...}}]` 배열(중첩 객체를 괄호 짝 맞추기로 건너뜀). 0.x 엄지 proximal·intermediate는 1.0 metacarpal·proximal로 (`humanBoneFromVrm0Name`). VRM이 아닌 glTF는 노드 이름으로 매핑(`humanBoneFromFbxName` → 아니면 `humanBoneFromMmdName`, 한 휴머노이드 본에 처음 맞는 노드만, ADR-0015). VRM은 이름을 보지 않음
-7. 메시: 메시가 달린 모든 노드의 삼각형 프리미티브를 이어 붙임. 바인드 포즈는 아래처럼 굽기. 단, VRM이 아닌 glTF에서 휴머노이드 hips를 찾았으면 **소품 메시는 건너뜀**(ADR-0015): 스킨 관절이 모두 hips 본 아래가 아닌 메시(스킨이 없으면 메시 노드 자체가 hips 아래가 아닌 메시). 이름은 `Model::droppedProps`(로그에 표시). 일반 glTF는 메시 노드의 모프 타깃을 `Model::morphs`(노드 이름 + 타깃 번호 + 모델 공간 델타)로도 보관 → 모션의 `weights` 트랙이 가리킴 (VRM은 표정만)
+7. 메시: 메시가 달린 모든 노드의 삼각형 프리미티브를 이어 붙임. 바인드 포즈는 아래처럼 굽기. 단, VRM이 아닌 glTF에서 휴머노이드 hips를 찾았으면 **소품 메시는 건너뜀**(ADR-0015): 스킨 관절이 모두 hips 본 아래가 아닌 메시(스킨이 없으면 메시 노드 자체가 hips 아래가 아닌 메시). 이름은 `Model::droppedProps`(로그에 표시). 일반 glTF는 메시 노드의 모프 타깃을 `Model::morphs`(노드 이름 + 타깃 번호 + 모델 공간 델타 + 기본 가중치)로도 보관 → 모션의 `weights` 트랙이 가리킴 (VRM은 표정만). 기본 가중치 = 파일 안 첫 애니메이션의 그 노드·타깃 `weights` 첫 키(CUBICSPLINE은 값 묶음), 없으면 0
 
 | 노드 | 정점 변환 |
 |---|---|
@@ -282,7 +282,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 일반 glTF 본 이름 매핑(중복은 처음 것만)·VRM은 이름 무시, 몸 밖 뼈에만 붙은 소품 메시(스킨·고정) 제외, 일반 glTF 모프 타깃을 노드 이름으로 보관(VRM은 없음), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 일반 glTF 본 이름 매핑(중복은 처음 것만)·VRM은 이름 무시, 몸 밖 뼈에만 붙은 소품 메시(스킨·고정) 제외, 일반 glTF 모프 타깃을 노드 이름으로 보관(VRM은 없음)·기본 가중치는 첫 애니메이션 첫 키(없으면 0), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |

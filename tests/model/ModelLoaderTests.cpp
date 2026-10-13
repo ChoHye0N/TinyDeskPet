@@ -381,6 +381,27 @@ TEST(ModelLoader, PlainGltf_KeepsMorphTargetsByNodeName) {
     EXPECT_EQ(morphs[0].target, 0U);
     EXPECT_EQ(morphs[0].morph.vertices, (std::vector<std::uint32_t>{0, 2}));
     EXPECT_FLOAT_EQ(morphs[0].morph.deltas[1].y, -2.0f);
+    EXPECT_FLOAT_EQ(morphs[0].defaultWeight, 0.0f);  // 파일 안 애니메이션이 없으면 0
+}
+
+TEST(ModelLoader, PlainGltf_MorphDefaultWeight_ComesFromFirstAnimationFirstKey) {
+    // 입 모양 메시를 가중치로 고르는 모델은 클립이 없으면 모두 0(모두 보임)이 되므로, 파일 안 첫
+    // 애니메이션의 첫 키를 기본 가중치로 (ADR-0015)
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const int times = b.addFloats({0.0f, 1.0f}, "SCALAR");
+    const int weights = b.addFloats({1.0f, 0.0f}, "SCALAR");
+    const LoadResult result = load(
+        b.build(morphMeshJson(b, t) +
+                R"(,"nodes":[{"name":"Mouth_A","mesh":0}],"scenes":[{"nodes":[0]}],"scene":0,)"
+                R"("animations":[{"channels":[{"sampler":0,"target":{"node":0,"path":"weights"}}],)"
+                R"("samplers":[{"input":)" +
+                std::to_string(times) + R"(,"output":)" + std::to_string(weights) +
+                R"(,"interpolation":"STEP"}]}])"));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    ASSERT_EQ(result.model->morphs.size(), 1U);
+    EXPECT_FLOAT_EQ(result.model->morphs[0].defaultWeight, 1.0f);
 }
 
 TEST(ModelLoader, Vrm0BlendShape_ReadsMeshBindsWithPercentWeight) {

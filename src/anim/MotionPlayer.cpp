@@ -97,8 +97,11 @@ void MotionPlayer::bindByName(const Skeleton& skeleton, std::span<const model::N
             hidden_[static_cast<std::size_t>(found->second)] = 1;
         }
     }
-    // 모프 가중치: 노드 이름과 타깃 번호가 같은 대상 모델의 모프
-    morphCount_ = morphs.size();
+    // 모프 가중치: 노드 이름과 타깃 번호가 같은 대상 모델의 모프. 트랙이 없는 모프는 기본값
+    defaultWeights_.clear();
+    for (const model::NamedMorph& morph : morphs) {
+        defaultWeights_.push_back(morph.defaultWeight);
+    }
     for (const model::WeightTrack& track : clip_->weightTracks) {
         const auto found = std::ranges::find_if(morphs, [&](const model::NamedMorph& m) {
             return m.name == track.name && m.target == track.target;
@@ -126,7 +129,7 @@ void MotionPlayer::sampleOffsets(float time, std::vector<core::Vec3>& offsets) c
 }
 
 bool MotionPlayer::sampleWeights(float time, std::vector<float>& weights) const {
-    weights.assign(morphCount_, 0.0f);
+    weights = defaultWeights_;
     const FramePosition at = locate(time);
     for (const auto& [morph, track] : weightTracks_) {
         const std::size_t last = track->size() - 1;

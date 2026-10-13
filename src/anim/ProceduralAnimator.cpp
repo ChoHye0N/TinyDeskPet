@@ -375,7 +375,15 @@ void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressi
     const auto& clip = clips_[static_cast<std::size_t>(input.motion)];
     skeleton_.computeSkinMatrices(rotations_, out.skin, offset,
                                   clip ? clip->hidden() : std::span(proceduralHidden_), offsets_);
-    out.morphWeights = morphWeights_;
+    if (morphWeights_.empty()) {
+        // 클립이 하나도 없으면 모델의 기본 가중치 (파일 안 첫 애니메이션의 첫 키)
+        out.morphWeights.clear();
+        for (const model::NamedMorph& morph : model_.morphs) {
+            out.morphWeights.push_back(morph.defaultWeight);
+        }
+    } else {
+        out.morphWeights = morphWeights_;
+    }
     out.expressions = base;
     // 놀란 정도만큼 깜빡임을 줄임 (완전히 놀라면 깜빡이지 않음)
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];

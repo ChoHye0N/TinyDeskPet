@@ -46,7 +46,8 @@ public:
     // 대상/원본 엉덩이 높이 비율로 맞춤 (ADR-0015)
     void sampleOffsets(float time, std::vector<core::Vec3>& offsets) const;
 
-    // time(초)의 모프 가중치 (크기 = morphs 수, 트랙이 없는 모프는 0). 연결된 트랙이 없으면 false
+    // time(초)의 모프 가중치 (크기 = morphs 수, 트랙이 없는 모프는 기본 가중치). 연결된 트랙이
+    // 없으면 false
     bool sampleWeights(float time, std::vector<float>& weights) const;
 
     // 본별 숨김 여부 (1 = 숨김, 크기 = 본 수). 클립의 hiddenBones와 이름이 같은 본 (ADR-0015)
@@ -76,8 +77,8 @@ private:
     std::vector<std::uint8_t> named_;
     // 본 → 이동 오프셋 트랙, 없으면 nullptr. clip_이 소유
     std::vector<const std::vector<core::Vec3>*> offsetTracks_;
-    float offsetScale_ = 1.0f;  // 대상/원본 엉덩이 높이 (모르면 1)
-    std::size_t morphCount_ = 0;
+    float offsetScale_ = 1.0f;           // 대상/원본 엉덩이 높이 (모르면 1)
+    std::vector<float> defaultWeights_;  // 모프별 기본 가중치 (NamedMorph::defaultWeight)
     // (모프 번호, 가중치 트랙) 쌍. clip_이 소유
     std::vector<std::pair<std::size_t, const std::vector<float>*>> weightTracks_;
     mutable std::vector<core::Quat> accumulated_;  // sample 중간 결과 (할당 재사용)
