@@ -506,31 +506,74 @@ void includeTurnedPoint(core::Vec3 p, float turn, model::Bounds& bounds) {
 
 }  // namespace
 
-model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
-    constexpr float kMax = std::numeric_limits<float>::max();
-    model::Bounds bounds{{kMax, kMax, kMax}, {-kMax, -kMax, -kMax}};
-    const bool skinned = std::ranges::any_of(
-        model_.vertices, [](const model::Vertex& v) { return v.weights[0] > 0.0f; });
-    if (!skinned) {
-        if (maxTurnRadians == 0.0f) {
-            return model_.bounds;  // 움직일 정점도, 돌릴 각도도 없으면 원래 경계 그대로
+namespace {
+
+constexpr model::Bounds kEmptyBounds{
+    {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+     std::numeric_limits<float>::max()},
+    {-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
+     -std::numeric_limits<float>::max()}};
+
+bool isSkinned(const model::Model& model) {
+    return std::ranges::any_of(model.vertices,
+                               [](const model::Vertex& v) { return v.weights[0] > 0.0f; });
+}
+
+}  // namespace
+
+std::array<model::Bounds, kMotionCount> ProceduralAnimator::motionBounds(
+    float maxTurnRadians) const {
+    std::array<model::Bounds, kMotionCount> result;
+    result.fill(kEmptyBounds);
+    if (!isSkinned(model_)) {
+        model::Bounds bounds = model_.bounds;  // 움직일 정점이 없으면 원래 경계 (모든 동작 같음)
+        if (maxTurnRadians != 0.0f) {
+            // 원래 경계 상자의 꼭짓점을 돌려서 포함 (정점보다 model.bounds가 기준)
+            const model::Bounds& b = model_.bounds;
+            bounds = kEmptyBounds;
+            for (unsigned i = 0; i < 8; ++i) {
+                includeTurnedPoint(
+                    {(i & 1U) != 0 ? b.max.x : b.min.x, (i & 2U) != 0 ? b.max.y : b.min.y,
+                     (i & 4U) != 0 ? b.max.z : b.min.z},
+                    maxTurnRadians, bounds);
+            }
         }
-        // 원래 경계 상자의 꼭짓점을 돌려서 포함 (정점보다 model.bounds가 기준)
-        const model::Bounds& b = model_.bounds;
-        for (unsigned i = 0; i < 8; ++i) {
-            includeTurnedPoint(
-                {(i & 1U) != 0 ? b.max.x : b.min.x, (i & 2U) != 0 ? b.max.y : b.min.y,
-                 (i & 4U) != 0 ? b.max.z : b.min.z},
-                maxTurnRadians, bounds);
-        }
-        return bounds;
+        result.fill(bounds);
+        return result;
     }
 
     AnimationOutput out;
     for (const AnimationInput& input : boundsSamples()) {
         evaluate(input, out);
-        includePosedVertices(out.skin, maxTurnRadians, bounds);
+        includePosedVertices(out.skin, maxTurnRadians,
+                             result[static_cast<std::size_t>(input.motion)]);
     }
+    return result;
+}
+
+model::Bounds ProceduralAnimator::displayBounds(float maxTurnRadians) const {
+    model::Bounds bounds = kEmptyBounds;
+    for (const model::Bounds& b : motionBounds(maxTurnRadians)) {
+        bounds.min = {std::min(bounds.min.x, b.min.x), std::min(bounds.min.y, b.min.y),
+                      std::min(bounds.min.z, b.min.z)};
+        bounds.max = {std::max(bounds.max.x, b.max.x), std::max(bounds.max.y, b.max.y),
+                      std::max(bounds.max.z, b.max.z)};
+    }
+    return bounds;
+}
+
+model::Bounds ProceduralAnimator::standingBounds() const {
+    if (!isSkinned(model_)) {
+        return model_.bounds;
+    }
+    // 클립을 붙이지 않은 새 애니메이터로 계산 (이 객체의 클립·전환 상태와 무관하게)
+    const ProceduralAnimator plain(model_);
+    AnimationInput input;
+    input.idleMotion = false;
+    AnimationOutput out;
+    plain.evaluate(input, out);
+    model::Bounds bounds = kEmptyBounds;
+    plain.includePosedVertices(out.skin, 0.0f, bounds);
     return bounds;
 }
 

@@ -51,13 +51,35 @@ int roundToInt(float value) {
     return static_cast<int>(std::lround(value));
 }
 
-// 모든 동작 자세(+ 걸을 때 돌린 몸)의 경계 상자. 무거우므로 작업 스레드에서 부름
-model::Bounds displayBoundsFor(const model::Model& model, const Application::MotionClips& clips) {
-    anim::ProceduralAnimator animator(model);
+// 캐릭터 상태 → 애니메이션 동작 (character와 anim이 서로를 모르도록 app이 변환, SAD 규칙 R3)
+// 클립을 붙여 자세 경계 상자를 잼 (모든 동작 + 걸을 때 돌린 몸, 서 있는 자세, 동작별).
+// 무거우므로 모델 로딩·클립 변경은 작업 스레드에서 부름
+Application::PoseBounds poseBoundsFor(anim::ProceduralAnimator& animator,
+                                      const Application::MotionClips& clips) {
     for (std::size_t m = 0; m < clips.size(); ++m) {
         animator.setClip(static_cast<anim::Motion>(m), clips[m]);
     }
-    return animator.displayBounds(kWalkTurnRadians);
+    Application::PoseBounds bounds;
+    bounds.motions = animator.motionBounds(kWalkTurnRadians);
+    bounds.all = bounds.motions[0];
+    for (const model::Bounds& b : bounds.motions) {  // displayBounds와 같음 (다시 재지 않음)
+        bounds.all.min = {std::min(bounds.all.min.x, b.min.x), std::min(bounds.all.min.y, b.min.y),
+                          std::min(bounds.all.min.z, b.min.z)};
+        bounds.all.max = {std::max(bounds.all.max.x, b.max.x), std::max(bounds.all.max.y, b.max.y),
+                          std::max(bounds.all.max.z, b.max.z)};
+    }
+    bounds.standing = animator.standingBounds();
+    return bounds;
+}
+
+anim::Motion motionFor(character::State state) {
+    switch (state) {
+        case character::State::Idle: return anim::Motion::Idle;
+        case character::State::Walk: return anim::Motion::Walk;
+        case character::State::Dragged: return anim::Motion::Dragged;
+        case character::State::Airborne: return anim::Motion::Airborne;
+    }
+    return anim::Motion::Idle;
 }
 
 platform::MenuItem makeMenuItem(MenuCommand command, std::string label, bool enabled = true) {
@@ -112,15 +134,17 @@ void Application::loadModelAsync(std::filesystem::path path) {
         return;
     }
     waitForModelLoad();  // 앞선 요청이 있으면 그 결과는 버림 (마지막 요청만 반영)
-    pendingModel_ = std::async(
-        std::launch::async, [loader = modelLoader_, clips = clips_, path = std::move(path)] {
-            LoadedModel loaded{path, loader(path), {}};
-            if (loaded.model) {
-                // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은 클립으로 계산해야 맞음
-                loaded.displayBounds = displayBoundsFor(*loaded.model, clips);
-            }
-            return loaded;
-        });
+    pendingModel_ = std::async(std::launch::async,
+                               [loader = modelLoader_, clips = clips_, path = std::move(path)] {
+                                   LoadedModel loaded{path, loader(path), {}};
+                                   if (loaded.model) {
+                                       // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은
+                                       // 클립으로 계산해야 맞음
+                                       anim::ProceduralAnimator animator(*loaded.model);
+                                       loaded.bounds = poseBoundsFor(animator, clips);
+                                   }
+                                   return loaded;
+                               });
 }
 
 // 설정 창에서 클립을 바꿈: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산하고, 끝나면
@@ -135,7 +159,8 @@ void Application::refreshAnimationAsync() {
     }
     pendingModel_ =
         std::async(std::launch::async, [model = model_, clips = clips_, path = modelPath_] {
-            return LoadedModel{path, model, displayBoundsFor(*model, clips)};
+            anim::ProceduralAnimator animator(*model);
+            return LoadedModel{path, model, poseBoundsFor(animator, clips)};
         });
 }
 
@@ -160,7 +185,7 @@ void Application::applyLoadedModel() {
     for (std::size_t m = 0; m < clips_.size(); ++m) {
         animator_->setClip(static_cast<anim::Motion>(m), clips_[m]);
     }
-    displayBounds_ = loaded.displayBounds;
+    poseBounds_ = loaded.bounds;
     hasLastFeet_ = false;  // 흔들림 관성이 이전 모델 기준으로 튀지 않게
     refitCamera();
     refreshBounds();
@@ -174,11 +199,8 @@ void Application::openModelFile() {
 
 void Application::applyAnimation() {
     if (animator_) {
-        for (std::size_t m = 0; m < clips_.size(); ++m) {
-            animator_->setClip(static_cast<anim::Motion>(m), clips_[m]);
-        }
         // T포즈 폭 대신 실제로 취할 자세 + 걸을 때 돌린 몸 기준 (꼬리·치마가 옆으로 나옴)
-        displayBounds_ = animator_->displayBounds(kWalkTurnRadians);
+        poseBounds_ = poseBoundsFor(*animator_, clips_);
     }
     refitCamera();
     refreshBounds();  // 그려지는 폭이 바뀌었으므로 벽 위치도 다시 계산
@@ -186,14 +208,17 @@ void Application::applyAnimation() {
 
 void Application::refitCamera() {
     if (model_) {
-        const model::Bounds& fit = displayBounds_;
+        const model::Bounds& fit = poseBounds_.standing;
+        const model::Bounds& all = poseBounds_.all;
         core::logging::debug(
-            "화면 맞춤 경계 (m): x {:.2f} ~ {:.2f}, y {:.2f} ~ {:.2f}, z {:.2f} ~ {:.2f}",
-            fit.min.x, fit.max.x, fit.min.y, fit.max.y, fit.min.z, fit.max.z);
-        // 바닥은 서 있을 때의 발바닥(기본 자세의 맨 아래). 자세 경계 상자 아래에 맞추면 대기 클립이
-        // 잠깐 웅크리는 순간 등이 있을 때 평소 그만큼 떠 보임. 더 낮은 자세는 화면 아래로 나감
-        const float ground = std::max(displayBounds_.min.y, model_->bounds.min.y);
-        camera_ = fitCameraToBounds(displayBounds_, boxSize_, ground);
+            "화면 맞춤 경계 (m): 서 있는 자세 x {:.2f} ~ {:.2f}, y {:.2f} ~ {:.2f} / 모든 동작 x "
+            "{:.2f} ~ {:.2f}, y {:.2f} ~ {:.2f}, z {:.2f} ~ {:.2f}",
+            fit.min.x, fit.max.x, fit.min.y, fit.max.y, all.min.x, all.max.x, all.min.y, all.max.y,
+            all.min.z, all.max.z);
+        // 크기·바닥은 서 있는 자세(클립과 무관)로: 모든 동작 상자로 정하면 클립을 바꿀 때마다
+        // 캐릭터 크기가 바뀌고, 잠깐 웅크리는 순간이 있으면 평소 그만큼 떠 보임. 상자 밖으로
+        // 뻗는 동작은 그리는 영역·벽 계산이 모든 동작 상자를 쓰므로 잘리지 않음
+        camera_ = fitCameraToBounds(fit, boxSize_, all);
         // 발 평면에서 1m가 화면에서 몇 px인지 → 창이 움직인 px를 모델 공간 m로 바꿀 때 씀
         const core::Vec4 a = core::transform({0.0f, 0.0f, 0.0f}, camera_);
         const core::Vec4 b = core::transform({0.0f, 1.0f, 0.0f}, camera_);
@@ -210,12 +235,7 @@ void Application::updateAnimation(float dt) {
     }
     const character::Pose pose = character_.pose();
     anim::AnimationInput input;
-    switch (pose.state) {
-        case character::State::Idle: input.motion = anim::Motion::Idle; break;
-        case character::State::Walk: input.motion = anim::Motion::Walk; break;
-        case character::State::Dragged: input.motion = anim::Motion::Dragged; break;
-        case character::State::Airborne: input.motion = anim::Motion::Airborne; break;
-    }
+    input.motion = motionFor(pose.state);
     input.time = pose.time;
     input.squash = pose.squash;
     input.blink = pose.eyesClosed;
@@ -275,7 +295,7 @@ std::optional<core::Vec3> Application::lookTarget() const {
         return std::nullopt;
     }
     // 화면 기준 (오른쪽 +X, 위 +Y, 카메라 쪽 +Z) → 몸을 돌린 만큼 반대로 돌려 모델 축으로
-    const float depth = kDepthHeights * displayBounds_.size().y;
+    const float depth = kDepthHeights * poseBounds_.standing.size().y;
     const core::Vec3 offset{dx * metersPerPixel_, -dy * metersPerPixel_, depth};
     return headModel + core::Quat::axisAngle({0.0f, 1.0f, 0.0f}, -turnRadians_).rotate(offset);
 }
@@ -709,7 +729,7 @@ core::RectI Application::visibleRect() const {
     const auto width = static_cast<float>(boxSize_.width);
     const auto height = static_cast<float>(boxSize_.height);
     if (model_) {
-        return modelVisibleRect();
+        return projectedRect(poseBounds_.all);
     }
     const character::Params& params = character_.params();
 
@@ -758,11 +778,9 @@ void Application::updateClickThrough() {
     window_->setClickThrough(!overCharacter);
 }
 
-// 모델 경계 상자 8개 꼭짓점을 화면에 투영한 사각형
-core::RectI Application::modelVisibleRect() const {
+core::RectI Application::projectedRect(const model::Bounds& b) const {
     const auto width = static_cast<float>(boxSize_.width);
     const auto height = static_cast<float>(boxSize_.height);
-    const model::Bounds& b = displayBounds_;
 
     float left = width;
     float top = height;
@@ -782,20 +800,21 @@ core::RectI Application::modelVisibleRect() const {
         bottom = std::max(bottom, y);
     }
 
-    core::RectI rect{roundToInt(left), roundToInt(top), roundToInt(right), roundToInt(bottom)};
-    rect.left = std::clamp(rect.left, 0, boxSize_.width);
-    rect.top = std::clamp(rect.top, 0, boxSize_.height);
-    rect.right = std::clamp(rect.right, 0, boxSize_.width);
-    rect.bottom = std::clamp(rect.bottom, 0, boxSize_.height);
-    return rect;
+    // 좌우·위는 상자로 자르지 않음: 크기는 서 있는 자세로 맞추므로 팔을 벌리거나 뛰어오르는 동작은
+    // 상자 밖으로 나감. 벽·그리는 영역이 그 부분까지 담아야 화면 끝에서 넘거나 잘리지 않음.
+    // 아래는 발(상자 바닥)까지: 그보다 낮은 자세는 바닥 아래라 보이지 않고, 모니터 판정은 발 기준
+    return {roundToInt(left), roundToInt(top), roundToInt(right),
+            std::min(roundToInt(bottom), boxSize_.height)};
 }
 
-// 3D가 그려질 영역 (오버레이 px): 몸 자세 범위(모든 동작의 경계 상자 투영) ∪ 지금 본 위치
-// (흔들리는 머리카락 포함)의 투영 범위, 메시 두께·외곽선 여유를 더함. 렌더러가 3D·MSAA를 이
-// 크기로만 그림 → 대기 중에는 상자 크기 정도라 화면 전체·고정 여유보다 훨씬 쌈 (ADR-0011)
+// 3D가 그려질 영역 (오버레이 px): 지금 동작의 자세 범위(그 동작 경계 상자 투영) ∪ 지금 본 위치
+// (흔들리는 머리카락, 동작 전환 중 자세 포함)의 투영 범위, 메시 두께·외곽선 여유를 더함.
+// 렌더러가 3D·MSAA를 이 크기로만 그림 → 대기 중에는 상자 크기 정도라 화면 전체·고정 여유보다
+// 훨씬 쌈 (ADR-0011). 모든 동작 상자를 쓰면 크게 팔을 드는 클립 하나 때문에 늘 넓게 그림
 core::RectI Application::sceneRegionFor(const core::Mat4& viewProjection) const {
     const core::PointI offset = boxOffset();
-    const core::RectI body = visibleRect();
+    const core::RectI body = projectedRect(
+        poseBounds_.motions[static_cast<std::size_t>(motionFor(character_.pose().state))]);
     auto left = static_cast<float>(offset.x + body.left);
     auto top = static_cast<float>(offset.y + body.top);
     auto right = static_cast<float>(offset.x + body.right);

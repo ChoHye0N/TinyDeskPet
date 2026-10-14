@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using deskpet::app::Application;
@@ -386,10 +387,11 @@ TEST_F(ApplicationTest, WithModel_HitRegionCoversProjectedModel) {
     app->setModel(makeHumanoidModel());
     (void)app->run();
 
-    // T포즈(폭 1.5 > 키 1.6 × 창 비율 1)라 거의 창 전체 폭을 차지
+    // T포즈(폭 1.5 > 키 1.6 × 창 비율 1)라 거의 창 전체 폭을 차지. 걸을 때 돌린 몸까지 담으므로
+    // 상자를 조금 넘을 수 있음 (크기는 서 있는 자세로 맞춤)
     const core::RectI hit = app->visibleRect();
-    EXPECT_GE(hit.left, 0);
-    EXPECT_LE(hit.right, 200);
+    EXPECT_GE(hit.left, -20);
+    EXPECT_LE(hit.right, 220);
     EXPECT_GT(hit.width(), 180);
     EXPECT_GT(hit.height(), 150);
     EXPECT_LE(hit.bottom, 200);
@@ -565,7 +567,15 @@ TEST_F(ApplicationTest, SavedPositionOutsideDesktop_IsIgnored) {
 namespace {
 
 std::shared_ptr<const deskpet::model::Model> makeSkinnedModel() {
-    return std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    // 정수리 정점 (머리 본, 12): 실제 모델처럼 몸 메시가 머리까지 덮게 (화면 크기 = 서 있는 자세)
+    deskpet::model::Vertex top;
+    top.position = {0.0f, 1.65f, 0.0f};
+    top.joints[0] = 12;
+    top.weights[0] = 1.0f;
+    model->vertices.push_back(top);
+    model->bounds = deskpet::model::computeBounds(model->vertices);
+    return model;
 }
 
 constexpr std::size_t kSurprised = static_cast<std::size_t>(deskpet::model::Expression::Surprised);
@@ -755,24 +765,58 @@ TEST_F(ApplicationTest, Overlay_StartsOnMonitorOfSavedPosition) {
 }
 
 TEST_F(ApplicationTest, SceneRegion_FitsCurrentPoseNotFixedMargin) {
-    // 렌더러는 3D를 이 영역만 그림 → 몸 자세 범위(visibleRect)를 포함하되, 예전 고정 여유
+    // 렌더러는 3D를 이 영역만 그림 → 대기 중에는 상자 정도라 예전 고정 여유
     // (좌우 0.75배·위로 상자 높이)보다 훨씬 작아야 MSAA 비용이 줄어듦
-    window_.frames.push_back({core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
-    window_.frames.push_back({core::PointerMoveEvent{{900.0f, 700.0f}}});
-    window_.pollsBeforeQuit = 4;
+    window_.pollsBeforeQuit = 3;
     auto app = makeApp();
     app->setModel(makeSkinnedModel());
     (void)app->run();
 
     const core::RectI region = renderer_.lastScene.sceneRegion;
     const core::RectI box = app->characterRect();  // 오버레이 원점이 (0, 0)이라 좌표가 같음
-    const core::RectI body = app->visibleRect();  // 상자 내부 좌표
-    EXPECT_LE(region.left, box.left + body.left);
-    EXPECT_GE(region.right, box.left + body.right);
-    EXPECT_LE(region.top, box.top + body.top);
-    EXPECT_GE(region.bottom, box.top + body.bottom);
+    EXPECT_LE(region.top, box.top + box.height() / 10);  // 머리까지 (상자 위 여백 2%)
+    EXPECT_GE(region.bottom, box.bottom);
     EXPECT_LT(region.width(), box.width() * 3 / 2);
     EXPECT_LT(region.height(), box.height() * 3 / 2);
+}
+
+TEST_F(ApplicationTest, SceneRegion_GrowsOnlyWhileLargerMotionPlays) {
+    // 끌려 다닐 때 팔을 드는 클립: 그 동작 중에만 영역이 위로 넓어지고 (잘리지 않음), 대기
+    // 중에는 상자 정도. 화면 크기(1m당 px)는 클립이 없을 때와 같음
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 1;
+    clip->track(deskpet::model::HumanBone::LeftUpperArm) = {
+        deskpet::core::Quat::axisAngle({0.0f, 0.0f, 1.0f}, 1.5707963f)};
+    Application::MotionClips clips{};
+    clips[static_cast<std::size_t>(deskpet::anim::Motion::Dragged)] = clip;
+    const auto model = makeSkinnedModel();
+    const auto run = [&](bool drag, bool withClip) {
+        window_.frames.clear();
+        if (drag) {
+            window_.frames.push_back(
+                {core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+            window_.frames.push_back({core::PointerMoveEvent{{900.0f, 700.0f}}});
+        }
+        window_.pollsBeforeQuit = 4;
+        auto app = makeApp();
+        if (withClip) {
+            app->setMotionClips(clips);
+        }
+        app->setModel(model);
+        (void)app->run();
+        const core::RectI box = app->characterRect();
+        const core::RectI region = renderer_.lastScene.sceneRegion;
+        const auto& vp = renderer_.lastScene.character.viewProjection;
+        const auto a = deskpet::core::transform({0.0f, 0.0f, 0.0f}, vp);
+        const auto b = deskpet::core::transform({0.0f, 1.0f, 0.0f}, vp);
+        return std::tuple{box, region, a.y / a.w - b.y / b.w};
+    };
+    const auto [idleBox, idleRegion, idleScale] = run(false, true);
+    EXPECT_LT(idleRegion.height(), idleBox.height() * 3 / 2);
+    const auto [dragBox, dragRegion, dragScale] = run(true, true);
+    EXPECT_LT(dragRegion.top, dragBox.top);  // 든 팔이 상자 위로 나감 → 영역도 위로
+    const auto [plainBox, plainRegion, plainScale] = run(false, false);
+    EXPECT_NEAR(idleScale, plainScale, 1e-5f);  // 클립을 넣어도 크기 그대로
 }
 
 TEST_F(ApplicationTest, SceneRegion_IncludesBonesOutsideBodyEnvelope) {

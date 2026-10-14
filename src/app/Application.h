@@ -69,6 +69,13 @@ public:
     using MotionClips = std::array<std::shared_ptr<const model::MotionClip>, anim::kMotionCount>;
     void setMotionClips(MotionClips clips);
 
+    // 자세 경계 상자 (모델 공간 m). 클립이 바뀌면 다시 계산 (standing은 클립과 무관)
+    struct PoseBounds {
+        model::Bounds all;       // 모든 동작: 벽·깊이 범위
+        model::Bounds standing;  // 서 있는 자세: 화면 크기·바닥 기준
+        std::array<model::Bounds, anim::kMotionCount> motions{};  // 동작별: 그리기 영역
+    };
+
     // 모델 파일을 읽는 함수 (실패하면 nullptr). 작업 스레드에서 불리므로 스레드 안전해야 함
     using ModelLoader =
         std::function<std::shared_ptr<const model::Model>(const std::filesystem::path&)>;
@@ -105,8 +112,10 @@ public:
     // 현재 캐릭터 크기 (%). 종료할 때 [state] scale로 저장
     [[nodiscard]] int scalePercent() const noexcept { return scalePercent_; }
 
-    // 캐릭터 상자 안에서 캐릭터가 그려질 수 있는 영역 (상자 내부 px). 벽(FR-17) 계산에 씀.
-    // 슬라임은 몸 타원을 감싸는 사각형, 모델은 모든 자세의 경계 상자를 투영한 사각형
+    // 캐릭터가 그려질 수 있는 영역 (상자 왼쪽 위 기준 px). 벽(FR-17) 계산에 씀.
+    // 슬라임은 몸 타원을 감싸는 사각형, 모델은 모든 자세의 경계 상자를 투영한 사각형 (크기는 서
+    // 있는 자세로 맞추므로 큰 동작은 상자 밖으로 나가 음수이거나 상자보다 클 수 있음. 아래는
+    // 발까지)
     [[nodiscard]] core::RectI visibleRect() const;
 
     // 캐릭터 상자 (화면 좌표). 발 = 상자 아래 가운데. 크기 = 설정 × DPI × 사용자 배율
@@ -144,7 +153,8 @@ private:
 
     [[nodiscard]] core::PointI boxOffset() const;  // 상자 좌상단 (오버레이 내부 px)
     [[nodiscard]] core::Mat4 boxToOverlay() const;  // 상자 기준 클립 좌표 → 오버레이 클립 좌표
-    [[nodiscard]] core::RectI modelVisibleRect() const;
+    // 모델 공간 경계 상자 8개 꼭짓점을 투영한 사각형 (상자 왼쪽 위 기준 px, 아래는 발까지)
+    [[nodiscard]] core::RectI projectedRect(const model::Bounds& bounds) const;
     void updateClickThrough();
     [[nodiscard]] core::RectI sceneRegionFor(const core::Mat4& viewProjection) const;
     [[nodiscard]] renderer::RenderScene buildScene() const;
@@ -187,13 +197,13 @@ private:
     struct LoadedModel {
         std::filesystem::path path;
         std::shared_ptr<const model::Model> model;
-        model::Bounds displayBounds;
+        PoseBounds bounds;
     };
     ModelLoader modelLoader_;
     std::future<LoadedModel> pendingModel_;
     std::filesystem::path modelPath_;
     anim::AnimationOutput animation_;  // 매 프레임 재사용
-    model::Bounds displayBounds_;  // 카메라·클릭 영역 기준 (애니메이션 자세 포함)
+    PoseBounds poseBounds_;
     float metersPerPixel_ = 0.0f;  // 발 평면(z = 0)에서 창 1px = 모델 공간 몇 m (흔들림 관성용)
     core::Vec2 lastFeet_;  // 직전에 흔들림에 넘긴 발 위치 (화면 px)
     bool hasLastFeet_ = false;

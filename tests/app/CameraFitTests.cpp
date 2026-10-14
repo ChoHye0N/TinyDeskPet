@@ -96,20 +96,23 @@ TEST(CameraFit, FeetAreHorizontallyCenteredEvenForLopsidedBounds) {
     }
 }
 
-TEST(CameraFit, GroundLevelTouchesBottomEvenIfSomePoseGoesLower) {
-    // 대기 클립 중 잠깐 웅크리는 자세 등으로 상자 아래가 발바닥보다 낮아도, 서 있을 때의 발바닥
-    // (groundY)을 화면 바닥에 맞춤. 상자 아래(min.y)에 맞추면 평소에 그만큼 떠 보임
-    constexpr Bounds kCrouching{{-0.5f, -0.12f, -0.2f}, {0.5f, 1.1f, 0.2f}};
-    const Mat4 camera = fitCameraToBounds(kCrouching, {400, 400}, 0.0f);
-    const auto feet = deskpet::core::transform({0.0f, 0.0f, 0.0f}, camera);
-    EXPECT_NEAR(feet.y / feet.w, -1.0f, 1e-4f);
-    // 키는 발바닥 ~ 머리(1.1m)로 맞춤: 머리가 위 여백 안에 들고, 낮은 자세는 바닥 아래로
-    float top = -1.0f;
-    for (const Vec3& p : projectCorners(kCrouching, camera)) {
-        top = std::max(top, p.y);
-        EXPECT_LE(p.y, 1.0f);
+TEST(CameraFit, ScaleComesFromStandingPoseNotFromOtherPoses) {
+    // 크기는 서 있는 자세로만 정함: 다른 동작이 더 크거나 낮아도 1m의 화면 크기와 발 위치가 같음
+    // (클립을 바꿀 때마다 캐릭터가 커졌다 작아지지 않게). 더 낮은 자세는 화면 아래로 나감
+    constexpr Bounds kStanding{{-0.3f, 0.0f, -0.15f}, {0.3f, 1.1f, 0.15f}};
+    constexpr Bounds kAllPoses{{-0.9f, -0.12f, -0.6f}, {0.9f, 1.6f, 0.7f}};
+    const Mat4 alone = fitCameraToBounds(kStanding, {400, 400});
+    const Mat4 withPoses = fitCameraToBounds(kStanding, {400, 400}, kAllPoses);
+    for (const Vec3 p : {Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}}) {
+        const auto a = deskpet::core::transform(p, alone);
+        const auto b = deskpet::core::transform(p, withPoses);
+        EXPECT_NEAR(a.y / a.w, b.y / b.w, 1e-4f);
     }
-    EXPECT_GT(top, 0.9f);
-    const auto low = deskpet::core::transform({0.0f, -0.12f, 0.0f}, camera);
-    EXPECT_LT(low.y / low.w, -1.0f);
+    const auto feet = deskpet::core::transform({0.0f, 0.0f, 0.0f}, withPoses);
+    EXPECT_NEAR(feet.y / feet.w, -1.0f, 1e-4f);
+    // 깊이 범위는 모든 동작을 담음 (앞으로 크게 나온 자세가 근평면에 잘리지 않게)
+    for (const Vec3& p : projectCorners(kAllPoses, withPoses)) {
+        EXPECT_GT(p.z, 0.0f);
+        EXPECT_LT(p.z, 1.0f);
+    }
 }
