@@ -77,12 +77,14 @@ struct Pixels {
     UINT width = 0;
     UINT height = 0;
     std::vector<BYTE> rgba;
+    int keptTexels = 0;  // 여백 채우기에서 점·선 삼각형 때문에 보존한 텍셀 수
 };
 
 // CPU 단계: 디코딩 → 긴 변 512 이하로 축소 → RGBA8 → UV 섬 바깥 여백 채우기. GPU를 쓰지 않으므로
 // 작업 스레드에서도 부를 수 있음 (그 스레드에서 COM 초기화 필요)
 std::optional<Pixels> preparePixels(IWICImagingFactory* wic, const model::Texture& image,
-                                    std::span<const model::UvTriangle> islands) {
+                                    std::span<const model::UvTriangle> islands,
+                                    core::TexturePadding padding) {
     const ComPtr<IWICBitmapSource> decoded =
         image.rgba.empty() ? decode(wic, image.encoded) : wrapPixels(wic, image);
     if (!decoded) {
@@ -130,8 +132,9 @@ std::optional<Pixels> preparePixels(IWICImagingFactory* wic, const model::Textur
         return std::nullopt;
     }
     // 밉맵을 만들기 전에 해야 작은 밉 단계에도 여백 색(보통 검정)이 섞이지 않음
-    model::padUvIslands(out.rgba, static_cast<int>(out.width), static_cast<int>(out.height),
-                        islands, kPaddingTexels);
+    out.keptTexels =
+        model::padUvIslands(out.rgba, static_cast<int>(out.width), static_cast<int>(out.height),
+                            islands, kPaddingTexels, padding);
     return out;
 }
 
@@ -180,14 +183,15 @@ ComPtr<ID3D11ShaderResourceView> createTexture(IWICImagingFactory* wic, ID3D11De
         }
         return upload(device, context, width, height, image.rgba.data());
     }
-    const std::optional<Pixels> pixels = preparePixels(wic, image, islands);
+    const std::optional<Pixels> pixels =
+        preparePixels(wic, image, islands, core::TexturePadding::Auto);
     if (!pixels) {
         return nullptr;
     }
     return upload(device, context, pixels->width, pixels->height, pixels->rgba.data());
 }
 
-int prepareTextures(model::Model& model) {
+int prepareTextures(model::Model& model, core::TexturePadding padding) {
     ComPtr<IWICImagingFactory> wic;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&wic)))) {
@@ -201,9 +205,13 @@ int prepareTextures(model::Model& model) {
         }
         const std::vector<model::UvTriangle> islands =
             model::collectUvTriangles(model, static_cast<int>(i));
-        std::optional<Pixels> pixels = preparePixels(wic.Get(), texture, islands);
+        std::optional<Pixels> pixels = preparePixels(wic.Get(), texture, islands, padding);
         if (!pixels) {
             continue;  // 렌더러가 다시 시도하고 실패를 로그에 남김
+        }
+        if (pixels->keptTexels > 0) {
+            core::logging::info("텍스처 {}: 점·선으로 찍어 쓰는 색 {}텍셀을 여백 채우기에서 보존",
+                                texture.name, pixels->keptTexels);
         }
         texture.width = static_cast<int>(pixels->width);
         texture.height = static_cast<int>(pixels->height);

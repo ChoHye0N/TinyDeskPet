@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -34,6 +35,9 @@ namespace {
 using namespace deskpet;
 namespace logging = core::logging;
 namespace fs = std::filesystem;
+
+// 텍스처 여백 채우기 방식 (설정, 설정 창에서 바뀜). 모델 로더가 작업 스레드에서 읽음
+std::atomic<core::TexturePadding> gTexturePadding{core::TexturePadding::Auto};
 
 fs::path executableDirectory() {
     std::wstring buffer(MAX_PATH, L'\0');
@@ -174,7 +178,8 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
     {
         const WorkerCom com;
         if (com.usable()) {
-            preparedTextures = renderer::d3d11::prepareTextures(*result.model);
+            preparedTextures =
+                renderer::d3d11::prepareTextures(*result.model, gTexturePadding.load());
         }
     }
     const model::Model& m = *result.model;
@@ -328,6 +333,9 @@ int runApplication(HINSTANCE instance) {
     });
     application.setUiFont(systemUiFont());
     application.setUiDarkTheme(appsUseDarkTheme());
+    gTexturePadding = loaded.config.renderer.texturePadding;
+    application.setTexturePaddingHandler(
+        [](core::TexturePadding padding) { gTexturePadding = padding; });
     // 큰 모델은 읽는 데 1초 넘게 걸리므로 작업 스레드에서 (그동안 창·메뉴는 바로 동작)
     application.setModelLoader(&loadModel);
     const fs::path configuredModel = loaded.config.model.path.empty()

@@ -113,6 +113,20 @@ ApplyResult assignOutline(std::string_view value, OutlineMode& out) {
     return std::nullopt;
 }
 
+ApplyResult assignPadding(std::string_view value, TexturePadding& out) {
+    const std::string lower = toLower(value);
+    if (lower == "auto") {
+        out = TexturePadding::Auto;
+    } else if (lower == "on") {
+        out = TexturePadding::On;
+    } else if (lower == "off") {
+        out = TexturePadding::Off;
+    } else {
+        return std::string("auto/on/off 중 하나가 아닙니다");
+    }
+    return std::nullopt;
+}
+
 ApplyResult assignLevel(std::string_view value, logging::Level& out) {
     if (const auto parsed = logging::parseLevel(value)) {
         out = *parsed;
@@ -164,6 +178,10 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.renderer.debugLayer); }},
         {"renderer.outline",
          [](std::string_view v, AppConfig& c) { return assignOutline(v, c.renderer.outline); }},
+        {"renderer.texture_padding",
+         [](std::string_view v, AppConfig& c) {
+             return assignPadding(v, c.renderer.texturePadding);
+         }},
         {"renderer.msaa",
          [](std::string_view v, AppConfig& c) { return assignSampleCount(v, c.renderer.msaa); }},
         {"model.path",

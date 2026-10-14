@@ -1341,6 +1341,46 @@ TEST_F(ApplicationTest, GraphicsSettings_AreAppliedToRendererAndSaved) {
     EXPECT_TRUE(h.has("renderer", "outline", "off"));
 }
 
+TEST_F(ApplicationTest, TexturePaddingSetting_ReloadsModelAndSaves) {
+    // 여백 채우기는 텍스처를 준비할 때 하므로 바꾸면 로더에 알리고 지금 모델을 다시 읽음
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    const auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    std::vector<std::filesystem::path> loads;
+    std::vector<deskpet::core::TexturePadding> handled;
+    window_.pollsBeforeQuit = 3;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    app->setModelLoader([&](const std::filesystem::path& path) {
+        loads.push_back(path);
+        return std::shared_ptr<const deskpet::model::Model>(model);
+    });
+    app->setTexturePaddingHandler(
+        [&](deskpet::core::TexturePadding padding) { handled.push_back(padding); });
+    app->loadModelAsync("C:/models/pet.glb");
+    app->waitForModelLoad();
+    (void)app->run();  // 읽은 모델 반영
+    ASSERT_EQ(app->modelPath(), std::filesystem::path("C:/models/pet.glb"));
+
+    app->applySettingsAction({Kind::SetTexturePadding,
+                              0,
+                              {},
+                              static_cast<int>(deskpet::core::TexturePadding::Off),
+                              false});
+    app->applySettingsAction(  // 같은 값이면 다시 읽지 않음
+        {Kind::SetTexturePadding,
+         0,
+         {},
+         static_cast<int>(deskpet::core::TexturePadding::Off),
+         false});
+    app->waitForModelLoad();
+
+    EXPECT_EQ(handled,
+              (std::vector<deskpet::core::TexturePadding>{deskpet::core::TexturePadding::Off}));
+    EXPECT_EQ(loads.size(), 2U);
+    EXPECT_TRUE(h.has("renderer", "texture_padding", "off"));
+}
+
 TEST_F(ApplicationTest, WindowAndMovementSettings_AreAppliedAndSaved) {
     using Kind = deskpet::ui::SettingsAction::Kind;
     auto app = makeApp();

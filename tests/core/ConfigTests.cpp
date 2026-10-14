@@ -8,6 +8,7 @@
 using deskpet::core::AppConfig;
 using deskpet::core::loadConfigFile;
 using deskpet::core::parseConfig;
+using deskpet::core::TexturePadding;
 namespace logging = deskpet::core::logging;
 
 namespace {
@@ -55,6 +56,7 @@ scale = 10
 vsync = false
 debug_layer = true
 msaa = 8
+texture_padding = off
 
 [log]
 level = debug
@@ -77,6 +79,7 @@ to_file = no
     EXPECT_FALSE(c.renderer.vsync);
     EXPECT_TRUE(c.renderer.debugLayer);
     EXPECT_EQ(c.renderer.msaa, 8);
+    EXPECT_EQ(c.renderer.texturePadding, TexturePadding::Off);
     EXPECT_EQ(c.log.level, logging::Level::Debug);
     EXPECT_FALSE(c.log.toFile);
 }

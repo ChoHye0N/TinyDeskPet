@@ -273,6 +273,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetWalk` / `SetGravity` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `walk_speed`, `drag_threshold` |
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
+| `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 로더가 쓰는 값, 작업 스레드에서 읽으므로 atomic) → 지금 모델을 `loadModelAsync`로 다시 읽음 (여백 채우기는 텍스처를 준비할 때). 같은 값이면 아무것도 안 함 | `[renderer] texture_padding` (auto·on·off) |
 
 - **클립을 바꾼 뒤 (`refreshAnimationAsync`)**: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산(`displayBoundsFor`, 큰 모델은 수백 ms). 결과는 모델 읽기와 같은 `pendingModel_` → `applyLoadedModel`이 새 클립으로 애니메이터를 교체. 읽던 모델이 있으면 먼저 반영(덮어쓰면 그 결과를 잃음). 모델이 없으면 클립만 바꿈
 - **main (`main_win32.cpp`)**: `ClipLoader` = 동작 하나 읽기(`loadMotionClip`, 로그 포함), `SettingsWriter` = `core::saveConfigValues(deskpet.ini)`, 글꼴 = `%WINDIR%\Fonts\malgun.ttf`, 어두운 테마 = 레지스트리 `HKCU\…\Themes\Personalize\AppsUseLightTheme == 0`
@@ -303,6 +304,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | 머리 옆 커서 → 그쪽으로 고개, 설정으로 끄거나 커서가 멀면 정면 | FR-28 |
 | `GroundTests`: 창이 없으면 작업 영역 바닥, 발 아래 윗변, 발 x 밖·발 위 창 무시(서 있을 때 위쪽 여유 안이면 사용), 가장 높은 윗변, 앞 창에 가려진 윗변 무시, 작업 영역 아래 창 무시 / 앱: 창 위로 떨어뜨리면 윗변에 착지, 창이 닫히면 떨어짐, 설정으로 끄면 무시, 저장 위치가 창 위면 그 창에 착지 | M6 |
 | 메뉴는 설정·위치 초기화·숨기기·종료만, 설정 창 크기 조절(50~200%로 제한, 발은 바닥 그대로), 작업 스레드로 읽은 모델이 다음 프레임에 나타남, 첫 모델을 읽는 동안 아무것도 그리지 않음, 실패하면 지금 모델 유지, 대화상자로 고른 파일을 읽음·취소하면 아무것도 안 함 | FR-23 |
+| 설정 창에서 텍스처 여백 채우기를 바꾸면 로더에 알리고 지금 모델을 다시 읽음, 같은 값이면 다시 읽지 않음, `texture_padding`에 저장 | — |
 | 더블클릭: 상호작용 클립이 있으면 제자리에서 클립 길이만큼 Interact 뒤 대기(뛰지 않음), 없으면 점프. 설정 창 상호작용 슬롯은 `interact_clip`에 저장하고 반복 시작 없이 읽음. 크기는 10~200%로 제한 | FR-13, FR-06 |
 | 메뉴 "설정…" → 설정 창이 캐릭터 옆에 열리고 매 프레임 그려짐(`uiFrame`이 바뀜), 설정 창 위에서 누르고 끌어도 캐릭터를 끌지 않고 창이 클릭을 받음, 닫기 버튼으로 닫으면 빈 곳이 다시 클릭 통과, 설정 동작이 적용되고 바로 저장됨(클립은 설정의 반복 시작 시각으로 읽음), 기본 동작으로 되돌리면 읽지 않고 빈 값 저장 | ADR-0016 |
 

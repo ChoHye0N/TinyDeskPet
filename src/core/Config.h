@@ -17,6 +17,11 @@ namespace deskpet::core {
 // 외곽선 (반전 헐) 대상: 모델이 지정한 재질만 / 모든 불투명 재질 / 끔
 enum class OutlineMode : std::uint8_t { Model, All, Off };
 
+// 텍스처 여백 채우기 (UV 섬 밖을 섬 색으로 채워 이음매 선 방지, model.md §4.8).
+// Auto: 점·선으로 색을 찍는 삼각형(넓이가 텍셀 하나보다 작음)이 쓰는 텍셀은 보존
+// On: 섬 밖을 모두 채움 (예전 방식). Off: 채우지 않음
+enum class TexturePadding : std::uint8_t { Auto, On, Off };
+
 struct WindowConfig {
     int width = 200;
     int height = 200;
@@ -45,6 +50,7 @@ struct RendererConfig {
 #else
     bool debugLayer = true;
 #endif
+    TexturePadding texturePadding = TexturePadding::Auto;
 };
 
 struct ModelConfig {

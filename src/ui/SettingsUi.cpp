@@ -566,10 +566,20 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
             {SettingsAction::Kind::SetOutline, 0, {}, static_cast<int>(*picked), false});
     }
     ImGui::Spacing();
+
+    ImGui::TextDisabled("텍스처 여백 채우기");
+    if (const auto picked =
+            segmented("##padding", std::array<const char*, 3>{"자동", "모두 채움", "끔"},
+                      static_cast<std::size_t>(state.texturePadding), p, s)) {
+        actions.push_back(
+            {SettingsAction::Kind::SetTexturePadding, 0, {}, static_cast<int>(*picked), false});
+    }
+    ImGui::Spacing();
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled(
         "수직 동기화를 끄면 CPU 사용률이 크게 오릅니다. 안티에일리어싱은 높을수록 테두리가 "
-        "매끄럽지만 GPU 부담이 늘어납니다.");
+        "매끄럽지만 GPU 부담이 늘어납니다. 모델 색이 이상하면 텍스처 여백 채우기를 바꿔 보세요 "
+        "(바꾸면 모델을 다시 읽습니다).");
     ImGui::PopTextWrapPos();
 }
 

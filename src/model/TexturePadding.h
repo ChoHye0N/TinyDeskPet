@@ -8,6 +8,7 @@
 // 맞닿는 이음매(몸통 중앙, 입 테두리 등)에 얇은 선이 생깁니다. 여백을 섬 색으로 미리 채워 두면
 // 섞여도 같은 색이라 선이 생기지 않습니다 (게임 엔진이 텍스처를 구울 때 하는 표준 처리).
 
+#include "core/Config.h"
 #include "core/Math.h"
 #include "model/Model.h"
 
@@ -22,9 +23,12 @@ using UvTriangle = std::array<core::Vec2, 3>;
 
 // rgba: width × height × 4 (RGBA8, 왼쪽 위 원점). triangles: 이 텍스처를 쓰는 삼각형의 UV.
 // 섬에 덮이지 않은 텍셀을 maxDistance 픽셀까지 이웃 섬 색의 평균으로 채웁니다.
-// UV는 반복(REPEAT)으로 해석합니다. 삼각형이 없으면 아무것도 하지 않습니다.
-void padUvIslands(std::span<std::uint8_t> rgba, int width, int height,
-                  std::span<const UvTriangle> triangles, int maxDistance);
+// UV는 반복(REPEAT)으로 해석합니다. 삼각형이 없거나 mode = Off면 아무것도 하지 않습니다.
+// Auto면 넓이가 텍셀 하나보다 작거나 아주 가는 삼각형(점·선으로 색 칸을 찍어 씀)이 선형 필터로
+// 읽는 텍셀(꼭짓점·변 둘레 2×2)도 섬으로 봐서 덮어쓰지 않습니다. 반환: 그렇게 보존한 텍셀 수
+int padUvIslands(std::span<std::uint8_t> rgba, int width, int height,
+                 std::span<const UvTriangle> triangles, int maxDistance,
+                 core::TexturePadding mode = core::TexturePadding::Auto);
 
 // baseColorTexture가 textureIndex인 머티리얼로 그리는 삼각형들의 UV
 [[nodiscard]] std::vector<UvTriangle> collectUvTriangles(const Model& model, int textureIndex);
