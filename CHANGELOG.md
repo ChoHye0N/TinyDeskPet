@@ -8,17 +8,20 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-14
+
+더블클릭이 **상호작용**이 되었습니다. 설정 창에서 고른 동작을 한 번 재생하고, 고르지 않으면 지금처럼 점프합니다. 설정 창에 그래픽·고급 탭이 생겨 수직 동기화·안티에일리어싱·외곽선과 중력·걷기 속도를 다시 시작하지 않고 바꿀 수 있습니다.
+
 ### Added
 
 - 더블클릭 상호작용: 설정 창 동작 탭의 "상호작용"에 클립을 고르면(`[animation] interact_clip`) 더블클릭할 때 제자리에서 한 번 재생. 고르지 않으면 지금처럼 점프
-- 설정 창에 그래픽 탭(수직 동기화, 안티에일리어싱 끔·2x·4x·8x, 외곽선 모델 지정·모든 재질·끔)과 고급 탭(중력, 점프 세기, 걷기 속도, 끌기 시작 거리, 기본값으로). 다시 시작하지 않고 바로 적용
+- 설정 창에 그래픽 탭(수직 동기화, 안티에일리어싱 끔·2x·4x·8x, 외곽선 모델 지정·모든 재질·끔)과 고급 탭(중력, 걷기 속도, 끌기 시작 거리, 기본값으로). 다시 시작하지 않고 바로 적용
 - 설정 창 화면 탭에 걷기 끄기·다른 창보다 항상 위에, 동작 탭에 동작별 반복 시작 시각 슬라이더
 - 설정 `[character] walk`(걷기 켜기/끄기)와 `walk_speed`(px/s)
 
 ### Changed
 
 - 캐릭터 크기 최소값을 50%에서 10%로
-- 설정 창 고급 탭에서 점프 세기를 뺌 (점프는 기본 상호작용. `[character] jump_speed`는 그대로)
 
 ### Fixed
 
@@ -132,7 +135,8 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...v1.0.1
