@@ -42,7 +42,7 @@ public:
                              std::span<const core::Vec3> offsets = {}) const;
 };
 
-enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
+enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne, Interact };  // Interact: 더블클릭 상호작용 (클립이 있을 때만, 없으면 대기 자세)
 struct AnimationInput { Motion motion; float time; float squash; bool blink; bool idleMotion = true;
                         core::Vec3 movement; /* 화면 이동 (m), 흔들림 관성 */ };
 struct AnimationOutput { std::vector<core::Mat4> skin; std::array<float, Expression::Count> expressions; };
@@ -145,8 +145,8 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 - **재생 시각**: 처음 한 번은 끝까지, 그 뒤로는 `loopStart` ~ 끝을 반복 (`loopStart`가 길이 이상이면 마지막 자세 유지). 앞뒤 프레임을 slerp
 - **`sample(time)`**: 부모 먼저 순서로 Aⱼ = Δ·C (트랙 있음) 또는 A부모 (없음), 델타 = Aⱼ·A부모⁻¹
 - **`rootOffset(time)`**: 엉덩이 이동 × 비율. 수직은 그대로, 수평은 첫 프레임 위치와 시작 → 끝 이동(진행률만큼)을 빼 흔들림만 남김 → 반복해도 제자리 (캐릭터 이동은 앱이 함)
-- **`ProceduralAnimator` 연결**: `computeRotations`에서 그 동작에 클립이 있으면 코드 자세 대신 `sample`·`rootOffset`. 시각은 `AnimationInput::motionTime`(동작이 시작된 뒤 흐른 시간, `animate`가 동작이 바뀔 때마다 0부터 채움. 없으면 `time`) → 클립이 동작 시작에 맞춰 처음부터 나옴. 대기 동작을 끄면(`idleMotion = false`) 첫 프레임에 멈춤 (Present 생략 유지). 전환 보간·착지·발 붙이기·흔들림은 그대로이고, 전환 0.2초 동안 엉덩이 이동도 회전처럼 섞음
-- **몸 위치 (`rootOffset(motion)`)**: 클립 엉덩이 이동 + (Idle·Walk만) 발 붙이기. 발 붙이기는 엉덩이 이동을 넣은 자세로 낮은 발 높이를 재므로, 클립이 이미 몸을 낮췄으면 더 내리지 않음 (내리기만 함)
+- **`ProceduralAnimator` 연결**: `computeRotations`에서 그 동작에 클립이 있으면 코드 자세 대신 `sample`·`rootOffset`. 시각은 `AnimationInput::motionTime`(동작이 시작된 뒤 흐른 시간, `animate`가 동작이나 `AnimationInput::motionSerial`이 바뀔 때마다 0부터 채움 — 상호작용 중 다시 더블클릭하면 처음부터. 없으면 `time`) → 클립이 동작 시작에 맞춰 처음부터 나옴. 대기 동작을 끄면(`idleMotion = false`) 첫 프레임에 멈춤 (Present 생략 유지). 전환 보간·착지·발 붙이기·흔들림은 그대로이고, 전환 0.2초 동안 엉덩이 이동도 회전처럼 섞음
+- **몸 위치 (`rootOffset(motion)`)**: 클립 엉덩이 이동 + (Idle·Walk·Interact만) 발 붙이기. 발 붙이기는 엉덩이 이동을 넣은 자세로 낮은 발 높이를 재므로, 클립이 이미 몸을 낮췄으면 더 내리지 않음 (내리기만 함)
 - **경계 상자**: 클립이 있는 동작은 길이 전체에서 고르게 최대 24자세 (§4.3). 엉덩이 이동도 들어감
 - **숨김 본 (ADR-0015)**: `hidden()` = 클립 `hiddenBones`와 이름이 같은 본. `writeOutput`이 그 동작의 클립이 있으면 그 마스크, 없으면 불러온 클립들 마스크의 합으로 `computeSkinMatrices`에 넘김 → 정점이 관절 한 점(v' = P)에 모여 보이지 않음. 전환 중에는 새 동작 기준. 경계 상자도 같은 경로라 숨긴 소품은 빠짐
 - **이름 본 이동 (ADR-0015)**: `sampleOffsets(time)` = 이름 트랙의 `offsets` × (대상 엉덩이 높이 / 원본 `hipsHeight`, 모르면 1). `computeRotations`가 받아 `writeOutput`·발 붙이기의 `computePose`에 넘김 (전환 중에는 새 동작 값 그대로)
@@ -192,7 +192,7 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `Expressions_FadeWithPose` | 놀람이 서서히 사라짐 |
 | `AfterTransition_IdleIsStatic` | 전환 후 스킨 행렬 고정 (Present 생략) |
 | `MotionPlayer.*` | 빈 클립은 기본 자세, 월드 델타 → 로컬 델타(트랙 없는 본은 부모를 따라감), A포즈 원본 → T포즈 대상 보정(손도 같이), 같은 기본 자세면 보정 없음, 이름 트랙은 같은 이름 본에만(없는 이름은 버림, 휴머노이드 우선), 프레임 보간·반복, 반복 시작 시각(처음 한 번 끝까지 → 그 구간만), 길이 이상이면 마지막 자세, 엉덩이 이동(높이 비율, 수평 루트 이동 제거), 이동 없는 클립은 0, 숨김 본은 이름으로(없는 이름은 버림), 이름 본 이동은 엉덩이 높이 비율로, 가중치 트랙은 모프 이름·타깃 번호로(없는 이름은 버림) |
-| `ProceduralAnimatorClip.*` | 지정한 동작만 클립 재생, 경계 상자에 클립 자세 포함(동작별 상자에는 그 동작에만), 서 있는 자세 상자는 클립과 무관, 클립 제거 시 코드 동작 복귀, 엉덩이 이동으로 몸이 들림, 대기 클립이 낮춘 몸을 발 붙이기가 두 번 내리지 않음, 동작이 시작될 때 클립이 처음부터, 클립의 숨김 본이 접힘(클립 없는 동작도, 숨기지 않는 클립에선 보임), 클립 없는 동작의 이름 본은 대기 클립 첫 프레임 모양, 모프 가중치·이동 오프셋이 클립에서(클립 없는 동작은 대기 첫 프레임), 클립이 없거나 트랙이 없는 모프는 기본 가중치 |
+| `ProceduralAnimatorClip.*` | 지정한 동작만 클립 재생, 상호작용 클립은 `motionSerial`이 바뀌면 처음부터, 경계 상자에 클립 자세 포함(동작별 상자에는 그 동작에만), 서 있는 자세 상자는 클립과 무관, 클립 제거 시 코드 동작 복귀, 엉덩이 이동으로 몸이 들림, 대기 클립이 낮춘 몸을 발 붙이기가 두 번 내리지 않음, 동작이 시작될 때 클립이 처음부터, 클립의 숨김 본이 접힘(클립 없는 동작도, 숨기지 않는 클립에선 보임), 클립 없는 동작의 이름 본은 대기 클립 첫 프레임 모양, 모프 가중치·이동 오프셋이 클립에서(클립 없는 동작은 대기 첫 프레임), 클립이 없거나 트랙이 없는 모프는 기본 가중치 |
 | `ProceduralAnimatorLookAt.*` | 목표 없음·정면이면 그대로, 옆·위 목표 쪽으로 머리가 정확히 향함, 좌우·위 각도 제한, `animate`는 서서히 돌고 멈추면 같은 자세 |
 
 `tests/anim/SpringBoneTests.cpp` — 몸통 + 사슬 3개짜리 모델: 힘이 없으면 바인드 포즈 유지, 중력으로 처지되 본 길이 유지, 캐릭터가 움직이면 끝이 뒤처졌다가 돌아옴, 구 충돌체 안으로 들어가지 않음(구가 없을 때와 대조), 순간 이동은 초기화, 멈춘 뒤 회전이 정확히 같음, 격하게 움직여도 각 마디·사슬 전체가 범위 안, 관성 상한, `dt = 0` 프레임은 직전 흔들림 유지(다음 프레임도 0 프레임이 없던 것과 같음), VRM 1.0 관절 사슬은 적힌 본만 흔들리고 마지막 관절은 스스로 돌지 않음, 캡슐 충돌체 안으로 들어가지 않음(양 끝 구로만 처리하면 막지 못하는 배치).

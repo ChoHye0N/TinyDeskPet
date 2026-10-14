@@ -178,6 +178,18 @@ bool CharacterController::jump() {
     return true;
 }
 
+bool CharacterController::interact(float seconds) {
+    if (!(seconds > 0.0f) ||
+        (state_ != State::Idle && state_ != State::Walk && state_ != State::Interact)) {
+        return false;
+    }
+    velocity_ = {};  // 던져진 뒤 미끄러지던 중이면 멈춤
+    interactTimer_ = seconds;
+    ++actionSerial_;
+    transitionTo(State::Interact);
+    return true;
+}
+
 void CharacterController::update(float dt) {
     if (!(dt > 0.0f)) {
         return;  // 0, 음수, NaN 무시
@@ -189,6 +201,7 @@ void CharacterController::update(float dt) {
     switch (state_) {
         case State::Idle: updateIdle(dt); break;
         case State::Walk: updateWalk(dt); break;
+        case State::Interact: updateInteract(dt); break;
 
         case State::Dragged: break;  // 위치는 포인터 이벤트가 결정
 
@@ -257,10 +270,23 @@ void CharacterController::updateWalk(float dt) {
     }
 }
 
+void CharacterController::updateInteract(float dt) {
+    if (position_.y < ground_) {
+        transitionTo(State::Airborne);  // 밟고 있던 창이 사라짐 등
+        return;
+    }
+    position_.y = ground_;
+    interactTimer_ -= dt;
+    if (interactTimer_ <= 0.0f) {
+        transitionTo(State::Idle);
+    }
+}
+
 Pose CharacterController::pose() const {
     Pose pose;
     pose.state = state_;
     pose.time = time_;
+    pose.actionSerial = actionSerial_;
 
     if (state_ == State::Idle && params_.breathPeriod > 0.0f) {
         const float phase = 2.0f * std::numbers::pi_v<float> * time_ / params_.breathPeriod;

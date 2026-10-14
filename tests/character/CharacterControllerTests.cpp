@@ -99,6 +99,42 @@ TEST_F(CharacterControllerTest, UpWithoutDown_IsIgnored) {
     EXPECT_FLOAT_EQ(character_.position().x, 500.0f);
 }
 
+TEST_F(CharacterControllerTest, Interact_StaysForDurationThenIdle) {
+    // 더블클릭 상호작용 (클립 재생): 그 자리에서 클립 길이만큼 Interact, 끝나면 Idle
+    const std::uint32_t serial = character_.pose().actionSerial;
+    ASSERT_TRUE(character_.interact(1.0f));
+    EXPECT_EQ(character_.state(), State::Interact);
+    EXPECT_EQ(character_.pose().actionSerial, serial + 1);
+    const float x = character_.position().x;
+    simulate(0.9f);
+    EXPECT_EQ(character_.state(), State::Interact);
+    simulate(0.2f);
+    EXPECT_EQ(character_.state(), State::Idle);
+    EXPECT_FLOAT_EQ(character_.position().x, x);
+    EXPECT_FLOAT_EQ(character_.position().y, kGround);
+}
+
+TEST_F(CharacterControllerTest, Interact_RestartsAndCanBeDragged) {
+    ASSERT_TRUE(character_.interact(1.0f));
+    simulate(0.5f);
+    const std::uint32_t serial = character_.pose().actionSerial;
+    ASSERT_TRUE(character_.interact(1.0f));  // 재생 중 다시 더블클릭 → 처음부터
+    EXPECT_EQ(character_.pose().actionSerial, serial + 1);
+    simulate(0.8f);
+    EXPECT_EQ(character_.state(), State::Interact);
+
+    character_.onPointerDown({500.0f, 900.0f});
+    character_.onPointerMove({600.0f, 700.0f});
+    EXPECT_EQ(character_.state(), State::Dragged);
+}
+
+TEST_F(CharacterControllerTest, Interact_NotInAirOrWithoutDuration) {
+    EXPECT_FALSE(character_.interact(0.0f));
+    ASSERT_TRUE(character_.jump());
+    EXPECT_FALSE(character_.interact(1.0f));
+    EXPECT_EQ(character_.state(), State::Airborne);
+}
+
 TEST_F(CharacterControllerTest, Jump_ReachesTheoreticalHeightAndLands) {
     ASSERT_TRUE(character_.jump());
     EXPECT_EQ(character_.state(), State::Airborne);

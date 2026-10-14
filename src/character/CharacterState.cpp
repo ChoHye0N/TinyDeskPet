@@ -8,6 +8,7 @@ std::string_view toString(State state) {
         case State::Dragged: return "Dragged";
         case State::Airborne: return "Airborne";
         case State::Walk: return "Walk";
+        case State::Interact: return "Interact";
     }
     return "Unknown";
 }

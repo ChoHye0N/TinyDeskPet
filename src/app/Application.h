@@ -35,7 +35,7 @@ enum class MenuCommand : std::uint8_t {
 };
 
 // 캐릭터 크기 조절 범위 (%, FR-06)
-inline constexpr int kMinScalePercent = 50;
+inline constexpr int kMinScalePercent = 10;
 inline constexpr int kMaxScalePercent = 200;
 inline constexpr int kScaleStepPercent = 10;
 
@@ -127,6 +127,7 @@ private:
     [[nodiscard]] bool tick();  // 한 프레임. false면 루프 종료
 
     void handleEvent(const core::Event& event);
+    void onDoubleClick();
     void onPointerUp(const core::PointerUpEvent& event);
     void onContextMenu(core::PointI screen);
     void executeMenuCommand(int commandId);

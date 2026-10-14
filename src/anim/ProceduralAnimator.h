@@ -21,12 +21,15 @@
 namespace deskpet::anim {
 
 // 캐릭터 상태를 애니메이션 관점으로 옮긴 것 (character 모듈에 의존하지 않도록 app이 변환)
-enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne };
-inline constexpr std::size_t kMotionCount = 4;
+// Interact: 더블클릭 상호작용. 클립이 있을 때만 쓰임 (없으면 앱이 점프시킴), 없으면 대기 자세
+enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne, Interact };
+inline constexpr std::size_t kMotionCount = 5;
 
 struct AnimationInput {
     Motion motion = Motion::Idle;
-    float time = 0.0f;    // 누적 시간 (s). 주기 동작의 위상
+    float time = 0.0f;  // 누적 시간 (s). 주기 동작의 위상
+    // 같은 동작을 처음부터 다시 시작할 때 앱이 바꿈 (상호작용 중 다시 더블클릭). animate가 봄
+    std::uint32_t motionSerial = 0;
     float squash = 0.0f;  // 착지 반동 (0 ~ 약 0.18). 커지는 순간 착지 동작 시작
     bool blink = false;   // 눈 감는 순간
     bool idleMotion = true;  // false면 대기 중 숨쉬기 동작을 끔 → 화면이 멈춰 Present 생략 가능
@@ -128,6 +131,7 @@ private:
     // 전환 상태 (animate 전용). 자세는 착지 반동을 빼고 저장해 반동이 두 번 더해지지 않게 함
     bool hasPose_ = false;
     Motion motion_ = Motion::Idle;
+    std::uint32_t motionSerial_ = 0;
     float elapsed_ = kTransitionSeconds;  // 전환 시작 후 흐른 시간. kTransitionSeconds 이상 = 끝
     float motionStart_ = 0.0f;  // 지금 동작이 시작된 시각 (AnimationInput::time 기준)
     std::vector<core::Quat> fromRotations_;

@@ -203,13 +203,13 @@ outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불
 path = models/model.vrm     ; 문자열 그대로 (검증은 로딩 시점에)
 
 [animation]
-dragged_clip = models/motions/pickup.fbx  ; 문자열 그대로 (idle_/walk_/dragged_/airborne_clip)
+dragged_clip = models/motions/pickup.fbx  ; 문자열 그대로 (idle_/walk_/dragged_/airborne_/interact_clip)
 dragged_loop_start = 1.5     ; 초, 0 ~ 3600. 처음 한 번 끝까지 → 이 시각부터 끝까지 반복
 
 [state]                      ; 프로그램이 종료할 때 기록
 last_x = 1720                ; -100000 ~ 100000
 last_y = 1032
-scale = 100                  ; 캐릭터 크기 % (50 ~ 200, FR-06)
+scale = 100                  ; 캐릭터 크기 % (10 ~ 200, FR-06)
 
 [log]
 level = info           ; trace/debug/info/warn/error/off

@@ -12,6 +12,7 @@ enum class State : std::uint8_t {
     Dragged,   // 사용자가 끌고 있음
     Airborne,  // 공중 (낙하·점프·던지기)
     Walk,      // 바닥에서 좌우로 천천히 걸음
+    Interact,  // 더블클릭 상호작용: 제자리에서 정해진 시간 동안 (클립 한 번 재생)
 };
 
 [[nodiscard]] std::string_view toString(State state);

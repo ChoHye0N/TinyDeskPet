@@ -195,6 +195,11 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
              c.animation.airborneClip = std::string(v);
              return ApplyResult{};
          }},
+        {"animation.interact_clip",
+         [](std::string_view v, AppConfig& c) {
+             c.animation.interactClip = std::string(v);
+             return ApplyResult{};
+         }},
         {"animation.idle_loop_start",
          [](std::string_view v, AppConfig& c) {
              return assignFloat(v, 0.0f, 3600.0f, c.animation.idleLoopStart);
@@ -220,7 +225,7 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
              return assignOptionalInt(v, -100000, 100000, c.state.lastY);
          }},
         {"state.scale", [](std::string_view v,
-                           AppConfig& c) { return assignOptionalInt(v, 50, 200, c.state.scale); }},
+                           AppConfig& c) { return assignOptionalInt(v, 10, 200, c.state.scale); }},
         {"log.level", [](std::string_view v, AppConfig& c) { return assignLevel(v, c.log.level); }},
         {"log.to_file",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.log.toFile); }},

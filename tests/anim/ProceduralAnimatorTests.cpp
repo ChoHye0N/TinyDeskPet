@@ -571,6 +571,36 @@ TEST(ProceduralAnimatorClip, ClipRestartsWhenMotionStarts) {
     EXPECT_NEAR(std::atan2(forward.x, forward.z) * 180.0f / std::numbers::pi_v<float>, 15.0f, 0.1f);
 }
 
+TEST(ProceduralAnimatorClip, InteractClip_RestartsWhenSerialChanges) {
+    // 상호작용 중 다시 더블클릭 (동작은 그대로, motionSerial만 바뀜) → 클립을 처음부터
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 31;
+    for (int i = 0; i < 31; ++i) {
+        clip->track(deskpet::model::HumanBone::Hips)
+            .push_back(deskpet::core::Quat::axisAngle(
+                {0.0f, 1.0f, 0.0f}, static_cast<float>(i) * std::numbers::pi_v<float> / 180.0f));
+    }
+    animator.setClip(Motion::Interact, clip);
+
+    AnimationOutput out;
+    AnimationInput input;
+    input.motion = Motion::Interact;
+    input.motionSerial = 1;
+    for (int frame = 0; frame <= 16; ++frame) {  // 0.8초 재생
+        input.time = 0.05f * static_cast<float>(frame);
+        animator.animate(input, frame == 0 ? 0.0f : 0.05f, out);
+    }
+    input.motionSerial = 2;                     // 다시 시작
+    for (int frame = 0; frame <= 6; ++frame) {  // 0.3초 재생 (전환 0.2초 뒤)
+        input.time = 0.85f + 0.05f * static_cast<float>(frame);
+        animator.animate(input, 0.05f, out);
+    }
+    const Vec3 forward = deskpet::core::transformDirection({0.0f, 0.0f, 1.0f}, out.skin[1]);
+    EXPECT_NEAR(std::atan2(forward.x, forward.z) * 180.0f / std::numbers::pi_v<float>, 9.0f, 0.1f);
+}
+
 TEST(ProceduralAnimatorClip, RemovingClip_RestoresProceduralPose) {
     const auto model = deskpet::test::makeSkeletonModel();
     ProceduralAnimator animator(model);
