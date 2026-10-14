@@ -93,7 +93,10 @@ public:
     // avoid: 가리지 않을 영역 = 캐릭터가 그려지는 곳 (오버레이 내부 px). 그 왼쪽에, 자리가 없으면
     // 오른쪽에 띄우고 화면 안에 들어오도록 옮김
     void open(core::RectI avoid);
-    void close() noexcept { open_ = false; }
+    void close() noexcept {
+        open_ = false;
+        wantsMouse_ = false;
+    }
     [[nodiscard]] bool isOpen() const noexcept { return open_; }
 
     // 마우스 (오버레이 내부 px). 매 프레임 frame() 전에

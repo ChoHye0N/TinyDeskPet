@@ -274,7 +274,9 @@ ImDrawData* SettingsUi::frame(float dt, core::SizeI display, const SettingsState
     ImGui::End();
     ImGui::Render();
 
-    wantsMouse_ = io.WantCaptureMouse;
+    // 닫는 프레임은 커서가 닫기 버튼 위라 WantCaptureMouse가 참. 닫힌 뒤에는 frame()이 다시
+    // 계산하지 않으므로 그대로 두면 클릭 통과가 계속 꺼져 화면 전체가 클릭을 받음
+    wantsMouse_ = keepOpen && io.WantCaptureMouse;
     if (!keepOpen) {
         open_ = false;
     }

@@ -64,7 +64,7 @@ public:
 
 - 생성자에서 `ImGui::CreateContext`, `io.IniFilename = nullptr`(창 위치를 imgui.ini에 저장하지 않음), `io.BackendFlags |= RendererHasTextures`(렌더러 백엔드가 초기화할 때 같은 값을 다시 씀. 백엔드가 없는 테스트에서는 텍스처 요청이 처리되지 않고 남을 뿐). 소멸자에서 `DestroyContext`. 앱은 이 객체를 렌더러보다 먼저 선언해 나중에 파괴 (백엔드가 컨텍스트를 씀)
 - 입력은 닫혀 있으면 버림. `open`에서 남은 입력 큐를 비우고 버튼을 뗀 상태로 시작
-- `wantsMouse` = 프레임 끝의 `io.WantCaptureMouse` (커서가 창·콤보 목록 위, 또는 창 위젯을 누르는 중)
+- `wantsMouse` = 프레임 끝의 `io.WantCaptureMouse` (커서가 창·콤보 목록 위, 또는 창 위젯을 누르는 중). 닫히면 false: 닫는 프레임은 커서가 닫기 버튼 위라 참인데, 닫힌 뒤에는 프레임을 돌리지 않아 그 값이 남으면 앱이 클릭 통과를 계속 꺼 화면 전체가 클릭을 받음
 
 ### 4.2 창 배치와 모양
 
@@ -105,7 +105,7 @@ public:
 | `Open_IsPlacedBesideTheCharacterInsideTheScreen` | 캐릭터 왼쪽, 화면 안 |
 | `NearTheLeftEdge_IsPlacedRightOfTheCharacter` | 왼쪽에 자리가 없으면 오른쪽 |
 | `MouseOverWindow_IsCapturedOnlyThere` | 창 위에서만 `wantsMouse` |
-| `CloseButton_ClosesWindow` | 닫기 클릭 → 닫힘, 다음 프레임 nullptr |
+| `CloseButton_ClosesWindow` | 닫기 클릭 → 닫힘, 마우스를 놓아줌(`wantsMouse` false), 다음 프레임 nullptr |
 | `ClickingTab_SelectsIt` | 세 번째 탭 클릭 → 화면 탭 |
 | `DraggingTitle_MovesWindow` | 제목 줄 끌기 → 창이 같은 만큼 이동 |
 

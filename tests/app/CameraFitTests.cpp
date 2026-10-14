@@ -95,3 +95,21 @@ TEST(CameraFit, FeetAreHorizontallyCenteredEvenForLopsidedBounds) {
         EXPECT_NEAR(feetNdc(kLopsided, fitCameraToBounds(kLopsided, viewport)).x, 0.0f, 1e-4f);
     }
 }
+
+TEST(CameraFit, GroundLevelTouchesBottomEvenIfSomePoseGoesLower) {
+    // 대기 클립 중 잠깐 웅크리는 자세 등으로 상자 아래가 발바닥보다 낮아도, 서 있을 때의 발바닥
+    // (groundY)을 화면 바닥에 맞춤. 상자 아래(min.y)에 맞추면 평소에 그만큼 떠 보임
+    constexpr Bounds kCrouching{{-0.5f, -0.12f, -0.2f}, {0.5f, 1.1f, 0.2f}};
+    const Mat4 camera = fitCameraToBounds(kCrouching, {400, 400}, 0.0f);
+    const auto feet = deskpet::core::transform({0.0f, 0.0f, 0.0f}, camera);
+    EXPECT_NEAR(feet.y / feet.w, -1.0f, 1e-4f);
+    // 키는 발바닥 ~ 머리(1.1m)로 맞춤: 머리가 위 여백 안에 들고, 낮은 자세는 바닥 아래로
+    float top = -1.0f;
+    for (const Vec3& p : projectCorners(kCrouching, camera)) {
+        top = std::max(top, p.y);
+        EXPECT_LE(p.y, 1.0f);
+    }
+    EXPECT_GT(top, 0.9f);
+    const auto low = deskpet::core::transform({0.0f, -0.12f, 0.0f}, camera);
+    EXPECT_LT(low.y / low.w, -1.0f);
+}

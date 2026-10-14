@@ -27,17 +27,10 @@
 namespace deskpet::app {
 
 enum class MenuCommand : std::uint8_t {
-    About = 1,
-    // 2: 예전 "점프" (메뉴에서 제거, 더블클릭으로만 점프)
+    // 1, 2, 6~11: 예전 버전·점프·크기·모델 정보·모델 열기 (설정 창으로 옮겨 메뉴에서 제거)
     ResetPosition = 3,
     Quit = 4,
     ToggleVisible = 5,  // 트레이에서 숨기기/보이기 (FR-18)
-    ScaleInfo = 6,      // "크기 100%" (정보 표시용, 비활성)
-    ScaleUp = 7,        // 크게 (FR-06)
-    ScaleDown = 8,      // 작게
-    ModelInfo = 9,      // "이름 — 작가" (정보 표시용, 비활성, FR-23)
-    ModelLicense = 10,  // "라이선스: …" (정보 표시용, 비활성)
-    OpenModel = 11,     // 모델 열기… (파일 대화상자)
     Settings = 12,      // 설정… (ImGui 설정 창, ADR-0016)
 };
 
@@ -141,7 +134,6 @@ private:
     void applyAnimation();    // 클립 연결, 자세 경계 상자·카메라·벽 다시 계산
     void applyLoadedModel();  // 작업 스레드가 끝났으면 결과로 교체
     void openModelFile();     // 메뉴 "모델 열기…"
-    void appendModelMenu(std::vector<platform::MenuItem>& items) const;
     [[nodiscard]] std::optional<core::Vec3> lookTarget() const;  // 커서 → 모델 공간 목표
     void refitCamera();
     void setVisible(bool visible);

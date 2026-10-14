@@ -85,6 +85,8 @@ TEST(SettingsUi, CloseButton_ClosesWindow) {
     (void)click(ui, {static_cast<float>(rect.right) - kTitleHeight / 2.0f,
                      static_cast<float>(rect.top) + kTitleHeight / 2.0f});
     EXPECT_FALSE(ui.isOpen());
+    // 닫기 버튼 위에서 닫혔어도 마우스를 놓아줌 (남으면 화면 전체가 클릭을 받아 캐릭터를 못 누름)
+    EXPECT_FALSE(ui.wantsMouse());
     std::vector<SettingsAction> actions;
     EXPECT_EQ(ui.frame(1.0f / 60.0f, kDisplay, {}, actions), nullptr);
 }
