@@ -67,7 +67,8 @@ public:
     [[nodiscard]] float ground() const noexcept { return ground_; }
 
     // 발 x 좌표의 허용 범위 (가상 데스크톱 좌우 끝, FR-17). 현재 위치도 범위 안으로 맞춥니다.
-    void setHorizontalBounds(float minX, float maxX) noexcept;
+    // keepAtWall: 벽에 붙어 있던 발은 벽이 바깥으로 움직여도 붙어 있음 (벽을 조금씩 옮길 때)
+    void setHorizontalBounds(float minX, float maxX, bool keepAtWall = false) noexcept;
 
     // 위치를 강제로 지정합니다. 속도 0, 진행 중인 드래그 취소, 상태 재판정.
     void teleport(core::Vec2 feet);

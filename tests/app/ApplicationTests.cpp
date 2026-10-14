@@ -500,7 +500,7 @@ TEST_F(ApplicationTest, DraggedPastDesktopEdge_StaysInsideAfterRelease) {
 
     // 막는 기준은 창이 아니라 그려지는 영역: 그 오른쪽 끝이 모니터 끝에 맞음.
     // 창의 투명한 여백은 화면 밖으로 나가도 됨 (창 반폭으로 막으면 끝에서 멈춰 보임)
-    const int visibleRight = boxTopLeft(*app).x + app->visibleRect().right;
+    const int visibleRight = boxTopLeft(*app).x + app->wallRect().right;
     EXPECT_LE(visibleRight, 1920);
     EXPECT_GE(visibleRight, 1918);
     EXPECT_GT(boxTopLeft(*app).x + 200, 1920);
@@ -518,9 +518,50 @@ TEST_F(ApplicationTest, ModelDraggedPastLeftEdge_VisibleEdgeMeetsDesktopEdge) {
     app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
     (void)app->run();
 
-    const int visibleLeft = boxTopLeft(*app).x + app->visibleRect().left;
+    const int visibleLeft = boxTopLeft(*app).x + app->wallRect().left;
     EXPECT_GE(visibleLeft, 0);
     EXPECT_LE(visibleLeft, 2);
+}
+
+TEST_F(ApplicationTest, ModelAtEdge_WallFollowsCurrentMotion) {
+    // 벽은 지금 동작의 그려지는 폭: 서 있을 때는 몸 끝이 화면 끝에 닿고 (모든 동작 중 가장 넓은
+    // 폭으로 막으면 그만큼 떠 보임), 팔을 벌리는 끌기 자세로 바뀌면 화면 안으로 밀려 들어옴
+    Application* appPtr = nullptr;
+    int idleRight = 0;
+    int idleWidth = 0;
+    int allWidth = 0;
+    window_.onPoll = [&](int poll, FakeWindowState& state) {
+        if (appPtr == nullptr) {
+            return;
+        }
+        if (poll == 1) {
+            state.frames.push_back(
+                {core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+            state.frames.push_back({core::PointerMoveEvent{{2500.0f, 1040.0f}}});
+        } else if (poll == 20) {  // 멈춘 뒤 놓음 (던지지 않게)
+            state.frames.push_back(
+                {core::PointerUpEvent{{2500.0f, 1040.0f}, core::MouseButton::Left}});
+        } else if (poll == 60) {  // 바닥에 서 있음
+            idleRight = appPtr->characterRect().left + appPtr->wallRect().right;
+            idleWidth = appPtr->wallRect().width();
+            allWidth = appPtr->visibleRect().width();
+            const Vec2 grab{static_cast<float>(appPtr->characterRect().left + 50), 1000.0f};
+            state.frames.push_back({core::PointerDownEvent{grab, core::MouseButton::Left}});
+            state.frames.push_back({core::PointerMoveEvent{{grab.x + 20.0f, grab.y - 10.0f}}});
+        }
+    };
+    window_.pollsBeforeQuit = 90;
+    auto app = makeApp();
+    appPtr = app.get();
+    app->setModel(std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel()));
+    (void)app->run();
+
+    EXPECT_LT(idleWidth, allWidth);
+    EXPECT_GE(idleRight, 1918);
+    EXPECT_LE(idleRight, 1920);
+    ASSERT_EQ(app->character().state(), State::Dragged);
+    EXPECT_GT(app->wallRect().width(), idleWidth);
+    EXPECT_LE(app->characterRect().left + app->wallRect().right, 1920);
 }
 
 // ---------------------------------------------------------------------------

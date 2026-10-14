@@ -74,6 +74,8 @@ public:
         model::Bounds all;       // 모든 동작: 벽·깊이 범위
         model::Bounds standing;  // 서 있는 자세: 화면 크기·바닥 기준
         std::array<model::Bounds, anim::kMotionCount> motions{};  // 동작별: 그리기 영역
+        // 동작별 실제 정점의 화면 x 범위 (NDC, 이 상자들로 맞춘 카메라 기준): 벽
+        std::array<anim::ScreenRange, anim::kMotionCount> screenX{};
     };
 
     // 모델 파일을 읽는 함수 (실패하면 nullptr). 작업 스레드에서 불리므로 스레드 안전해야 함
@@ -117,6 +119,9 @@ public:
     // 있는 자세로 맞추므로 큰 동작은 상자 밖으로 나가 음수이거나 상자보다 클 수 있음. 아래는
     // 발까지)
     [[nodiscard]] core::RectI visibleRect() const;
+    // 벽(FR-17) 계산에 쓰는 지금 동작의 그려지는 영역 (상자 왼쪽 위 기준 px). 서 있을 때는 서 있는
+    // 자세 폭이라 화면 끝에 몸이 닿고, 넓은 동작으로 바뀌면 전환 시간 동안 천천히 넓어짐
+    [[nodiscard]] core::RectI wallRect() const;
 
     // 캐릭터 상자 (화면 좌표). 발 = 상자 아래 가운데. 크기 = 설정 × DPI × 사용자 배율
     [[nodiscard]] core::RectI characterRect() const;
@@ -136,7 +141,10 @@ private:
     [[nodiscard]] bool restoreSavedPosition();
     void refreshGround();
     [[nodiscard]] float groundAt(core::Vec2 feet, float stepUp);  // 창 목록을 갱신할 수 있음
-    void refreshBounds();
+    void refreshBounds();  // 벽을 지금 동작 폭으로 바로 맞춤 (모델·크기·작업 영역이 바뀐 뒤)
+    void updateWalls(float dt);  // 동작이 바뀌어 폭이 넓어지면 천천히 따라감 (매 프레임)
+    [[nodiscard]] core::RectI targetWallRect() const;
+    void applyWalls(bool keepAtWall = false);
     void applyDpiScale(float scale);
     void setScalePercent(int percent);
     void resizeCharacter();  // boxSize_를 targetBoxSize()로 바꾸고 카메라·벽을 갱신
@@ -208,6 +216,9 @@ private:
     anim::AnimationOutput animation_;  // 매 프레임 재사용
     PoseBounds poseBounds_;
     float metersPerPixel_ = 0.0f;  // 발 평면(z = 0)에서 창 1px = 모델 공간 몇 m (흔들림 관성용)
+    // 벽 계산에 쓰는 그려지는 영역의 왼쪽·오른쪽 (상자 왼쪽 기준 px). 지금 동작 폭을 따라감
+    float wallLeft_ = 0.0f;
+    float wallRight_ = 0.0f;
     core::Vec2 lastFeet_;  // 직전에 흔들림에 넘긴 발 위치 (화면 px)
     bool hasLastFeet_ = false;
     float turnRadians_ = 0.0f;  // 걷는 방향으로 돌린 몸 각도 (목표 각도로 서서히 돎)

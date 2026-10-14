@@ -30,9 +30,15 @@ void CharacterController::setParams(const Params& params) {
     }
 }
 
-void CharacterController::setHorizontalBounds(float minX, float maxX) noexcept {
+void CharacterController::setHorizontalBounds(float minX, float maxX, bool keepAtWall) noexcept {
+    constexpr float kAtWall = 0.5f;  // px
+    const bool atMin = position_.x <= minX_ + kAtWall;
+    const bool atMax = position_.x >= maxX_ - kAtWall;
     minX_ = std::min(minX, maxX);
     maxX_ = std::max(minX, maxX);
+    if (keepAtWall && atMax != atMin) {
+        position_.x = atMax ? maxX_ : minX_;
+    }
     position_.x = std::clamp(position_.x, minX_, maxX_);
 }
 

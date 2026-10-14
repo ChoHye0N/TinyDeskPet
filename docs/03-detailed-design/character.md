@@ -54,6 +54,8 @@ struct Params {
 
     [[nodiscard]] static Params fromConfig(const core::CharacterConfig& config);  // walk = false면 walkSpeed 0
 };
+// CharacterController::setHorizontalBounds(minX, maxX, keepAtWall = false): 발 x 범위. keepAtWall이면
+// 벽에 붙어 있던(0.5px 안) 발은 벽이 바깥으로 옮겨도 붙어 있음 (앱이 벽을 조금씩 옮길 때)
 // CharacterController::setParams(params): 실행 중 값 바꾸기 (설정 창). 난수·위치·속도는 그대로,
 // walkSpeed가 0이 되면 걷던 중이어도 바로 Idle
 
@@ -212,6 +214,7 @@ if position.y >= ground:
 | 벽에 던지면 반사되고 범위 밖으로 나가지 않음, 범위 밖에서 놓으면 안으로 맞춤 | FR-17 |
 | 대기 시간 뒤 걷기 → 걷기 시간 뒤 Idle, 벽에서 뒤돌기, `walkSpeed = 0`이면 걷지 않음, 걷는 중 점프, 설정 `walk = false`면 속도 0, 걷던 중 `setParams`로 끄면 바로 Idle·그 자리 | — |
 | 상호작용: 클립 길이만큼 Interact 뒤 Idle(제자리), 재생 중 다시 부르면 처음부터(`actionSerial` + 1)·끌기 가능, 공중이거나 길이 0이면 실패 | FR-13 |
+| 범위 설정: 벽에 붙은 발은 `keepAtWall`이면 넓어지는 벽을 따라감, 없거나 떨어져 있으면 그대로 | FR-17 |
 
 ## 6. 확장 지점
 
