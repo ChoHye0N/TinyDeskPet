@@ -315,6 +315,18 @@ TEST_F(CharacterControllerTest, SetBounds_ClampsCurrentPosition) {
     EXPECT_FLOAT_EQ(character_.position().x, 300.0f);
 }
 
+TEST_F(CharacterControllerTest, SetBounds_KeepAtWallFollowsWideningWall) {
+    // 벽에 붙어 있던 발은 keepAtWall이면 벽이 바깥으로 넓어져도 붙어 있음 (넓은 끌기 자세로
+    // 막혔다가 놓아 좁은 서 있는 자세가 되면 화면 끝까지 미끄러져 감). 떨어져 있었으면 그대로
+    character_.setHorizontalBounds(0.0f, 300.0f);
+    character_.setHorizontalBounds(0.0f, 310.0f, true);
+    EXPECT_FLOAT_EQ(character_.position().x, 310.0f);
+    character_.setHorizontalBounds(0.0f, 320.0f);  // keepAtWall 없이는 그대로
+    EXPECT_FLOAT_EQ(character_.position().x, 310.0f);
+    character_.setHorizontalBounds(0.0f, 330.0f, true);  // 이미 벽에서 떨어짐
+    EXPECT_FLOAT_EQ(character_.position().x, 310.0f);
+}
+
 // ---------------------------------------------------------------------------
 // 걷기
 // ---------------------------------------------------------------------------

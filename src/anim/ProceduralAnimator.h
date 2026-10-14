@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -24,6 +25,12 @@ namespace deskpet::anim {
 // Interact: 더블클릭 상호작용. 클립이 있을 때만 쓰임 (없으면 앱이 점프시킴), 없으면 대기 자세
 enum class Motion : std::uint8_t { Idle, Walk, Dragged, Airborne, Interact };
 inline constexpr std::size_t kMotionCount = 5;
+
+// 화면(NDC) x 범위. 비어 있으면 min > max
+struct ScreenRange {
+    float min = std::numeric_limits<float>::max();
+    float max = -std::numeric_limits<float>::max();
+};
 
 struct AnimationInput {
     Motion motion = Motion::Idle;
@@ -76,9 +83,16 @@ public:
     // maxTurnRadians: 앱이 몸을 Y축으로 ±이 각도 안에서 돌려 그림 → 뒤로 뻗은 꼬리·치마가
     // 옆으로 나오는 만큼도 포함
     [[nodiscard]] model::Bounds displayBounds(float maxTurnRadians = 0.0f) const;
-    // 동작별로 나눈 displayBounds (Motion 순서). 앱이 지금 동작의 자세만 담는 그리기 영역에 씀
+    // 동작별로 나눈 displayBounds (Motion 순서). 앱이 지금 동작의 자세만 담는 그리기 영역·벽에 씀.
+    // maxTurnRadians는 걷기 상자에만 (앱은 걸을 때만 몸을 돌림)
     [[nodiscard]] std::array<model::Bounds, kMotionCount> motionBounds(
         float maxTurnRadians = 0.0f) const;
+
+    // 동작별로 실제 정점을 viewProjection으로 투영한 화면 x 범위 (NDC). 앱이 벽 계산에 씀: 경계
+    // 상자 꼭짓점을 투영하면 앞쪽 모서리가 원근으로 넓게 잡혀 화면 끝에서 떠 보임.
+    // maxTurnRadians는 걷기에만. motionBounds와 같은 자세를 쓰므로 무거움 (작업 스레드에서)
+    [[nodiscard]] std::array<ScreenRange, kMotionCount> screenXRange(
+        const core::Mat4& viewProjection, float maxTurnRadians = 0.0f) const;
 
     // 화면 크기 기준 자세의 경계 상자: 클립 없이 코드로 만든 대기 자세 (숨쉬기 없음, 팔 내림).
     // 클립과 무관해서 클립을 바꿔도 캐릭터 크기가 그대로 (displayBounds는 클립에 따라 바뀜)

@@ -114,8 +114,9 @@ public:
 - **자세**: Idle·Dragged·Airborne + **Walk 한 주기를 8등분**(다리를 가장 멀리 뻗는 1/4·3/4, 무릎을 가장 굽히는 0·1/2 포함). 정점은 CPU에서 스키닝합니다.
 - **몸 돌리기**: 앱은 걸을 때 몸을 Y축으로 최대 ±50° 돌려 그립니다. 그러면 정면에선 깊이(Z)였던 꼬리·치마·뒤로 뻗은 머리카락이 화면 가로(X)로 나옵니다. 각 정점에 대해 θ ∈ [−T, T]에서 `x' = x·cos θ + z·sin θ`의 범위를 **해석적으로** 구합니다: `= r·cos(θ − φ)`이므로 양 끝값과, φ가 구간 안이면 ±r. 양 끝 각도만 샘플링하면 비스듬히 뒤로 뻗은 점의 최대(θ = φ)를 놓칩니다. z'도 같은 방법.
 - 스킨 가중치가 있는 정점이 하나도 없으면 원래 `Model::bounds`(돌릴 각도가 있으면 그 꼭짓점 8개를 돌려서)를 씁니다.
-- 걷기 중 바뀌는 회전은 모든 동작에 적용합니다 (걷다가 들리면 돌아오는 도중에도 회전이 남아 있음).
-- `motionBounds`: 같은 샘플을 동작별로 나눠 담은 상자 (`displayBounds` = 이것들의 합). 앱이 지금 동작의 상자만 3D 그리기 영역에 씀.
+- 몸 돌리기(`maxTurnRadians`)는 **걷기 상자에만** 넣습니다. 앱은 걸을 때만 몸을 돌리고, 걷다 멈춘 뒤 돌아오는 0.2초는 앱이 벽을 천천히 옮겨 처리합니다. 다른 동작까지 넓히면 화면 끝에 서 있을 때 그만큼 떠 보입니다.
+- `motionBounds`: 같은 샘플을 동작별로 나눠 담은 상자 (`displayBounds` = 이것들의 합). 앱이 지금 동작의 상자를 3D 그리기 영역에 씀.
+- `screenXRange(viewProjection, maxTurn)`: 같은 샘플의 **실제 정점**을 카메라로 투영한 동작별 화면 x 범위(NDC). 걷기는 몸 돌림을 7개 각도로 나눠 잼(놓치는 최대는 반지름의 1.4% 안). 앱이 벽 계산에 씀 — 상자 꼭짓점을 투영하면 앞쪽 모서리(가장 넓은 x와 가장 앞의 z가 만나는 빈 구석)가 원근으로 넓게 잡혀 화면 끝에서 떠 보임
 - `standingBounds`: **클립을 붙이지 않은** 새 애니메이터로 계산한 대기 자세(숨쉬기 없음, 팔 내림)의 상자. 클립과 무관해서, 앱이 화면 크기 기준으로 쓰면 클립을 바꿔도 캐릭터 크기가 그대로입니다. 스킨이 없는 모델은 `Model::bounds`.
 
 ### 4.4 흔들림 (`SpringBoneSimulator`)
@@ -178,6 +179,7 @@ UniVRM `VRMSpringBone`과 같은 방식입니다. 데이터는 모델의 `spring
 | `Expressions_FollowMotion` | 깜빡임, 매달림 → 놀람(깜빡임 억제), 걷기 → 기쁨 |
 | `IdleMotionDisabled_IsStaticOverTime` | 대기 동작 끄면 시간이 달라도 스킨 행렬이 같음 |
 | `DisplayBounds_AreNarrowerThanTPoseButCoverRaisedArms` | 경계 상자가 T포즈보다 좁고 벌린 팔은 포함 |
+| `MotionBounds_TurnOnlyWidensWalk`, `ScreenXRange_UsesActualVerticesThroughCamera` | 몸 돌림은 걷기 상자에만, 화면 x 범위는 실제 정점 투영(단위 행렬이면 상자 x 범위와 같음, 걷기는 2% 안) |
 | `DisplayBounds_IncludeWalkingStride` | 걷기에서 앞뒤로 뻗은 발 포함 |
 | `DisplayBounds_CoverBodyTurnedWhileWalking` | 뒤로 뻗은 꼬리가 ±50° 돌렸을 때 옆으로 나오는 만큼 포함 |
 | `DisplayBounds_CoverIntermediateTurnAngles` | 양 끝 각도가 아닌 중간 각도의 최대도 포함 |

@@ -523,33 +523,52 @@ bool isSkinned(const model::Model& model) {
                                [](const model::Vertex& v) { return v.weights[0] > 0.0f; });
 }
 
+// CPU 스키닝 (가중치가 없으면 원래 위치)
+core::Vec3 posedPosition(const model::Vertex& v, const std::vector<core::Mat4>& skin) {
+    if (v.weights[0] <= 0.0f) {
+        return v.position;
+    }
+    core::Vec3 p;
+    for (std::size_t k = 0; k < model::kMaxInfluences; ++k) {
+        if (v.weights[k] > 0.0f && v.joints[k] < skin.size()) {
+            p = p + core::transformPoint(v.position, skin[v.joints[k]]) * v.weights[k];
+        }
+    }
+    return p;
+}
+
 }  // namespace
 
 std::array<model::Bounds, kMotionCount> ProceduralAnimator::motionBounds(
     float maxTurnRadians) const {
     std::array<model::Bounds, kMotionCount> result;
     result.fill(kEmptyBounds);
+    // 몸 돌리기(maxTurnRadians)는 걷기에만: 앱은 걸을 때만 몸을 돌림. 다른 동작까지 넓히면 화면
+    // 끝에 서 있을 때 그만큼 떠 보임 (걷다 멈춘 뒤 돌아오는 0.2초는 앱이 벽을 천천히 옮겨 처리)
+    const auto turnFor = [maxTurnRadians](Motion motion) {
+        return motion == Motion::Walk ? maxTurnRadians : 0.0f;
+    };
     if (!isSkinned(model_)) {
-        model::Bounds bounds = model_.bounds;  // 움직일 정점이 없으면 원래 경계 (모든 동작 같음)
+        result.fill(model_.bounds);  // 움직일 정점이 없으면 원래 경계 (모든 동작 같음)
         if (maxTurnRadians != 0.0f) {
             // 원래 경계 상자의 꼭짓점을 돌려서 포함 (정점보다 model.bounds가 기준)
             const model::Bounds& b = model_.bounds;
-            bounds = kEmptyBounds;
+            model::Bounds& walk = result[static_cast<std::size_t>(Motion::Walk)];
+            walk = kEmptyBounds;
             for (unsigned i = 0; i < 8; ++i) {
                 includeTurnedPoint(
                     {(i & 1U) != 0 ? b.max.x : b.min.x, (i & 2U) != 0 ? b.max.y : b.min.y,
                      (i & 4U) != 0 ? b.max.z : b.min.z},
-                    maxTurnRadians, bounds);
+                    maxTurnRadians, walk);
             }
         }
-        result.fill(bounds);
         return result;
     }
 
     AnimationOutput out;
     for (const AnimationInput& input : boundsSamples()) {
         evaluate(input, out);
-        includePosedVertices(out.skin, maxTurnRadians,
+        includePosedVertices(out.skin, turnFor(input.motion),
                              result[static_cast<std::size_t>(input.motion)]);
     }
     return result;
@@ -619,17 +638,53 @@ std::vector<AnimationInput> ProceduralAnimator::boundsSamples() const {
 void ProceduralAnimator::includePosedVertices(const std::vector<core::Mat4>& skin,
                                               float maxTurnRadians, model::Bounds& bounds) const {
     for (const model::Vertex& v : model_.vertices) {
-        core::Vec3 p = v.position;
-        if (v.weights[0] > 0.0f) {
-            p = {};
-            for (std::size_t k = 0; k < model::kMaxInfluences; ++k) {
-                if (v.weights[k] > 0.0f && v.joints[k] < skin.size()) {
-                    p = p + core::transformPoint(v.position, skin[v.joints[k]]) * v.weights[k];
-                }
+        includeTurnedPoint(posedPosition(v, skin), maxTurnRadians, bounds);
+    }
+}
+
+std::array<ScreenRange, kMotionCount> ProceduralAnimator::screenXRange(
+    const core::Mat4& viewProjection, float maxTurnRadians) const {
+    // 걷기의 몸 돌림은 각도를 나눠 잼 (투영 뒤 최대는 해석적으로 구하기 어려움). 7개면 사이 각도의
+    // 최대를 놓쳐도 반지름의 1.4% 안
+    constexpr int kTurnSteps = 7;
+    std::array<ScreenRange, kMotionCount> result{};
+    const auto include = [&](Motion motion, core::Vec3 p) {
+        ScreenRange& range = result[static_cast<std::size_t>(motion)];
+        const int steps = motion == Motion::Walk && maxTurnRadians != 0.0f ? kTurnSteps : 1;
+        for (int i = 0; i < steps; ++i) {
+            const float angle =
+                steps == 1
+                    ? 0.0f
+                    : maxTurnRadians *
+                          (2.0f * static_cast<float>(i) / static_cast<float>(steps - 1) - 1.0f);
+            const float c = std::cos(angle);
+            const float s = std::sin(angle);
+            // Mat4::rotationY와 같은 회전 (includeTurnedPoint 참고)
+            const core::Vec4 clip =
+                core::transform({p.x * c + p.z * s, p.y, p.z * c - p.x * s}, viewProjection);
+            if (clip.w > 0.0f) {
+                const float x = clip.x / clip.w;
+                range.min = std::min(range.min, x);
+                range.max = std::max(range.max, x);
             }
         }
-        includeTurnedPoint(p, maxTurnRadians, bounds);
+    };
+    if (!isSkinned(model_)) {
+        for (std::size_t m = 0; m < kMotionCount; ++m) {
+            for (const model::Vertex& v : model_.vertices) {
+                include(static_cast<Motion>(m), v.position);
+            }
+        }
+        return result;
     }
+    AnimationOutput out;
+    for (const AnimationInput& input : boundsSamples()) {
+        evaluate(input, out);
+        for (const model::Vertex& v : model_.vertices) {
+            include(input.motion, posedPosition(v, out.skin));
+        }
+    }
+    return result;
 }
 
 }  // namespace deskpet::anim

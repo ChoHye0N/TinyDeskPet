@@ -300,6 +300,53 @@ TEST(ProceduralAnimator, DisplayBounds_CoverBodyTurnedWhileWalking) {
     EXPECT_LT(turned.min.x, -0.76f);
 }
 
+TEST(ProceduralAnimator, MotionBounds_TurnOnlyWidensWalk) {
+    // 앱은 걸을 때만 몸을 돌림 → 뒤로 뻗은 꼬리가 옆으로 나오는 만큼은 걷기 상자에만. 대기 상자까지
+    // 넓히면 화면 끝에 서 있을 때 그만큼 떠 보임
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Vertex tail;
+    tail.position = {0.0f, 1.0f, -1.0f};
+    tail.joints[0] = 1;  // hips
+    tail.weights[0] = 1.0f;
+    model.vertices.push_back(tail);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+    const ProceduralAnimator animator(model);
+
+    constexpr float kTurn = 50.0f * 3.14159265f / 180.0f;
+    const auto plain = animator.motionBounds();
+    const auto turned = animator.motionBounds(kTurn);
+    const auto idle = static_cast<std::size_t>(Motion::Idle);
+    const auto walk = static_cast<std::size_t>(Motion::Walk);
+    EXPECT_FLOAT_EQ(turned[idle].max.x, plain[idle].max.x);
+    EXPECT_FLOAT_EQ(turned[idle].min.x, plain[idle].min.x);
+    EXPECT_GT(turned[walk].max.x, 0.76f);
+    EXPECT_LT(turned[walk].min.x, -0.76f);
+}
+
+TEST(ProceduralAnimator, ScreenXRange_UsesActualVerticesThroughCamera) {
+    // 벽은 실제 정점을 카메라로 투영한 화면 폭으로 정함 (상자 꼭짓점을 투영하면 앞쪽 모서리가
+    // 원근으로 넓게 잡힘). 단위 행렬이면 x 범위 = 동작별 상자의 x 범위, 걷기는 몸 돌림 포함
+    auto model = deskpet::test::makeSkeletonModel();
+    deskpet::model::Vertex tail;
+    tail.position = {0.0f, 1.0f, -1.0f};
+    tail.joints[0] = 1;
+    tail.weights[0] = 1.0f;
+    model.vertices.push_back(tail);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+    const ProceduralAnimator animator(model);
+    constexpr float kTurn = 50.0f * 3.14159265f / 180.0f;
+    const auto boxes = animator.motionBounds(kTurn);
+    const auto ranges = animator.screenXRange(deskpet::core::Mat4::identity(), kTurn);
+    const auto idle = static_cast<std::size_t>(Motion::Idle);
+    const auto walk = static_cast<std::size_t>(Motion::Walk);
+    EXPECT_NEAR(ranges[idle].min, boxes[idle].min.x, 1e-5f);
+    EXPECT_NEAR(ranges[idle].max, boxes[idle].max.x, 1e-5f);
+    // 걷기는 각도를 나눠 재므로 해석적인 상자보다 아주 조금 작을 수 있음 (2% 안)
+    EXPECT_LE(ranges[walk].max, boxes[walk].max.x + 1e-5f);
+    EXPECT_GE(ranges[walk].max, boxes[walk].max.x * 0.98f);
+    EXPECT_GT(ranges[walk].max, ranges[idle].max);
+}
+
 TEST(ProceduralAnimator, DisplayBounds_CoverIntermediateTurnAngles) {
     // (0.6, -0.6) 점은 x' = 0.6·cos θ − 0.6·sin θ가 θ = −45°에서 최대 (0.849).
     // 양 끝(±50°)만 보면 0.845로 조금 모자람 → 중간 각도도 샘플링해야 함

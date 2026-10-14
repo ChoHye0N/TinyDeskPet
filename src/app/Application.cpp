@@ -27,6 +27,8 @@ constexpr int kHiddenWaitMs = 100;
 
 // 걷는 방향으로 몸을 돌리는 각도. 90°면 옆모습만 보이므로 얼굴이 보이게 덜 돌림
 constexpr float kWalkTurnRadians = 50.0f * std::numbers::pi_v<float> / 180.0f;
+// 동작이 바뀌어 그려지는 폭이 넓어질 때 벽이 따라가는 속도 (상자 폭/s). 상자 폭의 30%가 0.2초
+constexpr float kWallSpeedBoxesPerSecond = 1.5f;
 // 몸 돌리기 속도: 정면 ↔ 걷는 방향을 자세 전환과 같은 시간에 돎 (방향을 바꾸면 그 두 배)
 constexpr float kTurnSpeed = kWalkTurnRadians / anim::ProceduralAnimator::kTransitionSeconds;
 
@@ -55,7 +57,7 @@ int roundToInt(float value) {
 // 클립을 붙여 자세 경계 상자를 잼 (모든 동작 + 걸을 때 돌린 몸, 서 있는 자세, 동작별).
 // 무거우므로 모델 로딩·클립 변경은 작업 스레드에서 부름
 Application::PoseBounds poseBoundsFor(anim::ProceduralAnimator& animator,
-                                      const Application::MotionClips& clips) {
+                                      const Application::MotionClips& clips, core::SizeI box) {
     for (std::size_t m = 0; m < clips.size(); ++m) {
         animator.setClip(static_cast<anim::Motion>(m), clips[m]);
     }
@@ -69,6 +71,10 @@ Application::PoseBounds poseBoundsFor(anim::ProceduralAnimator& animator,
                           std::max(bounds.all.max.z, b.max.z)};
     }
     bounds.standing = animator.standingBounds();
+    // 화면 x 범위는 카메라에 따라 다름. 카메라는 상자의 가로세로 비율로만 정해지므로 크기(%)·DPI가
+    // 바뀌어도 그대로 (refitCamera와 같은 맞춤)
+    bounds.screenX = animator.screenXRange(fitCameraToBounds(bounds.standing, box, bounds.all),
+                                           kWalkTurnRadians);
     return bounds;
 }
 
@@ -135,17 +141,17 @@ void Application::loadModelAsync(std::filesystem::path path) {
         return;
     }
     waitForModelLoad();  // 앞선 요청이 있으면 그 결과는 버림 (마지막 요청만 반영)
-    pendingModel_ = std::async(std::launch::async,
-                               [loader = modelLoader_, clips = clips_, path = std::move(path)] {
-                                   LoadedModel loaded{path, loader(path), {}};
-                                   if (loaded.model) {
-                                       // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은
-                                       // 클립으로 계산해야 맞음
-                                       anim::ProceduralAnimator animator(*loaded.model);
-                                       loaded.bounds = poseBoundsFor(animator, clips);
-                                   }
-                                   return loaded;
-                               });
+    pendingModel_ = std::async(std::launch::async, [loader = modelLoader_, clips = clips_,
+                                                    path = std::move(path), box = boxSize_] {
+        LoadedModel loaded{path, loader(path), {}};
+        if (loaded.model) {
+            // 경계 상자 계산(정점 CPU 스키닝)도 무거우므로 여기서. 같은
+            // 클립으로 계산해야 맞음
+            anim::ProceduralAnimator animator(*loaded.model);
+            loaded.bounds = poseBoundsFor(animator, clips, box);
+        }
+        return loaded;
+    });
 }
 
 // 설정 창에서 클립을 바꿈: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산하고, 끝나면
@@ -158,10 +164,10 @@ void Application::refreshAnimationAsync() {
     if (!model_) {
         return;  // 클립은 모델을 읽을 때 붙음
     }
-    pendingModel_ =
-        std::async(std::launch::async, [model = model_, clips = clips_, path = modelPath_] {
+    pendingModel_ = std::async(
+        std::launch::async, [model = model_, clips = clips_, path = modelPath_, box = boxSize_] {
             anim::ProceduralAnimator animator(*model);
-            return LoadedModel{path, model, poseBoundsFor(animator, clips)};
+            return LoadedModel{path, model, poseBoundsFor(animator, clips, box)};
         });
 }
 
@@ -201,7 +207,7 @@ void Application::openModelFile() {
 void Application::applyAnimation() {
     if (animator_) {
         // T포즈 폭 대신 실제로 취할 자세 + 걸을 때 돌린 몸 기준 (꼬리·치마가 옆으로 나옴)
-        poseBounds_ = poseBoundsFor(*animator_, clips_);
+        poseBounds_ = poseBoundsFor(*animator_, clips_, boxSize_);
     }
     refitCamera();
     refreshBounds();  // 그려지는 폭이 바뀌었으므로 벽 위치도 다시 계산
@@ -403,6 +409,7 @@ bool Application::tick() {
     if (character_.state() != character::State::Dragged) {
         refreshGround();  // 걷기·던지기로 다른 모니터에 넘어갔을 수 있음
     }
+    updateWalls(static_cast<float>(frameSeconds));
     for (int i = 0; i < steps; ++i) {
         character_.update(dt);
     }
@@ -597,15 +604,58 @@ float Application::groundAt(core::Vec2 feet, float stepUp) {
 }
 
 void Application::refreshBounds() {
-    // 그려지는 영역(visibleRect)이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
+    const core::RectI target = targetWallRect();
+    wallLeft_ = static_cast<float>(target.left);
+    wallRight_ = static_cast<float>(target.right);
+    applyWalls();
+}
+
+// 벽의 기준 = 지금 동작의 그려지는 폭. 모든 동작 중 가장 넓은 폭(걸을 때 돌린 몸, 팔을 벌리는
+// 끌기 자세)으로 막으면 서 있을 때 그만큼 화면 끝에서 떠 보이고, 그 차이가 모델마다 다름
+core::RectI Application::targetWallRect() const {
+    if (!model_) {
+        return visibleRect();
+    }
+    const auto motion = static_cast<std::size_t>(motionFor(character_.state()));
+    core::RectI rect = projectedRect(poseBounds_.motions[motion]);  // 위아래
+    const anim::ScreenRange& x = poseBounds_.screenX[motion];
+    if (x.min <= x.max) {
+        // 좌우는 실제 정점을 투영한 범위 (상자 꼭짓점이면 앞쪽 모서리가 원근으로 넓게 잡힘)
+        const auto width = static_cast<float>(boxSize_.width);
+        rect.left = static_cast<int>(std::floor((x.min + 1.0f) * 0.5f * width));
+        rect.right = static_cast<int>(std::ceil((x.max + 1.0f) * 0.5f * width));
+    }
+    return rect;
+}
+
+core::RectI Application::wallRect() const {
+    const core::RectI target = targetWallRect();
+    return {roundToInt(wallLeft_), target.top, roundToInt(wallRight_), target.bottom};
+}
+
+// 폭이 바뀌면 자세 전환 시간쯤에 걸쳐 따라감 → 화면 끝에서 걷기·끌기로 바뀌면 캐릭터가 순간
+// 이동하지 않고 안쪽으로 미끄러져 들어오고, 다시 좁아지면 벽에 붙어 있던 캐릭터는 화면 끝까지 따라
+// 나감 (넓은 끌기 자세로 막혔다가 놓았을 때 틈이 남지 않게)
+void Application::updateWalls(float dt) {
+    const core::RectI target = targetWallRect();
+    const float step =
+        kWallSpeedBoxesPerSecond * static_cast<float>(boxSize_.width) * std::max(dt, 0.0f);
+    const auto left = static_cast<float>(target.left);
+    const auto right = static_cast<float>(target.right);
+    wallLeft_ = core::moveTowards(wallLeft_, left, step);
+    wallRight_ = core::moveTowards(wallRight_, right, step);
+    applyWalls(true);
+}
+
+void Application::applyWalls(bool keepAtWall) {
+    // 그려지는 영역이 가상 데스크톱 밖으로 나가지 않도록 발 x 범위를 정함 (FR-17).
     // 상자 반폭으로 막으면 모델 바깥의 투명한 여백 때문에 화면 끝 앞에서 멈춰 보이므로,
     // 상자의 투명한 부분은 화면 밖으로 나가도 됨. 발은 상자 가로 중앙
     const core::RectI desktop = window_->desktopBounds();
-    const core::RectI visible = visibleRect();
     const float center = static_cast<float>(boxSize_.width) / 2.0f;
-    character_.setHorizontalBounds(
-        static_cast<float>(desktop.left) + (center - static_cast<float>(visible.left)),
-        static_cast<float>(desktop.right) - (static_cast<float>(visible.right) - center));
+    character_.setHorizontalBounds(static_cast<float>(desktop.left) + (center - wallLeft_),
+                                   static_cast<float>(desktop.right) - (wallRight_ - center),
+                                   keepAtWall);
 }
 
 void Application::applyDpiScale(float scale) {
