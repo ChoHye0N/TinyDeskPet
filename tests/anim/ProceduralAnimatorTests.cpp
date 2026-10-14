@@ -475,6 +475,40 @@ TEST(ProceduralAnimatorClip, DisplayBounds_IncludeClipPoses) {
     EXPECT_GT(animator.displayBounds().max.y, withoutClip + 0.4f);  // 든 손끝까지 포함
 }
 
+TEST(ProceduralAnimatorClip, MotionBounds_SplitDisplayBoundsByMotion) {
+    // 앱은 지금 동작의 상자만 그리기 영역에 씀 → 끌려 다닐 때 클립의 든 팔은 그 동작에만
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    const float idleTop = animator.motionBounds()[0].max.y;
+    animator.setClip(Motion::Dragged, raisedArmClip());
+    const auto motions = animator.motionBounds();
+    EXPECT_FLOAT_EQ(motions[static_cast<std::size_t>(Motion::Idle)].max.y, idleTop);
+    EXPECT_GT(motions[static_cast<std::size_t>(Motion::Dragged)].max.y, idleTop + 0.4f);
+    float top = 0.0f;
+    for (const auto& b : motions) {
+        top = std::max(top, b.max.y);
+    }
+    EXPECT_FLOAT_EQ(animator.displayBounds().max.y, top);
+}
+
+TEST(ProceduralAnimatorClip, StandingBounds_DoNotDependOnClips) {
+    // 화면 크기 기준. 클립을 바꿔도 같아야 캐릭터 크기가 그대로 (모든 동작 상자는 커짐)
+    const auto model = deskpet::test::makeSkeletonModel();
+    ProceduralAnimator animator(model);
+    const auto before = animator.standingBounds();
+    animator.setClip(Motion::Idle, raisedArmClip());
+    animator.setClip(Motion::Dragged, raisedArmClip());
+    const auto after = animator.standingBounds();
+    EXPECT_FLOAT_EQ(after.min.x, before.min.x);
+    EXPECT_FLOAT_EQ(after.min.y, before.min.y);
+    EXPECT_FLOAT_EQ(after.max.x, before.max.x);
+    EXPECT_FLOAT_EQ(after.max.y, before.max.y);
+    EXPECT_FLOAT_EQ(after.max.z, before.max.z);
+    EXPECT_GT(animator.displayBounds().max.y, after.max.y + 0.4f);
+    // 기준 자세는 모든 동작 상자 안
+    EXPECT_GE(after.min.y, animator.displayBounds().min.y);
+}
+
 namespace {
 
 // 엉덩이를 dy만큼 옮기는 정지 자세 클립 (원본 엉덩이 높이 = 테스트 모델과 같은 1 → 그대로)

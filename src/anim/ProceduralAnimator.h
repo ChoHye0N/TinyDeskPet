@@ -73,6 +73,13 @@ public:
     // maxTurnRadians: 앱이 몸을 Y축으로 ±이 각도 안에서 돌려 그림 → 뒤로 뻗은 꼬리·치마가
     // 옆으로 나오는 만큼도 포함
     [[nodiscard]] model::Bounds displayBounds(float maxTurnRadians = 0.0f) const;
+    // 동작별로 나눈 displayBounds (Motion 순서). 앱이 지금 동작의 자세만 담는 그리기 영역에 씀
+    [[nodiscard]] std::array<model::Bounds, kMotionCount> motionBounds(
+        float maxTurnRadians = 0.0f) const;
+
+    // 화면 크기 기준 자세의 경계 상자: 클립 없이 코드로 만든 대기 자세 (숨쉬기 없음, 팔 내림).
+    // 클립과 무관해서 클립을 바꿔도 캐릭터 크기가 그대로 (displayBounds는 클립에 따라 바뀜)
+    [[nodiscard]] model::Bounds standingBounds() const;
 
 private:
     struct Limb {
