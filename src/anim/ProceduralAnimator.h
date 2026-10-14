@@ -95,7 +95,9 @@ public:
         const core::Mat4& viewProjection, float maxTurnRadians = 0.0f) const;
 
     // 화면 크기 기준 자세의 경계 상자: 클립 없이 코드로 만든 대기 자세 (숨쉬기 없음, 팔 내림).
-    // 클립과 무관해서 클립을 바꿔도 캐릭터 크기가 그대로 (displayBounds는 클립에 따라 바뀜)
+    // 클립과 무관해서 클립을 바꿔도 캐릭터 크기가 그대로 (displayBounds는 클립에 따라 바뀜).
+    // 아래(min.y)는 발바닥 — 발보다 낮게 늘어진 꼬리·머리카락은 넣지 않음 (발 본이 없으면 가장 낮은
+    // 정점)
     [[nodiscard]] model::Bounds standingBounds() const;
 
 private:

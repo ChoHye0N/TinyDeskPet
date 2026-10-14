@@ -523,6 +523,26 @@ bool isSkinned(const model::Model& model) {
                                [](const model::Vertex& v) { return v.weights[0] > 0.0f; });
 }
 
+// 발·발가락 본이거나 그 자손이면 1 (Model::bones 순서). 본은 부모보다 앞에 올 수 있어 부모를 따라
+// 올라감
+std::vector<std::uint8_t> footBones(const model::Model& model) {
+    std::vector<std::uint8_t> result(model.bones.size(), 0);
+    for (std::size_t j = 0; j < model.bones.size(); ++j) {
+        // 순환 참조가 있는 잘못된 파일에서도 끝나도록 본 수만큼만 올라감
+        int bone = static_cast<int>(j);
+        for (std::size_t depth = 0; bone >= 0 && depth < model.bones.size(); ++depth) {
+            const model::HumanBone human = model.bones[static_cast<std::size_t>(bone)].human;
+            if (human == model::HumanBone::LeftFoot || human == model::HumanBone::RightFoot ||
+                human == model::HumanBone::LeftToes || human == model::HumanBone::RightToes) {
+                result[j] = 1;
+                break;
+            }
+            bone = model.bones[static_cast<std::size_t>(bone)].parent;
+        }
+    }
+    return result;
+}
+
 // CPU 스키닝 (가중치가 없으면 원래 위치)
 core::Vec3 posedPosition(const model::Vertex& v, const std::vector<core::Mat4>& skin) {
     if (v.weights[0] <= 0.0f) {
@@ -597,6 +617,26 @@ model::Bounds ProceduralAnimator::standingBounds() const {
     plain.evaluate(input, out);
     model::Bounds bounds = kEmptyBounds;
     plain.includePosedVertices(out.skin, 0.0f, bounds);
+
+    // 아래는 발바닥: 발·발가락 본(또는 그 자손)에 가장 많이 붙은 정점 중 가장 낮은 높이. 발보다
+    // 낮게 늘어진 꼬리·머리카락·망토를 바닥으로 삼으면 서 있을 때 그만큼 떠 보임 (발이 없으면
+    // 그대로)
+    const std::vector<std::uint8_t> feet = footBones(model_);
+    float sole = std::numeric_limits<float>::max();
+    for (const model::Vertex& v : model_.vertices) {
+        if (v.weights[0] <= 0.0f) {
+            continue;
+        }
+        const auto dominant =
+            static_cast<std::size_t>(std::ranges::max_element(v.weights) - v.weights.begin());
+        const std::size_t joint = v.joints[dominant];
+        if (joint < feet.size() && feet[joint] != 0) {
+            sole = std::min(sole, posedPosition(v, out.skin).y);
+        }
+    }
+    if (sole != std::numeric_limits<float>::max() && sole > bounds.min.y) {
+        bounds.min.y = sole;
+    }
     return bounds;
 }
 
