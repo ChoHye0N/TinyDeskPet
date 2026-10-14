@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-14
+
+우클릭 메뉴의 **설정 창**에서 모델 파일 안 애니메이션을 동작별로 고르고 크기·옵션을 바꿀 수 있습니다. 게임에서 내보낸 glTF(GLB) 모델도 본 이름으로 매핑해 동작·표정이 붙습니다.
+
 ### Added
 
 - **설정 창** (우클릭 메뉴 → 설정…, ADR-0016): 모델 정보·모델 열기, 동작별 클립을 모델 파일 안 애니메이션에서 고르기, 크기·커서 바라보기·다른 창 위를 걷기·대기 중 숨쉬기. 바꾼 값은 바로 적용되고 `deskpet.ini`에 바로 저장. Dear ImGui에 둥근 모서리·분홍 강조색 테마, Windows 앱 모드를 따르는 어두운 테마, 맑은 고딕
@@ -112,7 +116,8 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ChoHye0N/TinyDeskPet/releases/tag/v1.0.0
