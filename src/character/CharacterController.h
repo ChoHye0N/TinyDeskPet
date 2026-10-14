@@ -74,6 +74,8 @@ public:
     [[nodiscard]] core::Vec2 velocity() const noexcept { return velocity_; }
     [[nodiscard]] State state() const noexcept { return state_; }
     [[nodiscard]] const Params& params() const noexcept { return params_; }
+    // 실행 중 값 바꾸기 (설정 창). 걷기 속도가 0이 되면 걷던 중이어도 바로 대기로
+    void setParams(const Params& params);
 
     // 입력 (화면 좌표)
     void onPointerDown(core::Vec2 screen);

@@ -190,6 +190,8 @@ gravity = 2400         ; px/s², 1 ~ 100000
 jump_speed = 900       ; px/s, 0 ~ 100000
 drag_threshold = 4     ; px, 0 ~ 100
 max_fall_speed = 4000  ; px/s, 1 ~ 100000
+walk = true            ; 대기 중 가끔 좌우로 걸음
+walk_speed = 60        ; px/s, 1 ~ 1000
 
 [renderer]
 vsync = true

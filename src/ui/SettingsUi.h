@@ -8,6 +8,7 @@
 // 입력은 마우스만 받습니다: 오버레이 창은 키보드 포커스를 받지 않음 (클릭해도 다른 창의 포커스를
 // 빼앗지 않게)
 
+#include "core/Config.h"
 #include "core/Math.h"
 
 #include <array>
@@ -31,6 +32,16 @@ struct MotionSetting {
     std::string name;     // "대기" 등
     std::string current;  // 지금 값 (choices의 value 중 하나)
     std::vector<ClipChoice> choices;
+    float duration = 0.0f;  // 지금 클립 길이 (s). 0이면 반복 시작 슬라이더 없음 (클립 없음)
+    float loopStart = 0.0f;  // 반복 시작 시각 (s, ADR-0014)
+};
+
+// 고급: 캐릭터 움직임 (px 단위, [character])
+struct MovementSetting {
+    int gravity = 2400;     // px/s²
+    int jumpSpeed = 900;    // px/s
+    int walkSpeed = 60;     // px/s
+    int dragThreshold = 4;  // px
 };
 
 inline constexpr std::size_t kMotionSettingCount = 4;  // 대기, 걷기, 끌려 다닐 때, 공중
@@ -51,9 +62,17 @@ struct SettingsState {
     int minScalePercent = 50;
     int maxScalePercent = 200;
     int scaleStepPercent = 10;
-    bool lookAt = true;
+    bool walk = true;
     bool walkOnWindows = true;
+    bool lookAt = true;
     bool idleMotion = true;
+    bool alwaysOnTop = true;
+    // 그래픽
+    bool vsync = true;
+    int msaa = 4;  // 1 = 끔, 2, 4, 8
+    core::OutlineMode outline = core::OutlineMode::Model;
+    // 고급
+    MovementSetting movement;
 };
 
 struct SettingsAction {
@@ -64,15 +83,27 @@ struct SettingsAction {
         SetLookAt,         // flag
         SetWalkOnWindows,  // flag
         SetIdleMotion,     // flag
+        SetLoopStart,      // motion 동작의 반복 시작 시각 = value (s)
+        SetWalk,           // flag
+        SetAlwaysOnTop,    // flag
+        SetVsync,          // flag
+        SetMsaa,           // 샘플 수 = number (1 = 끔)
+        SetOutline,        // number = core::OutlineMode
+        SetGravity,        // number (px/s²)
+        SetJumpSpeed,      // number (px/s)
+        SetWalkSpeed,      // number (px/s)
+        SetDragThreshold,  // number (px)
+        ResetMovement,     // 고급 값을 기본값으로
     };
     Kind kind = Kind::OpenModel;
     std::size_t motion = 0;
     std::string text;
     int number = 0;
     bool flag = false;
+    float value = 0.0f;
 };
 
-enum class SettingsTab : std::uint8_t { Model, Motion, Display, About };
+enum class SettingsTab : std::uint8_t { Model, Motion, Display, Graphics, Advanced, About };
 
 class SettingsUi {
 public:
@@ -126,6 +157,8 @@ private:
     void drawModelTab(const SettingsState& state, std::vector<SettingsAction>& actions) const;
     void drawMotionTab(const SettingsState& state, std::vector<SettingsAction>& actions) const;
     void drawDisplayTab(const SettingsState& state, std::vector<SettingsAction>& actions) const;
+    void drawGraphicsTab(const SettingsState& state, std::vector<SettingsAction>& actions) const;
+    void drawAdvancedTab(const SettingsState& state, std::vector<SettingsAction>& actions) const;
     void drawAboutTab(const SettingsState& state);
 
     ImGuiContext* context_ = nullptr;

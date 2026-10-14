@@ -162,6 +162,8 @@ private:
     // 설정 창 (ApplicationSettings.cpp)
     [[nodiscard]] ImDrawData* updateSettings(float dt);  // 닫혀 있으면 nullptr
     [[nodiscard]] ui::SettingsState settingsState() const;
+    [[nodiscard]] renderer::RendererOptions rendererOptions() const;  // config_.renderer 그대로
+    void applyMovement();  // config_.character → 캐릭터 물리·걷기 (실행 중 변경)
     void refreshClipChoices();  // 모델 파일 안 애니메이션 목록 (모델이 바뀌면)
     void refreshAnimationAsync();  // 클립이 바뀜 → 작업 스레드에서 자세 경계 상자 다시 계산
     void writeSettings(const std::vector<core::IniValue>& values) const;

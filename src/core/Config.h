@@ -30,6 +30,8 @@ struct CharacterConfig {
     float dragThreshold = 4.0f;    // px
     float maxFallSpeed = 4000.0f;  // px/s
     bool walkOnWindows = true;  // 다른 창의 윗변(제목 표시줄)에 서고 걸을 수 있음
+    bool walk = true;           // 대기 중 가끔 좌우로 걸음
+    float walkSpeed = 60.0f;    // px/s
 };
 
 struct RendererConfig {

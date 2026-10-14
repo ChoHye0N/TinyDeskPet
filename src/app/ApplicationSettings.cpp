@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -15,17 +17,20 @@ namespace {
 
 // 동작별 설정 (anim::Motion 순서)
 struct MotionSlot {
-    const char* name;     // 설정 창에 보이는 이름
-    const char* clipKey;  // [animation] 키
+    const char* name;          // 설정 창에 보이는 이름
+    const char* clipKey;       // [animation] 키
+    const char* loopStartKey;  // [animation] 키
     std::string core::AnimationConfig::*clip;
     float core::AnimationConfig::*loopStart;
 };
 constexpr std::array<MotionSlot, anim::kMotionCount> kSlots = {{
-    {"대기", "idle_clip", &core::AnimationConfig::idleClip, &core::AnimationConfig::idleLoopStart},
-    {"걷기", "walk_clip", &core::AnimationConfig::walkClip, &core::AnimationConfig::walkLoopStart},
-    {"끌려 다닐 때", "dragged_clip", &core::AnimationConfig::draggedClip,
+    {"대기", "idle_clip", "idle_loop_start", &core::AnimationConfig::idleClip,
+     &core::AnimationConfig::idleLoopStart},
+    {"걷기", "walk_clip", "walk_loop_start", &core::AnimationConfig::walkClip,
+     &core::AnimationConfig::walkLoopStart},
+    {"끌려 다닐 때", "dragged_clip", "dragged_loop_start", &core::AnimationConfig::draggedClip,
      &core::AnimationConfig::draggedLoopStart},
-    {"공중", "airborne_clip", &core::AnimationConfig::airborneClip,
+    {"공중", "airborne_clip", "airborne_loop_start", &core::AnimationConfig::airborneClip,
      &core::AnimationConfig::airborneLoopStart},
 }};
 static_assert(kSlots.size() == ui::kMotionSettingCount);
@@ -37,6 +42,29 @@ std::string utf8(const std::filesystem::path& path) {
 
 const char* boolText(bool value) {
     return value ? "true" : "false";
+}
+
+const char* outlineText(core::OutlineMode mode) {
+    switch (mode) {
+        case core::OutlineMode::All: return "all";
+        case core::OutlineMode::Off: return "off";
+        case core::OutlineMode::Model:
+        default: return "model";
+    }
+}
+
+// 설정 파일에 쓰는 실수: 소수 둘째 자리까지, 끝의 0은 뺌 ("1.50" → "1.5", "2.00" → "2")
+std::string decimalText(float value) {
+    std::string text = std::to_string(std::round(value * 100.0f) / 100.0f);
+    text.erase(text.find_last_not_of('0') + 1);
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+    return text;
+}
+
+std::string intText(float value) {
+    return std::to_string(std::lround(value));
 }
 
 }  // namespace
@@ -132,16 +160,44 @@ ui::SettingsState Application::settingsState() const {
                 std::u8string(motion.current.begin(), motion.current.end()));
             motion.choices.push_back({utf8(path.filename()), motion.current});
         }
+        if (clips_[m]) {
+            motion.duration = clips_[m]->duration();
+            motion.loopStart = config_.animation.*kSlots[m].loopStart;
+        }
     }
 
     state.scalePercent = scalePercent_;
     state.minScalePercent = kMinScalePercent;
     state.maxScalePercent = kMaxScalePercent;
     state.scaleStepPercent = kScaleStepPercent;
-    state.lookAt = config_.animation.lookAt;
+    state.walk = config_.character.walk;
     state.walkOnWindows = config_.character.walkOnWindows;
+    state.lookAt = config_.animation.lookAt;
     state.idleMotion = config_.animation.idleMotion;
+    state.alwaysOnTop = config_.window.alwaysOnTop;
+
+    state.vsync = config_.renderer.vsync;
+    state.msaa = config_.renderer.msaa;
+    state.outline = config_.renderer.outline;
+
+    const core::CharacterConfig& c = config_.character;
+    state.movement = {
+        static_cast<int>(std::lround(c.gravity)), static_cast<int>(std::lround(c.jumpSpeed)),
+        static_cast<int>(std::lround(c.walkSpeed)), static_cast<int>(std::lround(c.dragThreshold))};
     return state;
+}
+
+renderer::RendererOptions Application::rendererOptions() const {
+    renderer::RendererOptions options;
+    options.vsync = config_.renderer.vsync;
+    options.debugLayer = config_.renderer.debugLayer;
+    options.msaaSamples = config_.renderer.msaa;
+    options.outline = config_.renderer.outline;
+    return options;
+}
+
+void Application::applyMovement() {
+    character_.setParams(character::Params::fromConfig(config_.character));
 }
 
 void Application::applySettingsAction(const ui::SettingsAction& action) {
@@ -181,6 +237,94 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             config_.animation.idleMotion = action.flag;
             writeSettings({{"animation", "idle_motion", boolText(action.flag)}});
             break;
+        case Kind::SetLoopStart: {
+            if (action.motion >= kSlots.size()) {
+                break;
+            }
+            const MotionSlot& slot = kSlots[action.motion];
+            const float seconds = std::max(action.value, 0.0f);
+            config_.animation.*slot.loopStart = seconds;
+            // 클립은 공유되는 const 데이터라 복사해서 반복 시작만 바꿈. 자세 경계 상자는 클립 전체
+            // 길이로 재므로 그대로
+            if (const auto& current = clips_[action.motion]) {
+                auto changed = std::make_shared<model::MotionClip>(*current);
+                changed->loopStart = seconds;
+                clips_[action.motion] = changed;
+                if (animator_) {
+                    animator_->setClip(static_cast<anim::Motion>(action.motion), changed);
+                }
+            }
+            writeSettings({{"animation", slot.loopStartKey, decimalText(seconds)}});
+            break;
+        }
+        case Kind::SetWalk:
+            config_.character.walk = action.flag;
+            applyMovement();
+            writeSettings({{"character", "walk", boolText(action.flag)}});
+            break;
+        case Kind::SetAlwaysOnTop:
+            config_.window.alwaysOnTop = action.flag;
+            window_->setAlwaysOnTop(action.flag);
+            writeSettings({{"window", "always_on_top", boolText(action.flag)}});
+            break;
+        case Kind::SetVsync:
+            config_.renderer.vsync = action.flag;
+            renderer_->setOptions(rendererOptions());
+            writeSettings({{"renderer", "vsync", boolText(action.flag)}});
+            break;
+        case Kind::SetMsaa:
+            if (action.number != 1 && action.number != 2 && action.number != 4 &&
+                action.number != 8) {
+                break;
+            }
+            config_.renderer.msaa = action.number;
+            renderer_->setOptions(rendererOptions());
+            writeSettings({{"renderer", "msaa", std::to_string(action.number)}});
+            break;
+        case Kind::SetOutline: {
+            if (action.number < 0 || action.number > static_cast<int>(core::OutlineMode::Off)) {
+                break;
+            }
+            config_.renderer.outline = static_cast<core::OutlineMode>(action.number);
+            renderer_->setOptions(rendererOptions());
+            writeSettings({{"renderer", "outline", outlineText(config_.renderer.outline)}});
+            break;
+        }
+        case Kind::SetGravity:
+            config_.character.gravity = static_cast<float>(std::max(action.number, 1));
+            applyMovement();
+            writeSettings({{"character", "gravity", intText(config_.character.gravity)}});
+            break;
+        case Kind::SetJumpSpeed:
+            config_.character.jumpSpeed = static_cast<float>(std::max(action.number, 0));
+            applyMovement();
+            writeSettings({{"character", "jump_speed", intText(config_.character.jumpSpeed)}});
+            break;
+        case Kind::SetWalkSpeed:
+            config_.character.walkSpeed = static_cast<float>(std::max(action.number, 1));
+            applyMovement();
+            writeSettings({{"character", "walk_speed", intText(config_.character.walkSpeed)}});
+            break;
+        case Kind::SetDragThreshold:
+            config_.character.dragThreshold = static_cast<float>(std::max(action.number, 0));
+            applyMovement();
+            writeSettings(
+                {{"character", "drag_threshold", intText(config_.character.dragThreshold)}});
+            break;
+        case Kind::ResetMovement: {
+            const core::CharacterConfig defaults;
+            core::CharacterConfig& c = config_.character;
+            c.gravity = defaults.gravity;
+            c.jumpSpeed = defaults.jumpSpeed;
+            c.walkSpeed = defaults.walkSpeed;
+            c.dragThreshold = defaults.dragThreshold;
+            applyMovement();
+            writeSettings({{"character", "gravity", intText(c.gravity)},
+                           {"character", "jump_speed", intText(c.jumpSpeed)},
+                           {"character", "walk_speed", intText(c.walkSpeed)},
+                           {"character", "drag_threshold", intText(c.dragThreshold)}});
+            break;
+        }
     }
 }
 

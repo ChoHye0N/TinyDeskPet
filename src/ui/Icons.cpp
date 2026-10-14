@@ -49,6 +49,23 @@ void folder(ImDrawList& list, ImVec2 c, float s, ImU32 color, float thick) {
                      ImDrawFlags_Closed);
 }
 
+void image(ImDrawList& list, ImVec2 c, float s, ImU32 color, float thick) {
+    list.AddRect(at(c, s, -0.42f, -0.34f), at(c, s, 0.42f, 0.34f), color, s * 0.06f, thick);
+    const std::array<ImVec2, 4> mountain = {at(c, s, -0.32f, 0.24f), at(c, s, -0.08f, -0.04f),
+                                            at(c, s, 0.10f, 0.14f), at(c, s, 0.32f, 0.24f)};
+    list.AddPolyline(mountain.data(), static_cast<int>(mountain.size()), color, thick);
+    list.AddCircleFilled(at(c, s, 0.18f, -0.14f), s * 0.07f, color);
+}
+
+void sliders(ImDrawList& list, ImVec2 c, float s, ImU32 color, float thick) {
+    constexpr std::array<std::array<float, 2>, 3> kRows = {
+        {{-0.26f, -0.12f}, {0.0f, 0.18f}, {0.26f, -0.20f}}};  // {y, 손잡이 x}
+    for (const auto& [y, knob] : kRows) {
+        list.AddLine(at(c, s, -0.40f, y), at(c, s, 0.40f, y), color, thick);
+        list.AddCircleFilled(at(c, s, knob, y), s * 0.09f, color);
+    }
+}
+
 }  // namespace
 
 void drawIcon(ImDrawList& list, Icon icon, ImVec2 center, float size, ImU32 color) {
@@ -69,6 +86,8 @@ void drawIcon(ImDrawList& list, Icon icon, ImVec2 center, float size, ImU32 colo
         case Icon::Monitor: monitor(list, center, size, color, thick); break;
         case Icon::Info: info(list, center, size, color, thick); break;
         case Icon::Folder: folder(list, center, size, color, thick); break;
+        case Icon::Image: image(list, center, size, color, thick); break;
+        case Icon::Sliders: sliders(list, center, size, color, thick); break;
         case Icon::ChevronDown: {
             const std::array<ImVec2, 3> points = {at(center, size, -0.28f, -0.14f),
                                                   at(center, size, 0.0f, 0.14f),

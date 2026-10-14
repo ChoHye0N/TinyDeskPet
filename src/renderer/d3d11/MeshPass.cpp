@@ -254,6 +254,7 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
     }
 
     // 불투명·마스크를 먼저, 반투명을 나중에 (반투명은 뒤에 있는 것이 먼저 그려져 있어야 섞임)
+    drawOrderOutline_ = outlineMode_;
     for (const bool blendPass : {false, true}) {
         for (const model::Primitive& p : model.primitives) {
             const model::Material* material =
@@ -407,6 +408,17 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
     }
     if (!vertexBuffer_) {
         return true;
+    }
+    if (drawOrderOutline_ != outlineMode_) {
+        // 외곽선 설정이 바뀜: 재질별 굵기만 다시 계산 (지금 장면의 모델 = 올린 모델)
+        for (GpuPrimitive& primitive : drawOrder_) {
+            const model::Material* material =
+                primitive.material >= 0
+                    ? &model->materials[static_cast<std::size_t>(primitive.material)]
+                    : nullptr;
+            primitive.outlineWidth = outlineWidthFor(material);
+        }
+        drawOrderOutline_ = outlineMode_;
     }
     if (!ensureDepthBuffer(ctx)) {
         return false;

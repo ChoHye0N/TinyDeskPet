@@ -8,7 +8,18 @@
 
 namespace deskpet::ui {
 
-enum class Icon : std::uint8_t { Paw, Close, User, Play, Monitor, Info, Folder, ChevronDown };
+enum class Icon : std::uint8_t {
+    Paw,
+    Close,
+    User,
+    Play,
+    Monitor,
+    Info,
+    Folder,
+    ChevronDown,
+    Image,    // 그래픽: 액자 안 산과 해
+    Sliders,  // 고급: 손잡이가 달린 가로줄 셋
+};
 
 // center를 중심으로 size×size 안에 그림. 선 두께는 size에 비례
 void drawIcon(ImDrawList& list, Icon icon, ImVec2 center, float size, ImU32 color);

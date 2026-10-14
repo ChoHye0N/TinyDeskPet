@@ -46,8 +46,9 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
     // 패스 실행 순서 = 등록 순서 (docs/02-architecture/SAD.md §7.2)
     scenePasses_.clear();
     overlayPasses_.clear();
-    scenePasses_.push_back(
-        std::make_unique<MeshPass>(options_.outline));  // 3D를 먼저 그림 (ADR-0008)
+    auto meshPass = std::make_unique<MeshPass>(options_.outline);
+    meshPass_ = meshPass.get();
+    scenePasses_.push_back(std::move(meshPass));  // 3D를 먼저 그림 (ADR-0008)
     overlayPasses_.push_back(std::make_unique<PlaceholderPass>());
     overlayPasses_.push_back(std::make_unique<ImGuiPass>());  // 설정 창은 맨 위 (ADR-0016)
 
@@ -149,8 +150,33 @@ void D3D11Renderer::resize(core::SizeI size) {
     }
 }
 
+void D3D11Renderer::setOptions(const RendererOptions& options) {
+    const bool msaaChanged = options.msaaSamples != options_.msaaSamples;
+    options_.vsync = options.vsync;  // Present 간격만 바뀜
+    options_.msaaSamples = options.msaaSamples;
+    options_.outline = options.outline;
+    if (meshPass_ != nullptr) {
+        meshPass_->setOutlineMode(options.outline);
+    }
+    if (msaaChanged && initialized_ && device_) {
+        sampleCount_ = chooseSupportedSampleCount();
+        // 3D 영역 텍스처를 새 샘플 수로 다음 프레임에 다시 만듦 (깊이 버퍼는 MeshPass가 샘플 수가
+        // 바뀐 것을 보고 다시 만듦). 그 프레임은 바뀐 곳만이 아니라 전체를 처리
+        msaaView_.Reset();
+        msaaTarget_.Reset();
+        regionView_.Reset();
+        regionTexture_.Reset();
+        regionCapacity_ = {};
+        regionSmallFrames_ = 0;
+        partialReady_ = false;
+        core::logging::info("MSAA {}x로 바꿈", sampleCount_);
+    }
+    needsPresent_ = true;  // 장면이 같아도 새 옵션으로 한 번 다시 그림
+}
+
 void D3D11Renderer::shutdown() {
     releaseDeviceResources();
+    meshPass_ = nullptr;
     scenePasses_.clear();
     overlayPasses_.clear();
     d2dFactory_.Reset();

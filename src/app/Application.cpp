@@ -346,12 +346,7 @@ bool Application::initialize() {
                             boxSize_.width, boxSize_.height);
     }
 
-    renderer::RendererOptions options;
-    options.vsync = config_.renderer.vsync;
-    options.debugLayer = config_.renderer.debugLayer;
-    options.msaaSamples = config_.renderer.msaa;
-    options.outline = config_.renderer.outline;
-    if (!renderer_->initialize(window_->nativeHandle(), desc.size, options)) {
+    if (!renderer_->initialize(window_->nativeHandle(), desc.size, rendererOptions())) {
         core::logging::error("렌더러를 초기화할 수 없습니다");
         return false;
     }

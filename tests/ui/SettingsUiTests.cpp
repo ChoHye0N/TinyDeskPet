@@ -122,3 +122,51 @@ TEST(SettingsUi, DraggingTitle_MovesWindow) {
     EXPECT_EQ(ui.windowRect().left, before.left - 100);
     EXPECT_EQ(ui.windowRect().top, before.top + 50);
 }
+
+TEST(SettingsUi, ClickingGraphicsAndAdvancedTabs_SelectsThem) {
+    SettingsUi ui;
+    ui.open(kCharacter);
+    (void)step(ui);
+    const auto rect = ui.windowRect();
+    const auto tabY = [&](int index) {
+        return static_cast<float>(rect.top) + kTitleHeight + 10.0f +
+               static_cast<float>(index) * (34.0f + 4.0f) + 17.0f;
+    };
+    (void)click(ui, {static_cast<float>(rect.left) + 60.0f, tabY(3)});
+    EXPECT_EQ(ui.tab(), SettingsTab::Graphics);
+    (void)click(ui, {static_cast<float>(rect.left) + 60.0f, tabY(4)});
+    EXPECT_EQ(ui.tab(), SettingsTab::Advanced);
+}
+
+TEST(SettingsUi, EveryTab_DrawsWithClipLoopSliders) {
+    // 탭마다 위젯이 그려지고 (ImGui 단언 없음), 동작 탭은 클립이 있는 동작에만 반복 시작 슬라이더
+    SettingsState state;
+    state.motions[0].name = "대기";
+    state.motions[0].duration = 3.0f;
+    state.motions[0].loopStart = 1.5f;
+    SettingsUi ui;
+    ui.open(kCharacter);
+    for (const SettingsTab tab :
+         {SettingsTab::Model, SettingsTab::Motion, SettingsTab::Display, SettingsTab::Graphics,
+          SettingsTab::Advanced, SettingsTab::About}) {
+        ui.selectTab(tab);
+        EXPECT_TRUE(step(ui, state).empty());
+    }
+}
+
+TEST(SettingsUi, GraphicsTab_VsyncToggleEmitsAction) {
+    SettingsState state;
+    state.vsync = true;
+    SettingsUi ui;
+    ui.open(kCharacter);
+    ui.selectTab(SettingsTab::Graphics);
+    (void)step(ui, state);
+    const auto rect = ui.windowRect();
+    // 첫 줄 스위치: 내용 영역 오른쪽 안쪽 여백 18 안, 위 여백 16 아래 (폭 36, 높이 20)
+    const Vec2 toggle{static_cast<float>(rect.right) - 18.0f - 18.0f,
+                      static_cast<float>(rect.top) + kTitleHeight + 16.0f + 10.0f};
+    const auto actions = click(ui, toggle, state);
+    ASSERT_EQ(actions.size(), 1U);
+    EXPECT_EQ(actions[0].kind, SettingsAction::Kind::SetVsync);
+    EXPECT_FALSE(actions[0].flag);
+}

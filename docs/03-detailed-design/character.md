@@ -52,8 +52,10 @@ struct Params {
     float walkTimeMin = 2.0f, walkTimeMax = 5.0f;   // s, 한 번 걷는 시간
     std::uint32_t randomSeed = 0;         // 테스트에서 결정적으로 만들기 위해 주입
 
-    [[nodiscard]] static Params fromConfig(const core::CharacterConfig& config);
+    [[nodiscard]] static Params fromConfig(const core::CharacterConfig& config);  // walk = false면 walkSpeed 0
 };
+// CharacterController::setParams(params): 실행 중 값 바꾸기 (설정 창). 난수·위치·속도는 그대로,
+// walkSpeed가 0이 되면 걷던 중이어도 바로 Idle
 
 struct Pose {
     State state = State::Idle;
@@ -203,7 +205,7 @@ if position.y >= ground:
 | 최근 드래그 속도로 던져짐 / 멈췄다가 놓으면 속도 0 / 최대 속도 제한 | FR-16 |
 | 던진 뒤 공기 저항으로 감속, 착지 후 마찰로 정지 | FR-16 |
 | 벽에 던지면 반사되고 범위 밖으로 나가지 않음, 범위 밖에서 놓으면 안으로 맞춤 | FR-17 |
-| 대기 시간 뒤 걷기 → 걷기 시간 뒤 Idle, 벽에서 뒤돌기, `walkSpeed = 0`이면 걷지 않음, 걷는 중 점프 | — |
+| 대기 시간 뒤 걷기 → 걷기 시간 뒤 Idle, 벽에서 뒤돌기, `walkSpeed = 0`이면 걷지 않음, 걷는 중 점프, 설정 `walk = false`면 속도 0, 걷던 중 `setParams`로 끄면 바로 Idle·그 자리 | — |
 
 ## 6. 확장 지점
 

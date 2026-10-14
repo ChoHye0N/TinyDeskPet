@@ -31,12 +31,16 @@ struct TabInfo {
     Icon icon;
     const char* label;
 };
-constexpr std::array<TabInfo, 4> kTabs = {{
+constexpr std::array<TabInfo, 6> kTabs = {{
     {SettingsTab::Model, Icon::User, "모델"},
     {SettingsTab::Motion, Icon::Play, "동작"},
     {SettingsTab::Display, Icon::Monitor, "화면"},
+    {SettingsTab::Graphics, Icon::Image, "그래픽"},
+    {SettingsTab::Advanced, Icon::Sliders, "고급"},
     {SettingsTab::About, Icon::Info, "정보"},
 }};
+
+constexpr float kValueWidth = 56.0f;  // 슬라이더 오른쪽 값 글자 칸
 
 ImVec2 offset(ImVec2 a, float x, float y) {
     return {a.x + x, a.y + y};
@@ -74,27 +78,25 @@ bool toggle(const char* id, bool on, const Palette& p, float scale) {
 }
 
 // 얇은 트랙 + 둥근 손잡이 슬라이더 (step 단위로 맞춤). 값이 바뀌면 새 값
-std::optional<int> slider(const char* id, int value, int min, int max, int step, float width,
-                          const Palette& p, float scale) {
+std::optional<float> sliderValue(const char* id, float value, float min, float max, float step,
+                                 float width, const Palette& p, float scale) {
     const float height = 22.0f * scale;
     const float knob = 8.0f * scale;
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, {width, height});
     const float left = pos.x + knob;
     const float right = pos.x + width - knob;
-    std::optional<int> changed;
-    if (ImGui::IsItemActive() && right > left && max > min && step > 0) {
+    std::optional<float> changed;
+    if (ImGui::IsItemActive() && right > left && max > min && step > 0.0f) {
         const float t = std::clamp((ImGui::GetIO().MousePos.x - left) / (right - left), 0.0f, 1.0f);
-        const auto steps =
-            std::lround(t * static_cast<float>(max - min) / static_cast<float>(step));
-        const int picked = std::clamp(min + static_cast<int>(steps) * step, min, max);
-        if (picked != value) {
+        const float steps = std::round(t * (max - min) / step);
+        const float picked = std::clamp(min + steps * step, min, max);
+        if (std::abs(picked - value) > step * 0.01f) {
             changed = picked;
             value = picked;
         }
     }
-    const float t =
-        max > min ? static_cast<float>(value - min) / static_cast<float>(max - min) : 0.0f;
+    const float t = max > min ? std::clamp((value - min) / (max - min), 0.0f, 1.0f) : 0.0f;
     const float x = left + t * (right - left);
     const float y = pos.y + height * 0.5f;
     const float track = 2.0f * scale;
@@ -103,6 +105,74 @@ std::optional<int> slider(const char* id, int value, int min, int max, int step,
     list.AddRectFilled({left, y - track}, {x, y + track}, p.accent, track);
     list.AddCircleFilled({x, y}, knob, p.accent);
     return changed;
+}
+
+std::optional<int> slider(const char* id, int value, int min, int max, int step, float width,
+                          const Palette& p, float scale) {
+    if (const std::optional<float> picked =
+            sliderValue(id, static_cast<float>(value), static_cast<float>(min),
+                        static_cast<float>(max), static_cast<float>(step), width, p, scale)) {
+        return static_cast<int>(std::lround(*picked));
+    }
+    return std::nullopt;
+}
+
+// "이름 | 슬라이더 값" 한 줄. 값이 바뀌면 새 값
+std::optional<int> sliderRow(const char* label, const char* id, int value, int min, int max,
+                             int step, const Palette& p, float scale, const char* unit = "") {
+    rowLabel(label, scale);
+    const float sliderWidth = ImGui::GetContentRegionAvail().x - kValueWidth * scale;
+    const std::optional<int> changed = slider(id, value, min, max, step, sliderWidth, p, scale);
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%d%s", changed.value_or(value), unit);
+    return changed;
+}
+
+// 이름 왼쪽, 스위치 오른쪽 끝. 눌리면 true
+bool toggleRow(const char* label, const char* id, bool on, const Palette& p, float scale) {
+    const float rowRight = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(rowRight - 36.0f * scale);
+    return toggle(id, on, p, scale);
+}
+
+// 붙어 있는 선택 버튼들 (하나만 선택). 다른 것을 누르면 그 번호
+template <std::size_t N>
+std::optional<std::size_t> segmented(const char* id, const std::array<const char*, N>& labels,
+                                     std::size_t selected, const Palette& p, float scale) {
+    std::optional<std::size_t> picked;
+    const float width = ImGui::GetContentRegionAvail().x / static_cast<float>(N);
+    const float height = ImGui::GetFrameHeight();
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    ImDrawList& list = *ImGui::GetWindowDrawList();
+    list.AddRectFilled(start, offset(start, width * static_cast<float>(N), height), p.frame,
+                       8.0f * scale);
+    ImGui::PushID(id);
+    for (std::size_t i = 0; i < N; ++i) {
+        const ImVec2 pos = offset(start, width * static_cast<float>(i), 0.0f);
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::InvisibleButton("##seg", {width, height}) && i != selected) {
+            picked = i;
+        }
+        ImGui::PopID();
+        const bool on = i == selected;
+        if (on || ImGui::IsItemHovered()) {
+            const float inset = 3.0f * scale;
+            list.AddRectFilled(offset(pos, inset, inset),
+                               offset(pos, width - inset, height - inset),
+                               on ? p.accentSoft : p.frameHover, 6.0f * scale);
+        }
+        const ImVec2 text = ImGui::CalcTextSize(labels[i]);
+        list.AddText(offset(pos, (width - text.x) * 0.5f, (height - text.y) * 0.5f),
+                     on ? p.accentText : p.text, labels[i]);
+    }
+    ImGui::PopID();
+    ImGui::SetCursorScreenPos(offset(start, 0.0f, height));
+    ImGui::Dummy({0.0f, 0.0f});
+    return picked;
 }
 
 // 왼쪽에 아이콘이 있는 버튼
@@ -261,6 +331,8 @@ ImDrawData* SettingsUi::frame(float dt, core::SizeI display, const SettingsState
             case SettingsTab::Model: drawModelTab(state, actions); break;
             case SettingsTab::Motion: drawMotionTab(state, actions); break;
             case SettingsTab::Display: drawDisplayTab(state, actions); break;
+            case SettingsTab::Graphics: drawGraphicsTab(state, actions); break;
+            case SettingsTab::Advanced: drawAdvancedTab(state, actions); break;
             case SettingsTab::About: drawAboutTab(state); break;
         }
         ImGui::EndChild();
@@ -406,6 +478,22 @@ void SettingsUi::drawMotionTab(const SettingsState& state,
             }
             ImGui::EndCombo();
         }
+        if (motion.duration > 0.0f) {
+            // 클립을 처음 한 번 끝까지 재생한 뒤 이 시각부터 반복 (ADR-0014)
+            rowLabel("  반복 시작", s);
+            const float sliderWidth = ImGui::GetContentRegionAvail().x - kValueWidth * s;
+            const float shown = std::min(motion.loopStart, motion.duration);
+            const std::optional<float> picked = sliderValue("##loop", shown, 0.0f, motion.duration,
+                                                            0.1f, sliderWidth, palette(dark_), s);
+            if (picked) {
+                SettingsAction action{SettingsAction::Kind::SetLoopStart, m, {}, 0, false};
+                action.value = *picked;
+                actions.push_back(action);
+            }
+            ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%.1f초", picked.value_or(shown));
+        }
         ImGui::PopID();
     }
     ImGui::Spacing();
@@ -421,41 +509,103 @@ void SettingsUi::drawDisplayTab(const SettingsState& state,
                                 std::vector<SettingsAction>& actions) const {
     const Palette& p = palette(dark_);
     const float s = scale_;
-    rowLabel("크기", s);
-    const float valueWidth = 52.0f * s;
-    const float sliderWidth = ImGui::GetContentRegionAvail().x - valueWidth;
     if (const std::optional<int> scale =
-            slider("##scale", state.scalePercent, state.minScalePercent, state.maxScalePercent,
-                   state.scaleStepPercent, sliderWidth, p, s)) {
+            sliderRow("크기", "##scale", state.scalePercent, state.minScalePercent,
+                      state.maxScalePercent, state.scaleStepPercent, p, s, "%")) {
         actions.push_back({SettingsAction::Kind::SetScale, 0, {}, *scale, false});
     }
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%d%%", state.scalePercent);
     ImGui::Spacing();
 
-    struct ToggleRow {
+    struct ToggleInfo {
         const char* id;
         const char* label;
         bool value;
         SettingsAction::Kind kind;
     };
-    const std::array<ToggleRow, 3> rows = {{
-        {"##lookAt", "커서 바라보기", state.lookAt, SettingsAction::Kind::SetLookAt},
+    const std::array<ToggleInfo, 5> rows = {{
+        {"##walk", "걷기", state.walk, SettingsAction::Kind::SetWalk},
         {"##walkOnWindows", "다른 창 위를 걷기", state.walkOnWindows,
          SettingsAction::Kind::SetWalkOnWindows},
+        {"##lookAt", "커서 바라보기", state.lookAt, SettingsAction::Kind::SetLookAt},
         {"##idleMotion", "대기 중 숨쉬기", state.idleMotion, SettingsAction::Kind::SetIdleMotion},
+        {"##alwaysOnTop", "항상 위", state.alwaysOnTop, SettingsAction::Kind::SetAlwaysOnTop},
     }};
-    const float toggleWidth = 36.0f * s;
-    for (const ToggleRow& row : rows) {
-        const float rowRight = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(row.label);
-        ImGui::SameLine(rowRight - toggleWidth);
-        if (toggle(row.id, row.value, p, s)) {
+    for (const ToggleInfo& row : rows) {
+        if (toggleRow(row.label, row.id, row.value, p, s)) {
             actions.push_back({row.kind, 0, {}, 0, !row.value});
         }
     }
+}
+
+void SettingsUi::drawGraphicsTab(const SettingsState& state,
+                                 std::vector<SettingsAction>& actions) const {
+    const Palette& p = palette(dark_);
+    const float s = scale_;
+    if (toggleRow("수직 동기화", "##vsync", state.vsync, p, s)) {
+        actions.push_back({SettingsAction::Kind::SetVsync, 0, {}, 0, !state.vsync});
+    }
+    ImGui::Spacing();
+
+    ImGui::TextDisabled("안티에일리어싱");
+    constexpr std::array<int, 4> kSamples = {1, 2, 4, 8};
+    const auto msaaIndex =
+        static_cast<std::size_t>(std::ranges::find(kSamples, state.msaa) - kSamples.begin());
+    if (const auto picked = segmented("##msaa", std::array<const char*, 4>{"끔", "2x", "4x", "8x"},
+                                      msaaIndex, p, s)) {
+        actions.push_back({SettingsAction::Kind::SetMsaa, 0, {}, kSamples[*picked], false});
+    }
+    ImGui::Spacing();
+
+    ImGui::TextDisabled("외곽선");
+    if (const auto picked =
+            segmented("##outline", std::array<const char*, 3>{"모델 지정", "모든 재질", "끔"},
+                      static_cast<std::size_t>(state.outline), p, s)) {
+        actions.push_back(
+            {SettingsAction::Kind::SetOutline, 0, {}, static_cast<int>(*picked), false});
+    }
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled(
+        "수직 동기화를 끄면 CPU 사용률이 크게 오릅니다. 안티에일리어싱은 높을수록 테두리가 "
+        "매끄럽지만 GPU 부담이 늘어납니다.");
+    ImGui::PopTextWrapPos();
+}
+
+void SettingsUi::drawAdvancedTab(const SettingsState& state,
+                                 std::vector<SettingsAction>& actions) const {
+    const Palette& p = palette(dark_);
+    const float s = scale_;
+    const MovementSetting& m = state.movement;
+    struct SliderInfo {
+        const char* label;
+        const char* id;
+        int value;
+        int min;
+        int max;
+        int step;
+        SettingsAction::Kind kind;
+    };
+    const std::array<SliderInfo, 4> rows = {{
+        {"중력", "##gravity", m.gravity, 500, 6000, 100, SettingsAction::Kind::SetGravity},
+        {"점프 세기", "##jump", m.jumpSpeed, 300, 2000, 50, SettingsAction::Kind::SetJumpSpeed},
+        {"걷기 속도", "##walkSpeed", m.walkSpeed, 20, 200, 5, SettingsAction::Kind::SetWalkSpeed},
+        {"끌기 시작", "##drag", m.dragThreshold, 0, 20, 1, SettingsAction::Kind::SetDragThreshold},
+    }};
+    for (const SliderInfo& row : rows) {
+        if (const std::optional<int> value =
+                sliderRow(row.label, row.id, row.value, row.min, row.max, row.step, p, s)) {
+            actions.push_back({row.kind, 0, {}, *value, false});
+        }
+    }
+    ImGui::Spacing();
+    if (ImGui::Button("기본값으로")) {
+        actions.push_back({SettingsAction::Kind::ResetMovement, 0, {}, 0, false});
+    }
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled(
+        "중력(px/s²)·점프 세기(px/s)·걷기 속도(px/s)는 캐릭터 움직임입니다. 끌기 시작(px)만큼 "
+        "움직여야 누른 것을 끌기로 봅니다.");
+    ImGui::PopTextWrapPos();
 }
 
 void SettingsUi::drawAboutTab(const SettingsState& state) {

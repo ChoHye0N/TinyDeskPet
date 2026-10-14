@@ -20,6 +20,8 @@ public:
     explicit MeshPass(core::OutlineMode outline) : outlineMode_(outline) {}
 
     [[nodiscard]] std::string_view name() const override { return "MeshPass"; }
+    // 외곽선 대상 바꾸기 (설정 창). 다음 execute에서 재질별 굵기를 다시 계산 (다시 올리지 않음)
+    void setOutlineMode(core::OutlineMode mode) noexcept { outlineMode_ = mode; }
     [[nodiscard]] bool create(const D3D11Context& ctx) override;
     [[nodiscard]] bool execute(const D3D11Context& ctx, const RenderScene& scene) override;
     void release() override;
@@ -80,6 +82,7 @@ private:
     ComPtr<ID3D11Buffer> indexBuffer_;
     std::vector<ComPtr<ID3D11ShaderResourceView>> textures_;  // model.textures와 같은 순서
     core::OutlineMode outlineMode_;
+    core::OutlineMode drawOrderOutline_ = core::OutlineMode::Model;  // drawOrder_ 굵기를 계산한 값
     ComPtr<ID3D11PixelShader> outlineShader_;
     ComPtr<ID3D11RasterizerState> cullFront_;  // 외곽선(반전 헐): 부풀린 껍데기의 뒷면만
     std::vector<GpuPrimitive> drawOrder_;  // 불투명 → 반투명

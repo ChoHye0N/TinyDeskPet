@@ -20,6 +20,8 @@
 
 namespace deskpet::renderer::d3d11 {
 
+class MeshPass;
+
 class D3D11Renderer final : public IRenderer {
 public:
     D3D11Renderer();
@@ -29,6 +31,7 @@ public:
                                   const RendererOptions& options) override;
     [[nodiscard]] FrameResult render(const RenderScene& scene) override;
     void resize(core::SizeI size) override;
+    void setOptions(const RendererOptions& options) override;
     [[nodiscard]] std::optional<AlphaSample> sampleAlpha(core::PointI local) override;
     void shutdown() override;
 
@@ -118,6 +121,7 @@ private:
 
     // 3D 패스(sceneTarget에 그림) → MSAA resolve → 2D 패스(Direct2D, 백버퍼에 그림)
     std::vector<std::unique_ptr<IRenderPass>> scenePasses_;
+    MeshPass* meshPass_ = nullptr;  // scenePasses_ 안의 MeshPass (외곽선 설정 변경용)
     std::vector<std::unique_ptr<IRenderPass>> overlayPasses_;
 };
 

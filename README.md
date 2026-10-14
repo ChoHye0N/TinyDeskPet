@@ -21,7 +21,7 @@
 - **다른 창 위를 걷기** — 창 제목 표시줄 위에 착지하고 걷다가, 끝을 넘거나 창이 닫히면 떨어짐
 - **드래그 · 던지기 · 낙하 · 점프 · 걷기** — 고정 시간 간격 물리 ([ADR-0004](docs/02-architecture/adr/0004-fixed-timestep-update.md)), 드래그 중에도 애니메이션 유지 ([ADR-0003](docs/02-architecture/adr/0003-manual-window-drag.md))
 - **모델 열기 · 모델 정보** — 메뉴에서 다른 모델을 열면 작업 스레드에서 읽어 화면이 멈추지 않음. 이름·작가·라이선스를 메뉴에 표시
-- **설정 창** — 우클릭 메뉴의 "설정…"에서 동작 클립(모델 파일 안 애니메이션)·크기·옵션을 바꾸면 바로 적용·저장. Dear ImGui에 테마를 입혀 약 0.5MB만 늘어남 ([ADR-0016](docs/02-architecture/adr/0016-imgui-settings-window.md))
+- **설정 창** — 우클릭 메뉴의 "설정…"에서 동작 클립(모델 파일 안 애니메이션)·반복 구간·크기·걷기·항상 위, 그래픽(수직 동기화·안티에일리어싱·외곽선), 고급(중력·점프·걷기 속도)을 바꾸면 바로 적용·저장. Dear ImGui에 테마를 입혀 약 0.5MB만 늘어남 ([ADR-0016](docs/02-architecture/adr/0016-imgui-settings-window.md))
 - **크기 조절 · 트레이 아이콘 · 고 DPI · 위치/크기 기억**
 - **GPU 디바이스 손실 자동 복구** — 드라이버가 리셋되어도 펫이 사라지지 않음
 - **테스트 가능한 구조** — 창·렌더러를 인터페이스로 분리해 로직을 Linux CI에서도 테스트 ([ADR-0002](docs/02-architecture/adr/0002-platform-renderer-abstraction.md))

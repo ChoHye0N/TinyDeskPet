@@ -269,6 +269,10 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetScale` | `setScalePercent` | `[state] scale` |
 | `SetLookAt` / `SetIdleMotion` | `config_.animation` 값 | `[animation] look_at` / `idle_motion` |
 | `SetWalkOnWindows` | `config_.character` 값, `refreshGround()` | `[character] walk_on_windows` |
+| `SetLoopStart` | `config_`의 그 동작 반복 시작 = 값, 지금 클립을 복사해 `loopStart`만 바꿔 애니메이터에 (클립은 공유 const라 복사. 경계 상자는 그대로) | `[animation] idle_loop_start` 등 (소수 둘째 자리까지) |
+| `SetWalk` / `SetGravity` / `SetJumpSpeed` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `jump_speed`, `walk_speed`, `drag_threshold` |
+| `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
+| `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
 
 - **클립을 바꾼 뒤 (`refreshAnimationAsync`)**: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산(`displayBoundsFor`, 큰 모델은 수백 ms). 결과는 모델 읽기와 같은 `pendingModel_` → `applyLoadedModel`이 새 클립으로 애니메이터를 교체. 읽던 모델이 있으면 먼저 반영(덮어쓰면 그 결과를 잃음). 모델이 없으면 클립만 바꿈
 - **main (`main_win32.cpp`)**: `ClipLoader` = 동작 하나 읽기(`loadMotionClip`, 로그 포함), `SettingsWriter` = `core::saveConfigValues(deskpet.ini)`, 글꼴 = `%WINDIR%\Fonts\malgun.ttf`, 어두운 테마 = 레지스트리 `HKCU\…\Themes\Personalize\AppsUseLightTheme == 0`
