@@ -216,42 +216,37 @@ TEST_F(ApplicationTest, RightClick_ShowsMenuAndQuitSelectionExits) {
 // 캐릭터 크기 조절 (FR-06)
 // ---------------------------------------------------------------------------
 
-namespace {
-
-const deskpet::platform::MenuItem* findMenuItem(
-    const std::vector<deskpet::platform::MenuItem>& menu, MenuCommand command) {
-    const auto it = std::find_if(menu.begin(), menu.end(), [command](const auto& item) {
-        return item.id == static_cast<int>(command);
-    });
-    return it != menu.end() ? &*it : nullptr;
-}
-
-}  // namespace
-
-TEST_F(ApplicationTest, ContextMenu_HasScaleItemsButNoJump) {
+TEST_F(ApplicationTest, ContextMenu_HasOnlyEssentialItems) {
+    // 크기·모델 정보·모델 열기는 설정 창으로 옮김. 메뉴는 설정·위치 초기화·숨기기·종료만
     window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
     window_.pollsBeforeQuit = 2;
     auto app = makeApp();
     (void)app->run();
 
-    const auto& menu = window_.lastMenu;
-    EXPECT_TRUE(std::none_of(menu.begin(), menu.end(),
-                             [](const auto& item) { return item.label == "점프"; }));
-    const auto* size = findMenuItem(menu, MenuCommand::ScaleInfo);
-    ASSERT_NE(size, nullptr);
-    EXPECT_EQ(size->label, "크기 100%");
-    EXPECT_FALSE(size->enabled);  // 정보 표시용
-    ASSERT_NE(findMenuItem(menu, MenuCommand::ScaleUp), nullptr);
-    ASSERT_NE(findMenuItem(menu, MenuCommand::ScaleDown), nullptr);
-    EXPECT_TRUE(findMenuItem(menu, MenuCommand::ScaleUp)->enabled);
-    EXPECT_TRUE(findMenuItem(menu, MenuCommand::ScaleDown)->enabled);
+    std::vector<int> ids;
+    for (const auto& item : window_.lastMenu) {
+        if (!item.separator) {
+            ids.push_back(item.id);
+            EXPECT_TRUE(item.enabled) << item.label;
+        }
+    }
+    EXPECT_EQ(ids, (std::vector<int>{static_cast<int>(MenuCommand::Settings),
+                                     static_cast<int>(MenuCommand::ResetPosition),
+                                     static_cast<int>(MenuCommand::ToggleVisible),
+                                     static_cast<int>(MenuCommand::Quit)}));
 }
 
-TEST_F(ApplicationTest, ScaleUp_EnlargesWindowAndKeepsFeetOnGround) {
-    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
-    window_.menuChoice = static_cast<int>(MenuCommand::ScaleUp);
+TEST_F(ApplicationTest, SettingsScale_EnlargesBoxAndKeepsFeetOnGround) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
     window_.pollsBeforeQuit = 3;
+    Application* appPtr = nullptr;
+    window_.onPoll = [&](int poll, FakeWindowState&) {
+        if (poll == 1 && appPtr != nullptr) {
+            appPtr->applySettingsAction({Kind::SetScale, 0, {}, 110, false});
+        }
+    };
     auto app = makeApp();
+    appPtr = app.get();
     (void)app->run();
 
     EXPECT_EQ(app->scalePercent(), 110);
@@ -261,40 +256,13 @@ TEST_F(ApplicationTest, ScaleUp_EnlargesWindowAndKeepsFeetOnGround) {
     EXPECT_FLOAT_EQ(app->character().position().x, kStartFeet.x);
 }
 
-TEST_F(ApplicationTest, ScaleDown_ShrinksWindow) {
-    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
-    window_.menuChoice = static_cast<int>(MenuCommand::ScaleDown);
-    window_.pollsBeforeQuit = 3;
+TEST_F(ApplicationTest, SettingsScale_IsClampedToRange) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
     auto app = makeApp();
-    (void)app->run();
-
-    EXPECT_EQ(app->scalePercent(), 90);
-    EXPECT_EQ(boxSize(*app), (core::SizeI{180, 180}));
-}
-
-TEST_F(ApplicationTest, ScaleAtMaximum_DisablesScaleUpAndIgnoresIt) {
-    config_.state.scale = 200;
-    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
-    window_.menuChoice = static_cast<int>(MenuCommand::ScaleUp);
-    window_.pollsBeforeQuit = 3;
-    auto app = makeApp();
-    (void)app->run();
-
-    EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleUp)->enabled);
-    EXPECT_TRUE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
+    app->applySettingsAction({Kind::SetScale, 0, {}, 400, false});
     EXPECT_EQ(app->scalePercent(), 200);
     EXPECT_EQ(boxSize(*app), (core::SizeI{400, 400}));
-}
-
-TEST_F(ApplicationTest, ScaleAtMinimum_DisablesScaleDownAndIgnoresIt) {
-    config_.state.scale = 50;
-    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
-    window_.menuChoice = static_cast<int>(MenuCommand::ScaleDown);
-    window_.pollsBeforeQuit = 3;
-    auto app = makeApp();
-    (void)app->run();
-
-    EXPECT_FALSE(findMenuItem(window_.lastMenu, MenuCommand::ScaleDown)->enabled);
+    app->applySettingsAction({Kind::SetScale, 0, {}, 10, false});
     EXPECT_EQ(app->scalePercent(), 50);
     EXPECT_EQ(boxSize(*app), (core::SizeI{100, 100}));
 }
@@ -941,41 +909,7 @@ std::shared_ptr<const deskpet::model::Model> makeNamedModel(const std::string& n
     return model;
 }
 
-const auto kRightClick = [] {
-    return std::vector<deskpet::core::Event>{
-        core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}};
-};
-
 }  // namespace
-
-TEST_F(ApplicationTest, ContextMenu_ShowsModelInfoAndOpenItem) {
-    window_.frames.push_back(kRightClick());
-    window_.pollsBeforeQuit = 2;
-    auto app = makeApp();
-    app->setModel(makeNamedModel("Sample"));
-    (void)app->run();
-
-    const auto* info = findMenuItem(window_.lastMenu, MenuCommand::ModelInfo);
-    ASSERT_NE(info, nullptr);
-    EXPECT_EQ(info->label, "Sample — Author");
-    EXPECT_FALSE(info->enabled);
-    const auto* license = findMenuItem(window_.lastMenu, MenuCommand::ModelLicense);
-    ASSERT_NE(license, nullptr);
-    EXPECT_EQ(license->label, "라이선스: CC_BY");
-    const auto* open = findMenuItem(window_.lastMenu, MenuCommand::OpenModel);
-    ASSERT_NE(open, nullptr);
-    EXPECT_TRUE(open->enabled);
-}
-
-TEST_F(ApplicationTest, ContextMenu_WithoutModelShowsOnlyOpenItem) {
-    window_.frames.push_back(kRightClick());
-    window_.pollsBeforeQuit = 2;
-    auto app = makeApp();
-    (void)app->run();
-    EXPECT_EQ(findMenuItem(window_.lastMenu, MenuCommand::ModelInfo), nullptr);
-    EXPECT_EQ(findMenuItem(window_.lastMenu, MenuCommand::ModelLicense), nullptr);
-    EXPECT_NE(findMenuItem(window_.lastMenu, MenuCommand::OpenModel), nullptr);
-}
 
 TEST_F(ApplicationTest, LoadModelAsync_ShowsModelOnceLoaded) {
     const auto model = makeNamedModel("Async");
@@ -1028,11 +962,10 @@ TEST_F(ApplicationTest, FailedLoad_KeepsCurrentModel) {
     EXPECT_TRUE(app->modelPath().empty());
 }
 
-TEST_F(ApplicationTest, OpenModelMenu_LoadsChosenFile) {
+TEST_F(ApplicationTest, OpenModelButton_LoadsChosenFile) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
     const auto chosen = makeNamedModel("Chosen");
     window_.openFileResult = std::filesystem::path("C:/models/chosen.pmx");
-    window_.frames.push_back(kRightClick());
-    window_.menuChoice = static_cast<int>(MenuCommand::OpenModel);
     // 작업 스레드가 끝날 시간을 줌 (가짜 시간은 기다리지 않으므로 실제로 잠깐 쉼)
     window_.onPoll = [](int, deskpet::testing::FakeWindowState&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -1040,6 +973,7 @@ TEST_F(ApplicationTest, OpenModelMenu_LoadsChosenFile) {
     window_.pollsBeforeQuit = 200;
     auto app = makeApp();
     app->setModelLoader([&](const std::filesystem::path&) { return chosen; });
+    app->applySettingsAction({Kind::OpenModel, 0, {}, 0, false});  // 설정 창 모델 탭의 "모델 열기"
     (void)app->run();
 
     EXPECT_EQ(window_.openFileDialogCount, 1);
@@ -1048,8 +982,7 @@ TEST_F(ApplicationTest, OpenModelMenu_LoadsChosenFile) {
 }
 
 TEST_F(ApplicationTest, OpenModelCancelled_DoesNothing) {
-    window_.frames.push_back(kRightClick());
-    window_.menuChoice = static_cast<int>(MenuCommand::OpenModel);
+    using Kind = deskpet::ui::SettingsAction::Kind;
     window_.pollsBeforeQuit = 3;
     int loads = 0;
     auto app = makeApp();
@@ -1057,6 +990,7 @@ TEST_F(ApplicationTest, OpenModelCancelled_DoesNothing) {
         ++loads;
         return std::shared_ptr<const deskpet::model::Model>{};
     });
+    app->applySettingsAction({Kind::OpenModel, 0, {}, 0, false});
     (void)app->run();
     EXPECT_EQ(window_.openFileDialogCount, 1);
     EXPECT_EQ(loads, 0);
@@ -1176,6 +1110,43 @@ TEST_F(ApplicationTest, PressOnSettingsWindow_GoesToSettingsNotCharacter) {
     EXPECT_TRUE(clickableOverSettings);
     EXPECT_NE(app->character().state(), State::Dragged);
     EXPECT_EQ(boxTopLeft(*app), kStartTopLeft);  // 캐릭터는 그대로
+}
+
+TEST_F(ApplicationTest, ClosingSettingsWindow_RestoresClickThrough) {
+    // 닫기 버튼으로 닫은 뒤 빈 곳은 다시 클릭 통과 (화면 전체 투명창이 클릭을 막지 않음)
+    window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
+    window_.menuChoice = static_cast<int>(MenuCommand::Settings);
+    window_.pollsBeforeQuit = 10;
+    Application* appPtr = nullptr;
+    Vec2 closeButton;
+    bool clickThroughAfterClose = false;
+    window_.onPoll = [&](int poll, FakeWindowState& state) {
+        if (poll < 2 || appPtr == nullptr) {
+            return;
+        }
+        if (poll == 3) {
+            const core::RectI r = appPtr->settingsRect();
+            closeButton = {static_cast<float>(r.right - 22), static_cast<float>(r.top + 22)};
+        }
+        if (poll <= 6) {
+            state.cursor = {static_cast<int>(closeButton.x), static_cast<int>(closeButton.y)};
+        }
+        if (poll == 4) {
+            state.frames.push_back({core::PointerDownEvent{closeButton, core::MouseButton::Left}});
+        } else if (poll == 5) {
+            state.frames.push_back({core::PointerUpEvent{closeButton, core::MouseButton::Left}});
+        } else if (poll == 8) {
+            state.cursor = {100, 100};  // 캐릭터도 설정 창도 없는 곳
+        } else if (poll == 9) {
+            clickThroughAfterClose = state.clickThrough;
+        }
+    };
+    auto app = makeApp();
+    appPtr = app.get();
+    (void)app->run();
+
+    EXPECT_FALSE(app->settingsOpen());
+    EXPECT_TRUE(clickThroughAfterClose);
 }
 
 TEST_F(ApplicationTest, SettingsActions_ApplyAndAreSavedImmediately) {

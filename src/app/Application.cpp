@@ -3,12 +3,10 @@
 #include "app/CameraFit.h"
 #include "app/Ground.h"
 #include "core/Log.h"
-#include "deskpet/Version.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <format>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -192,7 +190,10 @@ void Application::refitCamera() {
         core::logging::debug(
             "화면 맞춤 경계 (m): x {:.2f} ~ {:.2f}, y {:.2f} ~ {:.2f}, z {:.2f} ~ {:.2f}",
             fit.min.x, fit.max.x, fit.min.y, fit.max.y, fit.min.z, fit.max.z);
-        camera_ = fitCameraToBounds(displayBounds_, boxSize_);
+        // 바닥은 서 있을 때의 발바닥(기본 자세의 맨 아래). 자세 경계 상자 아래에 맞추면 대기 클립이
+        // 잠깐 웅크리는 순간 등이 있을 때 평소 그만큼 떠 보임. 더 낮은 자세는 화면 아래로 나감
+        const float ground = std::max(displayBounds_.min.y, model_->bounds.min.y);
+        camera_ = fitCameraToBounds(displayBounds_, boxSize_, ground);
         // 발 평면에서 1m가 화면에서 몇 px인지 → 창이 움직인 px를 모델 공간 m로 바꿀 때 씀
         const core::Vec4 a = core::transform({0.0f, 0.0f, 0.0f}, camera_);
         const core::Vec4 b = core::transform({0.0f, 1.0f, 0.0f}, camera_);
@@ -479,67 +480,24 @@ void Application::onPointerUp(const core::PointerUpEvent& event) {
 // ---------------------------------------------------------------------------
 
 void Application::onContextMenu(core::PointI screen) {
-    std::vector<platform::MenuItem> items = {
-        makeMenuItem(MenuCommand::About, std::format("TinyDeskPet {}", DESKPET_VERSION_STRING),
-                     false),
+    // 자주 쓰거나 급할 때 필요한 것만. 크기·모델 정보·모델 열기는 설정 창에 (ADR-0016)
+    const std::vector<platform::MenuItem> items = {
         makeMenuItem(MenuCommand::Settings, "설정…"),
+        makeMenuItem(MenuCommand::ResetPosition, "위치 초기화"),
+        makeMenuItem(MenuCommand::ToggleVisible, hidden_ ? "보이기" : "숨기기"),
         platform::MenuItem::makeSeparator(),
+        makeMenuItem(MenuCommand::Quit, "종료"),
     };
-    appendModelMenu(items);
-    items.insert(
-        items.end(),
-        {
-            platform::MenuItem::makeSeparator(),
-            makeMenuItem(MenuCommand::ScaleInfo, std::format("크기 {}%", scalePercent_), false),
-            makeMenuItem(MenuCommand::ScaleUp, "크게", scalePercent_ < kMaxScalePercent),
-            makeMenuItem(MenuCommand::ScaleDown, "작게", scalePercent_ > kMinScalePercent),
-            platform::MenuItem::makeSeparator(),
-            makeMenuItem(MenuCommand::ResetPosition, "위치 초기화"),
-            makeMenuItem(MenuCommand::ToggleVisible, hidden_ ? "보이기" : "숨기기"),
-            platform::MenuItem::makeSeparator(),
-            makeMenuItem(MenuCommand::Quit, "종료"),
-        });
     // 캐릭터 우클릭과 트레이 아이콘이 같은 메뉴를 씀 (FR-18)
-
     executeMenuCommand(window_->showContextMenu(items, screen));
-}
-
-// 모델 정보(이름 — 작가, 라이선스)와 "모델 열기…". 제작자가 정한 이용 조건을 확인할 수 있게 함
-// (FR-23). 정보가 없는 항목은 빼고, 이름이 없으면 파일 이름
-void Application::appendModelMenu(std::vector<platform::MenuItem>& items) const {
-    if (pendingModel_.valid()) {
-        items.push_back(makeMenuItem(MenuCommand::ModelInfo, "모델 불러오는 중…", false));
-    } else if (model_) {
-        const model::ModelMeta& meta = model_->meta;
-        std::string name = meta.name;
-        if (name.empty()) {
-            const std::u8string stem = modelPath_.stem().u8string();
-            name = stem.empty() ? "모델" : std::string(stem.begin(), stem.end());
-        }
-        items.push_back(makeMenuItem(
-            MenuCommand::ModelInfo,
-            meta.author.empty() ? name : std::format("{} — {}", name, meta.author), false));
-        if (!meta.license.empty()) {
-            items.push_back(makeMenuItem(MenuCommand::ModelLicense,
-                                         std::format("라이선스: {}", meta.license), false));
-        }
-    }
-    items.push_back(makeMenuItem(MenuCommand::OpenModel, "모델 열기…"));
 }
 
 void Application::executeMenuCommand(int commandId) {
     switch (static_cast<MenuCommand>(commandId)) {
-        case MenuCommand::ScaleUp: setScalePercent(scalePercent_ + kScaleStepPercent); break;
-        case MenuCommand::ScaleDown: setScalePercent(scalePercent_ - kScaleStepPercent); break;
         case MenuCommand::ResetPosition: resetCharacterPosition(); break;
         case MenuCommand::Quit: requestQuit(); break;
         case MenuCommand::ToggleVisible: setVisible(hidden_); break;
-        case MenuCommand::OpenModel: openModelFile(); break;
         case MenuCommand::Settings: openSettings(); break;
-        case MenuCommand::About:
-        case MenuCommand::ModelInfo:
-        case MenuCommand::ModelLicense:
-        case MenuCommand::ScaleInfo:
         default: break;  // 0(취소) 포함
     }
 }
