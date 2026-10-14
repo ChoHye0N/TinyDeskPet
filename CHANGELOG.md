@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-14
+
+바탕화면 끝에 둔 캐릭터가 화면 끝에 붙습니다.
+
 ### Fixed
 
 - 바탕화면 왼쪽·오른쪽 끝에 두면 모델과 화면 끝 사이에 여백이 크게 남던 문제 (모델마다 달랐음). 벽을 모든 동작 중 가장 넓은 폭 대신 지금 동작의 폭으로, 경계 상자 꼭짓점 대신 실제 정점을 투영한 폭으로 정함. 걷기·끌기로 넓어지면 안쪽으로 부드럽게 들어오고, 놓으면 다시 끝까지 붙음
@@ -139,7 +143,8 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.0.1...v1.1.0
