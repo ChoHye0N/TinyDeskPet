@@ -264,9 +264,9 @@ TEST_F(ApplicationTest, SettingsScale_IsClampedToRange) {
     app->applySettingsAction({Kind::SetScale, 0, {}, 400, false});
     EXPECT_EQ(app->scalePercent(), 200);
     EXPECT_EQ(boxSize(*app), (core::SizeI{400, 400}));
-    app->applySettingsAction({Kind::SetScale, 0, {}, 10, false});
-    EXPECT_EQ(app->scalePercent(), 50);
-    EXPECT_EQ(boxSize(*app), (core::SizeI{100, 100}));
+    app->applySettingsAction({Kind::SetScale, 0, {}, 5, false});
+    EXPECT_EQ(app->scalePercent(), 10);
+    EXPECT_EQ(boxSize(*app), (core::SizeI{20, 20}));
 }
 
 TEST_F(ApplicationTest, SavedScale_IsRestoredSnappedToStepAndCombinedWithDpi) {
@@ -582,6 +582,32 @@ std::shared_ptr<const deskpet::model::Model> makeSkinnedModel() {
 constexpr std::size_t kSurprised = static_cast<std::size_t>(deskpet::model::Expression::Surprised);
 
 }  // namespace
+
+TEST_F(ApplicationTest, DoubleClickWithInteractClip_PlaysItThenIdles) {
+    // 상호작용 클립이 있으면 점프 대신 제자리에서 클립 길이만큼 재생 (애니메이션에 상호작용 동작)
+    auto clip = std::make_shared<deskpet::model::MotionClip>();
+    clip->frameCount = 16;  // 0.5초
+    Application::MotionClips clips{};
+    clips[static_cast<std::size_t>(deskpet::anim::Motion::Interact)] = clip;
+    window_.frames.push_back({core::DoubleClickEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+    State during = State::Idle;
+    Application* appPtr = nullptr;
+    window_.onPoll = [&](int poll, FakeWindowState&) {
+        if (poll == 5 && appPtr != nullptr) {
+            during = appPtr->character().state();
+        }
+    };
+    window_.pollsBeforeQuit = 60;
+    auto app = makeApp();
+    appPtr = app.get();
+    app->setModel(makeSkinnedModel());
+    app->setMotionClips(clips);
+    (void)app->run();
+
+    EXPECT_EQ(during, State::Interact);
+    EXPECT_EQ(app->character().state(), State::Idle);         // 0.5초 뒤 대기로
+    EXPECT_FLOAT_EQ(app->character().position().y, 1040.0f);  // 뛰지 않음
+}
 
 TEST_F(ApplicationTest, SkinnedModel_SceneHasSkinMatrixPerBone) {
     window_.pollsBeforeQuit = 3;
@@ -1282,14 +1308,12 @@ TEST_F(ApplicationTest, WindowAndMovementSettings_AreAppliedAndSaved) {
     app->applySettingsAction({Kind::SetAlwaysOnTop, 0, {}, 0, false});
     app->applySettingsAction({Kind::SetWalk, 0, {}, 0, false});
     app->applySettingsAction({Kind::SetGravity, 0, {}, 1200, false});
-    app->applySettingsAction({Kind::SetJumpSpeed, 0, {}, 600, false});
     app->applySettingsAction({Kind::SetDragThreshold, 0, {}, 10, false});
 
     EXPECT_EQ(window_.alwaysOnTop, std::optional<bool>(false));
     const auto& params = app->character().params();
     EXPECT_FLOAT_EQ(params.walkSpeed, 0.0f);  // 걷기 끔
     EXPECT_FLOAT_EQ(params.gravity, 1200.0f);
-    EXPECT_FLOAT_EQ(params.jumpSpeed, 600.0f);
     EXPECT_FLOAT_EQ(params.dragThreshold, 10.0f);
     EXPECT_TRUE(h.has("window", "always_on_top", "false"));
     EXPECT_TRUE(h.has("character", "walk", "false"));
@@ -1303,6 +1327,23 @@ TEST_F(ApplicationTest, WindowAndMovementSettings_AreAppliedAndSaved) {
     EXPECT_FLOAT_EQ(app->character().params().gravity, defaults.gravity);
     EXPECT_FLOAT_EQ(app->character().params().walkSpeed, defaults.walkSpeed);
     EXPECT_TRUE(h.has("character", "walk_speed", "60"));
+}
+
+TEST_F(ApplicationTest, InteractClipSetting_IsSavedWithoutLoopStart) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    float loopStart = -1.0f;
+    app->setClipLoader([&](deskpet::anim::Motion motion, const std::string&,
+                           float start) -> std::shared_ptr<const deskpet::model::MotionClip> {
+        EXPECT_EQ(motion, deskpet::anim::Motion::Interact);
+        loopStart = start;
+        return nullptr;
+    });
+    app->applySettingsAction({Kind::SetClip, 4, "models/pet.glb#Wave", 0, false});
+    EXPECT_TRUE(h.has("animation", "interact_clip", "models/pet.glb#Wave"));
+    EXPECT_FLOAT_EQ(loopStart, 0.0f);  // 한 번만 재생하므로 반복 시작 없음
 }
 
 TEST_F(ApplicationTest, LoopStartSetting_IsSavedAndUsedForNextClip) {

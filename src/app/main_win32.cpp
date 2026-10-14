@@ -216,8 +216,10 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
 std::shared_ptr<const model::MotionClip> loadMotionClip(anim::Motion motion,
                                                         const std::string& configured,
                                                         float loopStart, const fs::path& baseDir) {
-    constexpr std::array<const char*, anim::kMotionCount> kNames = {"idle", "walk", "dragged",
-                                                                    "airborne"};
+    // 크기를 적지 않고 개수를 검사: 동작이 늘었는데 이름을 빠뜨리면 nullptr이 되어 로그에서 예외
+    constexpr auto kNames =
+        std::to_array<const char*>({"idle", "walk", "dragged", "airborne", "interact"});
+    static_assert(kNames.size() == anim::kMotionCount);
     constexpr std::array<const char*, 5> kFormats = {"?", "VRMA", "VMD", "FBX", "glTF"};
     const char* name = kNames[static_cast<std::size_t>(motion)];
     model::MotionLoadResult result = model::loadMotionFile(resolvePath(configured, baseDir));
@@ -250,6 +252,7 @@ app::Application::MotionClips loadMotionClips(const core::AnimationConfig& confi
         {anim::Motion::Walk, &config.walkClip, config.walkLoopStart},
         {anim::Motion::Dragged, &config.draggedClip, config.draggedLoopStart},
         {anim::Motion::Airborne, &config.airborneClip, config.airborneLoopStart},
+        {anim::Motion::Interact, &config.interactClip, 0.0f},  // 한 번만 재생
     }};
     app::Application::MotionClips clips{};
     for (const auto& [motion, configured, loopStart] : entries) {

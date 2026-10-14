@@ -61,6 +61,7 @@ struct AnimationConfig {
     std::string walkClip;
     std::string draggedClip;
     std::string airborneClip;
+    std::string interactClip;  // 더블클릭 상호작용. 비면 점프 (한 번만 재생, 반복 시작 없음)
     // 동작별 반복 시작 시각 (s, ADR-0014): 클립을 처음 한 번 끝까지 재생한 뒤 이 시각부터 끝까지
     // 반복. 0이면 처음부터, 클립 길이 이상이면 마지막 자세 유지 (집어 드는 동작이 매번 다시 나오지
     // 않게)

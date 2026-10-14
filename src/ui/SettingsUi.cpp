@@ -499,7 +499,8 @@ void SettingsUi::drawMotionTab(const SettingsState& state,
     ImGui::Spacing();
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", anyChoice ? "모델 파일 안의 애니메이션에서 고릅니다. 기본 동작은 "
-                                          "코드로 만든 동작입니다."
+                                          "코드로 만든 동작입니다. 상호작용은 더블클릭할 때 한 번 "
+                                          "재생합니다."
                                         : "이 모델 파일에는 애니메이션이 없습니다. 다른 모션 "
                                           "파일은 deskpet.ini의 [animation]에서 지정합니다.");
     ImGui::PopTextWrapPos();
@@ -586,9 +587,8 @@ void SettingsUi::drawAdvancedTab(const SettingsState& state,
         int step;
         SettingsAction::Kind kind;
     };
-    const std::array<SliderInfo, 4> rows = {{
+    const std::array<SliderInfo, 3> rows = {{
         {"중력", "##gravity", m.gravity, 500, 6000, 100, SettingsAction::Kind::SetGravity},
-        {"점프 세기", "##jump", m.jumpSpeed, 300, 2000, 50, SettingsAction::Kind::SetJumpSpeed},
         {"걷기 속도", "##walkSpeed", m.walkSpeed, 20, 200, 5, SettingsAction::Kind::SetWalkSpeed},
         {"끌기 시작", "##drag", m.dragThreshold, 0, 20, 1, SettingsAction::Kind::SetDragThreshold},
     }};
@@ -604,8 +604,8 @@ void SettingsUi::drawAdvancedTab(const SettingsState& state,
     }
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled(
-        "중력(px/s²)·점프 세기(px/s)·걷기 속도(px/s)는 캐릭터 움직임입니다. 끌기 시작(px)만큼 "
-        "움직여야 누른 것을 끌기로 봅니다.");
+        "중력(px/s²)·걷기 속도(px/s)는 캐릭터 움직임입니다. 끌기 시작(px)만큼 움직여야 누른 것을 "
+        "끌기로 봅니다.");
     ImGui::PopTextWrapPos();
 }
 

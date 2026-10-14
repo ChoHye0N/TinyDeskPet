@@ -32,6 +32,8 @@ constexpr std::array<MotionSlot, anim::kMotionCount> kSlots = {{
      &core::AnimationConfig::draggedLoopStart},
     {"공중", "airborne_clip", "airborne_loop_start", &core::AnimationConfig::airborneClip,
      &core::AnimationConfig::airborneLoopStart},
+    // 더블클릭에 한 번만 재생 → 반복 시작 없음
+    {"상호작용", "interact_clip", nullptr, &core::AnimationConfig::interactClip, nullptr},
 }};
 static_assert(kSlots.size() == ui::kMotionSettingCount);
 
@@ -152,6 +154,9 @@ ui::SettingsState Application::settingsState() const {
         motion.name = kSlots[m].name;
         motion.current = config_.animation.*kSlots[m].clip;
         motion.choices = clipChoices_;
+        if (static_cast<anim::Motion>(m) == anim::Motion::Interact) {
+            motion.choices.front().label = "점프 (기본 동작)";  // 클립이 없으면 더블클릭에 점프
+        }
         // 설정 파일에서 다른 모션 파일을 지정했으면 그것도 목록에 (파일 이름으로)
         if (std::ranges::none_of(motion.choices, [&](const ui::ClipChoice& choice) {
                 return choice.value == motion.current;
@@ -160,7 +165,7 @@ ui::SettingsState Application::settingsState() const {
                 std::u8string(motion.current.begin(), motion.current.end()));
             motion.choices.push_back({utf8(path.filename()), motion.current});
         }
-        if (clips_[m]) {
+        if (clips_[m] && kSlots[m].loopStart != nullptr) {  // 반복하는 동작만 슬라이더
             motion.duration = clips_[m]->duration();
             motion.loopStart = config_.animation.*kSlots[m].loopStart;
         }
@@ -181,9 +186,9 @@ ui::SettingsState Application::settingsState() const {
     state.outline = config_.renderer.outline;
 
     const core::CharacterConfig& c = config_.character;
-    state.movement = {
-        static_cast<int>(std::lround(c.gravity)), static_cast<int>(std::lround(c.jumpSpeed)),
-        static_cast<int>(std::lround(c.walkSpeed)), static_cast<int>(std::lround(c.dragThreshold))};
+    state.movement = {static_cast<int>(std::lround(c.gravity)),
+                      static_cast<int>(std::lround(c.walkSpeed)),
+                      static_cast<int>(std::lround(c.dragThreshold))};
     return state;
 }
 
@@ -212,8 +217,9 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             config_.animation.*slot.clip = action.text;
             std::shared_ptr<const model::MotionClip> clip;
             if (!action.text.empty() && clipLoader_) {
-                clip = clipLoader_(static_cast<anim::Motion>(action.motion), action.text,
-                                   config_.animation.*slot.loopStart);
+                clip = clipLoader_(
+                    static_cast<anim::Motion>(action.motion), action.text,
+                    slot.loopStart != nullptr ? config_.animation.*slot.loopStart : 0.0f);
             }
             clips_[action.motion] = std::move(clip);
             refreshAnimationAsync();
@@ -238,7 +244,7 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             writeSettings({{"animation", "idle_motion", boolText(action.flag)}});
             break;
         case Kind::SetLoopStart: {
-            if (action.motion >= kSlots.size()) {
+            if (action.motion >= kSlots.size() || kSlots[action.motion].loopStart == nullptr) {
                 break;
             }
             const MotionSlot& slot = kSlots[action.motion];
@@ -295,11 +301,6 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             applyMovement();
             writeSettings({{"character", "gravity", intText(config_.character.gravity)}});
             break;
-        case Kind::SetJumpSpeed:
-            config_.character.jumpSpeed = static_cast<float>(std::max(action.number, 0));
-            applyMovement();
-            writeSettings({{"character", "jump_speed", intText(config_.character.jumpSpeed)}});
-            break;
         case Kind::SetWalkSpeed:
             config_.character.walkSpeed = static_cast<float>(std::max(action.number, 1));
             applyMovement();
@@ -315,12 +316,10 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             const core::CharacterConfig defaults;
             core::CharacterConfig& c = config_.character;
             c.gravity = defaults.gravity;
-            c.jumpSpeed = defaults.jumpSpeed;
             c.walkSpeed = defaults.walkSpeed;
             c.dragThreshold = defaults.dragThreshold;
             applyMovement();
             writeSettings({{"character", "gravity", intText(c.gravity)},
-                           {"character", "jump_speed", intText(c.jumpSpeed)},
                            {"character", "walk_speed", intText(c.walkSpeed)},
                            {"character", "drag_threshold", intText(c.dragThreshold)}});
             break;

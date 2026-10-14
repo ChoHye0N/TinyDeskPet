@@ -73,6 +73,7 @@ PoseParams paramsFor(const AnimationInput& in) {
     const float t = in.time;
     switch (in.motion) {
         case Motion::Idle:
+        case Motion::Interact:  // 클립이 없을 때만 (앱은 클립이 없으면 점프시킴)
             if (in.idleMotion) {
                 const float breath = std::sin(2.0f * kPi * t / kBreathPeriod);
                 p.chestPitch = 1.2f * breath;
@@ -348,7 +349,7 @@ void ProceduralAnimator::applyLook(LookAngles look) const {
 // 때문 (걸을 때 몸이 오르내림). 엉덩이 이동을 넣은 자세로 재므로, 클립이 이미 몸을 낮췄으면 두 번
 // 내리지 않음
 core::Vec3 ProceduralAnimator::rootOffset(Motion motion) const {
-    if (motion != Motion::Idle && motion != Motion::Walk) {
+    if (motion != Motion::Idle && motion != Motion::Walk && motion != Motion::Interact) {
         return clipOffset_;
     }
     const std::array<int, 2> feet = {skeleton_.find(HumanBone::LeftFoot),
@@ -403,10 +404,13 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
     if (!hasPose_) {
         hasPose_ = true;  // 첫 프레임은 넘어올 자세가 없음
         motion_ = input.motion;
+        motionSerial_ = input.motionSerial;
         motionStart_ = input.time;
-    } else if (input.motion != motion_) {
-        // 직전에 그린 자세(전환 도중이면 섞인 자세)에서 출발하므로 전환이 끊겨도 튀지 않음
+    } else if (input.motion != motion_ || input.motionSerial != motionSerial_) {
+        // 직전에 그린 자세(전환 도중이면 섞인 자세)에서 출발하므로 전환이 끊겨도 튀지 않음.
+        // 같은 동작을 다시 시작해도(상호작용 다시 더블클릭) 클립을 처음부터
         motion_ = input.motion;
+        motionSerial_ = input.motionSerial;
         fromRotations_ = lastRotations_;
         fromExpressions_ = lastExpressions_;
         fromClipOffset_ = lastClipOffset_;
@@ -585,7 +589,8 @@ std::vector<AnimationInput> ProceduralAnimator::boundsSamples() const {
     // 무릎을 가장 굽히는 순간(0, 1/2)이 모두 포함됨
     constexpr int kWalkSamples = 8;
     std::vector<AnimationInput> inputs;
-    for (const Motion motion : {Motion::Idle, Motion::Walk, Motion::Dragged, Motion::Airborne}) {
+    for (const Motion motion :
+         {Motion::Idle, Motion::Walk, Motion::Dragged, Motion::Airborne, Motion::Interact}) {
         const auto& clip = clips_[static_cast<std::size_t>(motion)];
         if (clip) {
             const std::size_t samples = std::min(clip->frameCount(), kClipSamples);

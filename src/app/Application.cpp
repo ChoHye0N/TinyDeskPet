@@ -78,6 +78,7 @@ anim::Motion motionFor(character::State state) {
         case character::State::Walk: return anim::Motion::Walk;
         case character::State::Dragged: return anim::Motion::Dragged;
         case character::State::Airborne: return anim::Motion::Airborne;
+        case character::State::Interact: return anim::Motion::Interact;
     }
     return anim::Motion::Idle;
 }
@@ -237,6 +238,7 @@ void Application::updateAnimation(float dt) {
     anim::AnimationInput input;
     input.motion = motionFor(pose.state);
     input.time = pose.time;
+    input.motionSerial = pose.actionSerial;
     input.squash = pose.squash;
     input.blink = pose.eyesClosed;
     input.idleMotion = config_.animation.idleMotion;
@@ -457,7 +459,7 @@ void Application::handleEvent(const core::Event& event) {
                    [this, pressOnSettings](const core::DoubleClickEvent& e) {
                        // 두 번째 누름이 WM_LBUTTONDBLCLK로 오므로 설정 창에는 누름으로 넘김
                        if (!pressOnSettings(e.button) && e.button == MouseButton::Left) {
-                           (void)character_.jump();
+                           onDoubleClick();
                        }
                    },
                    [this](const core::MouseWheelEvent& e) { settingsUi_.addMouseWheel(e.notches); },
@@ -472,6 +474,16 @@ void Application::handleEvent(const core::Event& event) {
                    [this](const core::DpiChangedEvent& e) { applyDpiScale(e.scale); },
                },
                event);
+}
+
+// 더블클릭 = 상호작용: 상호작용 클립이 있으면 제자리에서 한 번 재생, 없으면 점프 (기본 동작)
+void Application::onDoubleClick() {
+    const auto& clip = clips_[static_cast<std::size_t>(anim::Motion::Interact)];
+    if (model_ && clip && clip->duration() > 0.0f) {
+        (void)character_.interact(clip->duration());
+    } else {
+        (void)character_.jump();
+    }
 }
 
 void Application::onPointerUp(const core::PointerUpEvent& event) {
@@ -560,8 +572,9 @@ void Application::refreshGround() {
     // 서 있는 동안은 밟고 있는 창이 조금 올라가도 따라감. 떨어지는 중에는 발 아래 창만
     // (창 앞에 있다가 떨어졌을 때 그 창 위로 순간 이동하지 않게)
     constexpr float kStepUpPixels = 24.0f;
-    const bool standing = character_.state() == character::State::Idle ||
-                          character_.state() == character::State::Walk;
+    const character::State state = character_.state();
+    const bool standing = state == character::State::Idle || state == character::State::Walk ||
+                          state == character::State::Interact;
     character_.setGround(
         groundAt(character_.position(), standing ? kStepUpPixels * dpiScale_ : 0.0f));
 }

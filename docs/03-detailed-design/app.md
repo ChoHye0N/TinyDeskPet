@@ -110,7 +110,7 @@ if result == Fatal: exitCode = RendererFailed; break
 | `PointerMoveEvent` | `uiPointer_`가 아니면 `character.onPointerMove(screen)` |
 | `PointerUpEvent{Left}` | `uiPointer_`면 설정 창으로 뗌. 아니면 `refreshGround()` 후 `character.onPointerUp(screen)` — 다른 모니터에 놓았을 때 그 모니터의 바닥 사용 |
 | `PointerUpEvent{Right}` | 설정 창 위가 아니면 `onContextMenu(screen)` |
-| `DoubleClickEvent{Left}` | 설정 창 위면 누름으로 넘김(두 번째 클릭이 이 메시지로 옴). 아니면 `character.jump()` |
+| `DoubleClickEvent{Left}` | 설정 창 위면 누름으로 넘김(두 번째 클릭이 이 메시지로 옴). 아니면 `onDoubleClick()`: 모델과 상호작용 클립(`clips_[Interact]`, 길이 > 0)이 있으면 `character.interact(클립 길이)`, 없으면 `character.jump()` (기본 동작). 애니메이션 입력 `motionSerial` = `pose.actionSerial` (다시 더블클릭하면 처음부터) |
 | `MouseWheelEvent` | 설정 창으로 (열려 있을 때만 쓰임) |
 | `WorkAreaChangedEvent` | `refreshGround()`, `refreshBounds()` — 이후 `update`가 낙하/보정 처리 |
 | `QuitRequestedEvent` | `requestQuit()` |
@@ -129,7 +129,7 @@ if result == Fatal: exitCode = RendererFailed; break
 
 메뉴에는 자주 쓰거나 급할 때(캐릭터가 화면 밖에 걸림, 숨김) 필요한 것만 둡니다. 버전·모델 정보(FR-23)·모델 열기·크기(FR-06)는 설정 창으로 옮겼습니다(§4.10, ADR-0016). 점프는 더블클릭으로만(FR-13). 뺀 항목의 id(1, 2, 6~11)는 비워 둡니다.
 
-**크기 조절 (FR-06)**: 50% ~ 200%, 10% 단위. 바뀌면 `resizeWindow()`가 DPI 변경과 같은 경로로 창·렌더러·카메라·벽·클릭 영역을 갱신하고, 발 위치를 기준으로 창을 다시 놓아 캐릭터가 같은 자리에 서 있습니다. 종료할 때 `[state] scale`로 저장하고, 시작할 때 10% 단위·범위로 맞춰 복원합니다.
+**크기 조절 (FR-06)**: 10% ~ 200%, 10% 단위. 바뀌면 `resizeWindow()`가 DPI 변경과 같은 경로로 창·렌더러·카메라·벽·클릭 영역을 갱신하고, 발 위치를 기준으로 창을 다시 놓아 캐릭터가 같은 자리에 서 있습니다. 종료할 때 `[state] scale`로 저장하고, 시작할 때 10% 단위·범위로 맞춰 복원합니다.
 
 **모델 읽기 (작업 스레드, `loadModelAsync`)**: `setModelLoader`로 받은 로더(main: 파일 읽기 + 텍스처 CPU 준비)를 `std::async`로 실행하고, 같은 스레드에서 같은 클립으로 자세 경계 상자(`displayBounds`, 정점 CPU 스키닝)까지 계산합니다. 매 프레임 `applyLoadedModel`이 결과가 준비됐는지(`wait_for(0)`)만 보고, 준비됐으면 모델·애니메이터·카메라·벽을 교체합니다. 실패(nullptr)면 지금 모델 유지. 첫 모델을 읽는 동안은 슬라임도 그리지 않음 (잠깐 보였다가 바뀌지 않게). 새 요청은 앞선 작업이 끝나길 기다린 뒤 시작하고(마지막 요청만 반영), 소멸자도 작업을 기다립니다. 성공한 경로는 `modelPath()` → main이 종료할 때 설정과 다르면 `[model] path`에 저장. Release 측정(VRM 0.x 모델, 정점 19.6만, 텍스처 11): 창은 0.05초에 뜨고, 작업 스레드 0.9초 뒤 모델이 나타남. 렌더 스레드가 멈추는 시간(GPU 업로드)은 0.7초 → 4ms
 
@@ -270,7 +270,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetLookAt` / `SetIdleMotion` | `config_.animation` 값 | `[animation] look_at` / `idle_motion` |
 | `SetWalkOnWindows` | `config_.character` 값, `refreshGround()` | `[character] walk_on_windows` |
 | `SetLoopStart` | `config_`의 그 동작 반복 시작 = 값, 지금 클립을 복사해 `loopStart`만 바꿔 애니메이터에 (클립은 공유 const라 복사. 경계 상자는 그대로) | `[animation] idle_loop_start` 등 (소수 둘째 자리까지) |
-| `SetWalk` / `SetGravity` / `SetJumpSpeed` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `jump_speed`, `walk_speed`, `drag_threshold` |
+| `SetWalk` / `SetGravity` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `walk_speed`, `drag_threshold` |
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
 
@@ -303,6 +303,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | 머리 옆 커서 → 그쪽으로 고개, 설정으로 끄거나 커서가 멀면 정면 | FR-28 |
 | `GroundTests`: 창이 없으면 작업 영역 바닥, 발 아래 윗변, 발 x 밖·발 위 창 무시(서 있을 때 위쪽 여유 안이면 사용), 가장 높은 윗변, 앞 창에 가려진 윗변 무시, 작업 영역 아래 창 무시 / 앱: 창 위로 떨어뜨리면 윗변에 착지, 창이 닫히면 떨어짐, 설정으로 끄면 무시, 저장 위치가 창 위면 그 창에 착지 | M6 |
 | 메뉴는 설정·위치 초기화·숨기기·종료만, 설정 창 크기 조절(50~200%로 제한, 발은 바닥 그대로), 작업 스레드로 읽은 모델이 다음 프레임에 나타남, 첫 모델을 읽는 동안 아무것도 그리지 않음, 실패하면 지금 모델 유지, 대화상자로 고른 파일을 읽음·취소하면 아무것도 안 함 | FR-23 |
+| 더블클릭: 상호작용 클립이 있으면 제자리에서 클립 길이만큼 Interact 뒤 대기(뛰지 않음), 없으면 점프. 설정 창 상호작용 슬롯은 `interact_clip`에 저장하고 반복 시작 없이 읽음. 크기는 10~200%로 제한 | FR-13, FR-06 |
 | 메뉴 "설정…" → 설정 창이 캐릭터 옆에 열리고 매 프레임 그려짐(`uiFrame`이 바뀜), 설정 창 위에서 누르고 끌어도 캐릭터를 끌지 않고 창이 클릭을 받음, 닫기 버튼으로 닫으면 빈 곳이 다시 클릭 통과, 설정 동작이 적용되고 바로 저장됨(클립은 설정의 반복 시작 시각으로 읽음), 기본 동작으로 되돌리면 읽지 않고 빈 값 저장 | ADR-0016 |
 
 ## 6. 확장 지점

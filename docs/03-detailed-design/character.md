@@ -26,7 +26,7 @@
 ```cpp
 namespace deskpet::character {
 
-enum class State : std::uint8_t { Idle, Dragged, Airborne, Walk };
+enum class State : std::uint8_t { Idle, Dragged, Airborne, Walk, Interact };
 [[nodiscard]] std::string_view toString(State state);
 
 struct Params {
@@ -83,6 +83,7 @@ public:
     void onPointerMove(core::Vec2 screen);
     void onPointerUp(core::Vec2 screen);
     bool jump();                          // Idle, Walk일 때만 성공
+    bool interact(float seconds);         // 더블클릭 상호작용 (Idle, Walk, Interact=다시 시작)
 
     void update(float dt);                // 고정 시간 간격으로 호출
     [[nodiscard]] Pose pose() const;
@@ -131,6 +132,10 @@ stateDiagram-v2
 | Idle | `update`, 정지 상태로 `idleTimer` 소진, `walkSpeed > 0`, 누르지 않음 | **Walk** | 방향 무작위(±1), `walkTimer` 무작위 |
 | Walk | `update` | Walk | `x += 방향 × walkSpeed × dt`. 벽에 닿으면 방향 반전 |
 | Walk | `walkTimer` 소진 | **Idle** | `idleTimer` 다시 뽑음 |
+| Idle / Walk / Interact | `interact(seconds)`, seconds > 0 | **Interact** | 속도 0, `interactTimer = seconds`, `actionSerial` + 1 (Interact에서 다시 부르면 처음부터) |
+| Interact | `update` | Interact | 발을 바닥에, 걷지 않음. 발이 바닥보다 위면 **Airborne** |
+| Interact | `interactTimer` 소진 | **Idle** | — |
+| Interact | `onPointerMove`, 누른 상태, 이동 거리 ≥ `dragThreshold` | **Dragged** | Idle과 같음 |
 
 ### 4.2 물리 적분
 
@@ -206,6 +211,7 @@ if position.y >= ground:
 | 던진 뒤 공기 저항으로 감속, 착지 후 마찰로 정지 | FR-16 |
 | 벽에 던지면 반사되고 범위 밖으로 나가지 않음, 범위 밖에서 놓으면 안으로 맞춤 | FR-17 |
 | 대기 시간 뒤 걷기 → 걷기 시간 뒤 Idle, 벽에서 뒤돌기, `walkSpeed = 0`이면 걷지 않음, 걷는 중 점프, 설정 `walk = false`면 속도 0, 걷던 중 `setParams`로 끄면 바로 Idle·그 자리 | — |
+| 상호작용: 클립 길이만큼 Interact 뒤 Idle(제자리), 재생 중 다시 부르면 처음부터(`actionSerial` + 1)·끌기 가능, 공중이거나 길이 0이면 실패 | FR-13 |
 
 ## 6. 확장 지점
 

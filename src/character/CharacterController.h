@@ -53,6 +53,8 @@ struct Pose {
     float squash = 0.0f;  // 0 = 원래 모양, 양수 = 세로로 눌림
     int facing = 0;       // 걷는 방향: -1 왼쪽, +1 오른쪽, 0 정면
     float time = 0.0f;    // 누적 시간 (s). 애니메이션 주기 동작의 위상
+    // interact()마다 1씩 늘어남. 같은 상태에서 다시 시작했음을 애니메이션이 알 수 있게
+    std::uint32_t actionSerial = 0;
     // TODO(M4): 애니메이션 클립, 표정 가중치
     // TODO(M6): 시선 목표 좌표
 };
@@ -84,6 +86,9 @@ public:
 
     // Idle, Walk 상태에서만 성공합니다.
     bool jump();
+    // 더블클릭 상호작용 (클립 재생): seconds 동안 제자리에서 Interact, 끝나면 Idle.
+    // Idle, Walk, Interact(처음부터 다시)에서만 성공. 끌면 바로 끌기로 바뀜
+    bool interact(float seconds);
 
     // 고정 시간 간격으로 호출합니다 (ADR-0004).
     void update(float dt);
@@ -103,6 +108,7 @@ private:
     void applyWalls();  // 벽 충돌: 위치를 범위 안으로, 수평 속도 반사
     void updateIdle(float dt);
     void updateWalk(float dt);
+    void updateInteract(float dt);
     [[nodiscard]] float randomBetween(float lo, float hi);
 
     Params params_;
@@ -131,6 +137,10 @@ private:
     float idleTimer_ = 0.0f;  // 0이 되면 걷기 시작
     float walkTimer_ = 0.0f;  // 0이 되면 Idle로
     int walkDirection_ = 0;
+
+    // 상호작용
+    float interactTimer_ = 0.0f;  // 0이 되면 Idle로
+    std::uint32_t actionSerial_ = 0;
 
     // 애니메이션 시간
     float time_ = 0.0f;

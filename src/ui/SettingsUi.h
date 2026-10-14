@@ -39,12 +39,11 @@ struct MotionSetting {
 // 고급: 캐릭터 움직임 (px 단위, [character])
 struct MovementSetting {
     int gravity = 2400;     // px/s²
-    int jumpSpeed = 900;    // px/s
     int walkSpeed = 60;     // px/s
     int dragThreshold = 4;  // px
 };
 
-inline constexpr std::size_t kMotionSettingCount = 4;  // 대기, 걷기, 끌려 다닐 때, 공중
+inline constexpr std::size_t kMotionSettingCount = 5;  // 대기, 걷기, 끌려 다닐 때, 공중, 상호작용
 
 // 설정 창이 보여 줄 앱 상태 (매 프레임 앱이 채움)
 struct SettingsState {
@@ -90,7 +89,6 @@ struct SettingsAction {
         SetMsaa,           // 샘플 수 = number (1 = 끔)
         SetOutline,        // number = core::OutlineMode
         SetGravity,        // number (px/s²)
-        SetJumpSpeed,      // number (px/s)
         SetWalkSpeed,      // number (px/s)
         SetDragThreshold,  // number (px)
         ResetMovement,     // 고급 값을 기본값으로

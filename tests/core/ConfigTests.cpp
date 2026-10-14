@@ -45,6 +45,12 @@ max_fall_speed = 2000
 walk = false
 walk_speed = 90
 
+[animation]
+interact_clip = models/pet.glb#Wave
+
+[state]
+scale = 10
+
 [renderer]
 vsync = false
 debug_layer = true
@@ -66,6 +72,8 @@ to_file = no
     EXPECT_FLOAT_EQ(c.character.maxFallSpeed, 2000.0f);
     EXPECT_FALSE(c.character.walk);
     EXPECT_FLOAT_EQ(c.character.walkSpeed, 90.0f);
+    EXPECT_EQ(c.animation.interactClip, "models/pet.glb#Wave");
+    EXPECT_EQ(c.state.scale, std::optional<int>(10));
     EXPECT_FALSE(c.renderer.vsync);
     EXPECT_TRUE(c.renderer.debugLayer);
     EXPECT_EQ(c.renderer.msaa, 8);
