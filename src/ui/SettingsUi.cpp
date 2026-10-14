@@ -528,7 +528,8 @@ void SettingsUi::drawDisplayTab(const SettingsState& state,
          SettingsAction::Kind::SetWalkOnWindows},
         {"##lookAt", "커서 바라보기", state.lookAt, SettingsAction::Kind::SetLookAt},
         {"##idleMotion", "대기 중 숨쉬기", state.idleMotion, SettingsAction::Kind::SetIdleMotion},
-        {"##alwaysOnTop", "항상 위", state.alwaysOnTop, SettingsAction::Kind::SetAlwaysOnTop},
+        {"##alwaysOnTop", "다른 창보다 항상 위에", state.alwaysOnTop,
+         SettingsAction::Kind::SetAlwaysOnTop},
     }};
     for (const ToggleInfo& row : rows) {
         if (toggleRow(row.label, row.id, row.value, p, s)) {
