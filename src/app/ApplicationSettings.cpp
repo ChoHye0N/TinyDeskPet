@@ -46,6 +46,15 @@ const char* boolText(bool value) {
     return value ? "true" : "false";
 }
 
+const char* paddingText(core::TexturePadding padding) {
+    switch (padding) {
+        case core::TexturePadding::On: return "on";
+        case core::TexturePadding::Off: return "off";
+        case core::TexturePadding::Auto:
+        default: return "auto";
+    }
+}
+
 const char* outlineText(core::OutlineMode mode) {
     switch (mode) {
         case core::OutlineMode::All: return "all";
@@ -77,6 +86,10 @@ void Application::setClipLoader(ClipLoader loader) {
 
 void Application::setSettingsWriter(SettingsWriter writer) {
     settingsWriter_ = std::move(writer);
+}
+
+void Application::setTexturePaddingHandler(TexturePaddingHandler handler) {
+    texturePaddingHandler_ = std::move(handler);
 }
 
 void Application::openSettings() {
@@ -184,6 +197,7 @@ ui::SettingsState Application::settingsState() const {
     state.vsync = config_.renderer.vsync;
     state.msaa = config_.renderer.msaa;
     state.outline = config_.renderer.outline;
+    state.texturePadding = config_.renderer.texturePadding;
 
     const core::CharacterConfig& c = config_.character;
     state.movement = {static_cast<int>(std::lround(c.gravity)),
@@ -243,26 +257,7 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             config_.animation.idleMotion = action.flag;
             writeSettings({{"animation", "idle_motion", boolText(action.flag)}});
             break;
-        case Kind::SetLoopStart: {
-            if (action.motion >= kSlots.size() || kSlots[action.motion].loopStart == nullptr) {
-                break;
-            }
-            const MotionSlot& slot = kSlots[action.motion];
-            const float seconds = std::max(action.value, 0.0f);
-            config_.animation.*slot.loopStart = seconds;
-            // 클립은 공유되는 const 데이터라 복사해서 반복 시작만 바꿈. 자세 경계 상자는 클립 전체
-            // 길이로 재므로 그대로
-            if (const auto& current = clips_[action.motion]) {
-                auto changed = std::make_shared<model::MotionClip>(*current);
-                changed->loopStart = seconds;
-                clips_[action.motion] = changed;
-                if (animator_) {
-                    animator_->setClip(static_cast<anim::Motion>(action.motion), changed);
-                }
-            }
-            writeSettings({{"animation", slot.loopStartKey, decimalText(seconds)}});
-            break;
-        }
+        case Kind::SetLoopStart: setLoopStart(action.motion, action.value); break;
         case Kind::SetWalk:
             config_.character.walk = action.flag;
             applyMovement();
@@ -296,6 +291,7 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             writeSettings({{"renderer", "outline", outlineText(config_.renderer.outline)}});
             break;
         }
+        case Kind::SetTexturePadding: setTexturePadding(action.number); break;
         case Kind::SetGravity:
             config_.character.gravity = static_cast<float>(std::max(action.number, 1));
             applyMovement();
@@ -325,6 +321,47 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             break;
         }
     }
+}
+
+// 텍스처 여백 채우기 방식 (설정 창). 텍스처를 준비할 때 쓰이므로 로더에 알리고 지금 모델을 다시
+// 읽음
+void Application::setTexturePadding(int number) {
+    if (number < 0 || number > static_cast<int>(core::TexturePadding::Off)) {
+        return;
+    }
+    const auto padding = static_cast<core::TexturePadding>(number);
+    if (padding == config_.renderer.texturePadding) {
+        return;
+    }
+    config_.renderer.texturePadding = padding;
+    if (texturePaddingHandler_) {
+        texturePaddingHandler_(padding);
+    }
+    if (!modelPath_.empty()) {
+        loadModelAsync(modelPath_);  // 바로 보이도록 지금 모델을 새 방식으로 다시 읽음
+    }
+    writeSettings({{"renderer", "texture_padding", paddingText(padding)}});
+}
+
+// 동작별 반복 시작 시각 (설정 창). 반복하지 않는 동작(상호작용)은 무시
+void Application::setLoopStart(std::size_t motion, float value) {
+    if (motion >= kSlots.size() || kSlots[motion].loopStart == nullptr) {
+        return;
+    }
+    const MotionSlot& slot = kSlots[motion];
+    const float seconds = std::max(value, 0.0f);
+    config_.animation.*slot.loopStart = seconds;
+    // 클립은 공유되는 const 데이터라 복사해서 반복 시작만 바꿈. 자세 경계 상자는 클립 전체 길이로
+    // 재므로 그대로
+    if (const auto& current = clips_[motion]) {
+        auto changed = std::make_shared<model::MotionClip>(*current);
+        changed->loopStart = seconds;
+        clips_[motion] = changed;
+        if (animator_) {
+            animator_->setClip(static_cast<anim::Motion>(motion), changed);
+        }
+    }
+    writeSettings({{"animation", slot.loopStartKey, decimalText(seconds)}});
 }
 
 void Application::writeSettings(const std::vector<core::IniValue>& values) const {

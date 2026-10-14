@@ -26,6 +26,8 @@ namespace deskpet::renderer::d3d11 {
 // GPU를 쓰지 않아 모델을 읽는 작업 스레드에서 부름 → 렌더 스레드는 올리기만 해 멈춤이 짧음.
 // 호출 스레드에 COM이 초기화되어 있어야 하며, 없거나 실패한 텍스처는 그대로 둠 (렌더러가 처리).
 // 반환: 준비한 텍스처 수
-int prepareTextures(model::Model& model);
+// padding: 여백 채우기 방식 (설정 [renderer] texture_padding). 점·선 삼각형 때문에 보존한 텍셀이
+// 있으면 로그에 남김
+int prepareTextures(model::Model& model, core::TexturePadding padding = core::TexturePadding::Auto);
 
 }  // namespace deskpet::renderer::d3d11

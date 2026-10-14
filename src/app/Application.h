@@ -97,6 +97,9 @@ public:
     // 설정 창에서 바꾼 값을 deskpet.ini에 바로 쓰는 함수
     using SettingsWriter = std::function<void(const std::vector<core::IniValue>& values)>;
     void setSettingsWriter(SettingsWriter writer);
+    // 설정 창에서 텍스처 여백 채우기 방식을 바꿀 때 모델 로더에 알리는 함수 (다음에 읽는 모델부터)
+    using TexturePaddingHandler = std::function<void(core::TexturePadding padding)>;
+    void setTexturePaddingHandler(TexturePaddingHandler handler);
     // 설정 창 글꼴(TrueType 파일)과 테마. run() 전에
     void setUiFont(const std::filesystem::path& file) { settingsUi_.setFont(file); }
     void setUiDarkTheme(bool dark) { settingsUi_.setDarkTheme(dark); }
@@ -172,7 +175,10 @@ private:
     [[nodiscard]] ImDrawData* updateSettings(float dt);  // 닫혀 있으면 nullptr
     [[nodiscard]] ui::SettingsState settingsState() const;
     [[nodiscard]] renderer::RendererOptions rendererOptions() const;  // config_.renderer 그대로
-    void applyMovement();  // config_.character → 캐릭터 물리·걷기 (실행 중 변경)
+    void applyMovement();
+    void setTexturePadding(int number);
+    void setLoopStart(std::size_t motion,
+                      float value);  // config_.character → 캐릭터 물리·걷기 (실행 중 변경)
     void refreshClipChoices();  // 모델 파일 안 애니메이션 목록 (모델이 바뀌면)
     void refreshAnimationAsync();  // 클립이 바뀜 → 작업 스레드에서 자세 경계 상자 다시 계산
     void writeSettings(const std::vector<core::IniValue>& values) const;
@@ -184,6 +190,7 @@ private:
     std::uint64_t uiFrame_ = 0;  // 열려 있는 동안 매 프레임 올려 Present를 생략하지 않게 함
     ClipLoader clipLoader_;
     SettingsWriter settingsWriter_;
+    TexturePaddingHandler texturePaddingHandler_;
     std::vector<ui::ClipChoice> clipChoices_;  // modelPath_ 파일 안 애니메이션 (+ 기본 동작)
     std::filesystem::path clipChoicesPath_;  // clipChoices_를 만든 모델 파일
 

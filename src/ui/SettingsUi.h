@@ -70,28 +70,30 @@ struct SettingsState {
     bool vsync = true;
     int msaa = 4;  // 1 = 끔, 2, 4, 8
     core::OutlineMode outline = core::OutlineMode::Model;
+    core::TexturePadding texturePadding = core::TexturePadding::Auto;
     // 고급
     MovementSetting movement;
 };
 
 struct SettingsAction {
     enum class Kind : std::uint8_t {
-        OpenModel,         // 모델 열기 대화상자
-        SetClip,           // motion 동작의 클립 = text
-        SetScale,          // 크기 = number (%)
-        SetLookAt,         // flag
-        SetWalkOnWindows,  // flag
-        SetIdleMotion,     // flag
-        SetLoopStart,      // motion 동작의 반복 시작 시각 = value (s)
-        SetWalk,           // flag
-        SetAlwaysOnTop,    // flag
-        SetVsync,          // flag
-        SetMsaa,           // 샘플 수 = number (1 = 끔)
-        SetOutline,        // number = core::OutlineMode
-        SetGravity,        // number (px/s²)
-        SetWalkSpeed,      // number (px/s)
-        SetDragThreshold,  // number (px)
-        ResetMovement,     // 고급 값을 기본값으로
+        OpenModel,          // 모델 열기 대화상자
+        SetClip,            // motion 동작의 클립 = text
+        SetScale,           // 크기 = number (%)
+        SetLookAt,          // flag
+        SetWalkOnWindows,   // flag
+        SetIdleMotion,      // flag
+        SetLoopStart,       // motion 동작의 반복 시작 시각 = value (s)
+        SetWalk,            // flag
+        SetAlwaysOnTop,     // flag
+        SetVsync,           // flag
+        SetMsaa,            // 샘플 수 = number (1 = 끔)
+        SetOutline,         // number = core::OutlineMode
+        SetTexturePadding,  // number = core::TexturePadding (모델을 다시 읽음)
+        SetGravity,         // number (px/s²)
+        SetWalkSpeed,       // number (px/s)
+        SetDragThreshold,   // number (px)
+        ResetMovement,      // 고급 값을 기본값으로
     };
     Kind kind = Kind::OpenModel;
     std::size_t motion = 0;

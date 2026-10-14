@@ -22,9 +22,48 @@ float edge(core::Vec2 a, core::Vec2 b, core::Vec2 p) {
     return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
 }
 
-// 텍셀 중심이 삼각형 안(경계 포함)에 있으면 덮인 것으로 표시
-void rasterize(const UvTriangle& uv, int width, int height, std::vector<std::uint8_t>& covered) {
-    // 반복 UV: 삼각형을 [0, 1) 근처로 옮겨 픽셀 좌표로 (텍셀 i의 중심 = (i + 0.5) / 크기)
+// 선형 필터가 픽셀 좌표 p(텍셀 단위, 텍셀 i의 중심 = i + 0.5)에서 읽는 2×2 텍셀을 덮인 것으로
+// 표시. 반환: 새로 표시한 텍셀 수
+int markFootprint(core::Vec2 p, int width, int height, std::vector<std::uint8_t>& covered) {
+    const int x0 = static_cast<int>(std::floor(p.x - 0.5f));
+    const int y0 = static_cast<int>(std::floor(p.y - 0.5f));
+    int marked = 0;
+    for (int dy = 0; dy < 2; ++dy) {
+        for (int dx = 0; dx < 2; ++dx) {
+            std::uint8_t& c = covered[texel(wrap(x0 + dx, width), wrap(y0 + dy, height), width)];
+            if (c == 0) {
+                c = 1;
+                ++marked;
+            }
+        }
+    }
+    return marked;
+}
+
+// 점·선 삼각형: 세 변을 반 텍셀 간격으로 따라가며 선형 필터가 읽는 텍셀을 표시. 텍셀 중심 판정
+// 으로는 거의 아무 텍셀도 덮지 않아, 그 삼각형이 찍어 쓰는 색 칸이 여백으로 덮이기 때문.
+// 반환: 새로 표시한 텍셀 수
+int markThin(const std::array<core::Vec2, 3>& p, int width, int height,
+             std::vector<std::uint8_t>& covered) {
+    // 텍스처를 여러 번 감싸는 비정상 변이 루프를 키우지 않도록 길이를 제한
+    const float limit = 2.0f * static_cast<float>(std::max(width, height));
+    int marked = 0;
+    for (std::size_t i = 0; i < 3; ++i) {
+        const core::Vec2 a = p[i];
+        const core::Vec2 b = p[(i + 1) % 3];
+        const float length = std::min(std::hypot(b.x - a.x, b.y - a.y), limit);
+        const int steps = std::max(1, static_cast<int>(std::ceil(length * 2.0f)));
+        for (int s = 0; s <= steps; ++s) {
+            const float t = static_cast<float>(s) / static_cast<float>(steps);
+            marked += markFootprint({a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t}, width, height,
+                                    covered);
+        }
+    }
+    return marked;
+}
+
+// 반복 UV: 삼각형을 [0, 1) 근처로 옮겨 픽셀 좌표로 (텍셀 i의 중심 = (i + 0.5) / 크기)
+std::array<core::Vec2, 3> toPixels(const UvTriangle& uv, int width, int height) {
     const float shiftU = std::floor(std::min({uv[0].x, uv[1].x, uv[2].x}));
     const float shiftV = std::floor(std::min({uv[0].y, uv[1].y, uv[2].y}));
     std::array<core::Vec2, 3> p{};
@@ -32,6 +71,28 @@ void rasterize(const UvTriangle& uv, int width, int height, std::vector<std::uin
         p[i] = {(uv[i].x - shiftU) * static_cast<float>(width),
                 (uv[i].y - shiftV) * static_cast<float>(height)};
     }
+    return p;
+}
+
+// 점·선 삼각형(넓이가 텍셀 하나보다 작거나, 가장 긴 변에 대한 높이가 한 텍셀보다 작음)이면
+// 둘레를 표시. 반환: 새로 표시한 텍셀 수 (섬 내부로 이미 덮인 텍셀은 세지 않음)
+int keepThinTriangle(const UvTriangle& uv, int width, int height,
+                     std::vector<std::uint8_t>& covered) {
+    const std::array<core::Vec2, 3> p = toPixels(uv, width, height);
+    const float area = std::abs(edge(p[0], p[1], p[2]));  // 넓이의 2배 (텍셀²)
+    float longest = 0.0f;
+    for (std::size_t i = 0; i < 3; ++i) {
+        const core::Vec2 d = p[(i + 1) % 3] - p[i];
+        longest = std::max(longest, std::hypot(d.x, d.y));
+    }
+    const bool tiny = area < 2.0f;              // 넓이 < 텍셀 하나
+    const bool sliver = area < 2.0f * longest;  // 높이 < 텍셀 하나
+    return tiny || sliver ? markThin(p, width, height, covered) : 0;
+}
+
+// 텍셀 중심이 삼각형 안(경계 포함)에 있으면 덮인 것으로 표시
+void rasterize(const UvTriangle& uv, int width, int height, std::vector<std::uint8_t>& covered) {
+    std::array<core::Vec2, 3> p = toPixels(uv, width, height);
     float area = edge(p[0], p[1], p[2]);
     if (std::abs(area) < 1e-8f) {
         return;  // 넓이 0 (선·점)
@@ -162,18 +223,27 @@ private:
 
 }  // namespace
 
-void padUvIslands(std::span<std::uint8_t> rgba, int width, int height,
-                  std::span<const UvTriangle> triangles, int maxDistance) {
+int padUvIslands(std::span<std::uint8_t> rgba, int width, int height,
+                 std::span<const UvTriangle> triangles, int maxDistance,
+                 core::TexturePadding mode) {
     const std::size_t pixels = texel(0, height, width);  // width × height
-    if (triangles.empty() || width <= 0 || height <= 0 || rgba.size() < pixels * 4) {
-        return;
+    if (mode == core::TexturePadding::Off || triangles.empty() || width <= 0 || height <= 0 ||
+        rgba.size() < pixels * 4) {
+        return 0;
     }
-    // 1) 섬에 덮인 텍셀 표시 → 2) 바깥으로 번짐
+    // 1) 섬에 덮인 텍셀 표시 (Auto면 점·선 삼각형이 읽는 텍셀도) → 2) 바깥으로 번짐
     std::vector<std::uint8_t> covered(pixels, 0);
     for (const UvTriangle& triangle : triangles) {
         rasterize(triangle, width, height, covered);
     }
+    int kept = 0;
+    if (mode == core::TexturePadding::Auto) {
+        for (const UvTriangle& triangle : triangles) {
+            kept += keepThinTriangle(triangle, width, height, covered);
+        }
+    }
     Dilation(rgba, width, height, std::move(covered)).run(maxDistance);
+    return kept;
 }
 
 std::vector<UvTriangle> collectUvTriangles(const Model& model, int textureIndex) {
