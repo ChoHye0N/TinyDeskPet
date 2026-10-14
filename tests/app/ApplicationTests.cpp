@@ -216,18 +216,6 @@ TEST_F(ApplicationTest, RightClick_ShowsMenuAndQuitSelectionExits) {
 // 캐릭터 크기 조절 (FR-06)
 // ---------------------------------------------------------------------------
 
-namespace {
-
-const deskpet::platform::MenuItem* findMenuItem(
-    const std::vector<deskpet::platform::MenuItem>& menu, MenuCommand command) {
-    const auto it = std::find_if(menu.begin(), menu.end(), [command](const auto& item) {
-        return item.id == static_cast<int>(command);
-    });
-    return it != menu.end() ? &*it : nullptr;
-}
-
-}  // namespace
-
 TEST_F(ApplicationTest, ContextMenu_HasOnlyEssentialItems) {
     // 크기·모델 정보·모델 열기는 설정 창으로 옮김. 메뉴는 설정·위치 초기화·숨기기·종료만
     window_.frames.push_back({core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Right}});
