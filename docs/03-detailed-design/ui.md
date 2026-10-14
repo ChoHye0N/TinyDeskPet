@@ -101,7 +101,7 @@ public:
 |---|---|---|
 | 모델 | 이름(없으면 "모델 없음", 읽는 중이면 "불러오는 중…"), 작가, 라이선스, 파일 | "모델 열기…" → `OpenModel` |
 | 동작 | 대기·걷기·끌려 다닐 때·공중 콤보 (선택지 = 앱이 준 `choices`). 클립이 있는 동작은 아래에 반복 시작 슬라이더 (0 ~ 클립 길이, 0.1초 단위). 넘치면 휠로 스크롤 | 다른 항목 선택 → `SetClip(motion, value)`, 슬라이더 → `SetLoopStart(motion, value)` |
-| 화면 | 크기 슬라이더(최소~최대, 단계), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 항상 위) | `SetScale`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
+| 화면 | 크기 슬라이더(최소~최대, 단계), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 다른 창보다 항상 위에) | `SetScale`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
 | 그래픽 | 수직 동기화 토글, 안티에일리어싱(끔·2x·4x·8x)과 외곽선(모델 지정·모든 재질·끔)은 붙은 선택 버튼 | `SetVsync`, `SetMsaa(샘플 수)`, `SetOutline(core::OutlineMode)` |
 | 고급 | 중력(500~6000, 100), 점프 세기(300~2000, 50), 걷기 속도(20~200, 5), 끌기 시작 거리(0~20, 1) 슬라이더, "기본값으로" | `SetGravity` 등 (`number`), `ResetMovement` |
 | 정보 | 버전, 소개, 저장소, 설정 저장 위치 | — |
@@ -131,4 +131,4 @@ public:
 |---|---|
 | `TODO` | 반복 시작 시각(`*_loop_start`) 슬라이더 |
 | `TODO` | 다른 모션 파일 고르기 (파일 대화상자) |
-| `TODO` | 항상 위 켜기/끄기 (IWindow에 API 필요), 강조색 고르기 |
+| `TODO` | 강조색 고르기 |
