@@ -538,6 +538,40 @@ TEST(ProceduralAnimatorClip, MotionBounds_SplitDisplayBoundsByMotion) {
     EXPECT_FLOAT_EQ(animator.displayBounds().max.y, top);
 }
 
+TEST(ProceduralAnimator, StandingBounds_BottomIsSoleEvenIfTailHangsLower) {
+    // 바닥 기준 = 발바닥 (발·발가락 본에 붙은 정점). 발보다 낮게 늘어진 꼬리 끝을 바닥으로 삼으면
+    // 서 있을 때 그만큼 떠 보임. 꼬리는 바닥 아래로 나감
+    const auto plain = deskpet::test::makeSkeletonModel();
+    const float sole = ProceduralAnimator(plain).standingBounds().min.y;
+    auto model = plain;
+    deskpet::model::Vertex tail;
+    tail.position = {0.0f, -0.2f, -0.3f};
+    tail.joints[0] = 1;  // hips
+    tail.weights[0] = 1.0f;
+    model.vertices.push_back(tail);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+    EXPECT_NEAR(ProceduralAnimator(model).standingBounds().min.y, sole, 1e-5f);
+    EXPECT_LT(ProceduralAnimator(model).displayBounds().min.y, sole - 0.1f);  // 꼬리는 그대로 포함
+}
+
+TEST(ProceduralAnimator, StandingBounds_WithoutFeetUsesLowestVertex) {
+    // 발 본이 없는 모델(슬라임형, 휴머노이드 매핑 실패)은 가장 낮은 정점
+    auto model = deskpet::test::makeSkeletonModel();
+    for (auto& bone : model.bones) {
+        if (bone.human == deskpet::model::HumanBone::LeftFoot ||
+            bone.human == deskpet::model::HumanBone::RightFoot) {
+            bone.human = deskpet::model::HumanBone::None;
+        }
+    }
+    deskpet::model::Vertex tail;
+    tail.position = {0.0f, -0.2f, -0.3f};
+    tail.joints[0] = 1;
+    tail.weights[0] = 1.0f;
+    model.vertices.push_back(tail);
+    model.bounds = deskpet::model::computeBounds(model.vertices);
+    EXPECT_LT(ProceduralAnimator(model).standingBounds().min.y, -0.1f);
+}
+
 TEST(ProceduralAnimatorClip, StandingBounds_DoNotDependOnClips) {
     // 화면 크기 기준. 클립을 바꿔도 같아야 캐릭터 크기가 그대로 (모든 동작 상자는 커짐)
     const auto model = deskpet::test::makeSkeletonModel();

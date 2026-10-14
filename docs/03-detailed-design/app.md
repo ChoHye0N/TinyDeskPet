@@ -219,7 +219,7 @@ flowchart LR
 
 정면(+Z)에서 바라보는 원근 카메라. 화각 20°(망원이라 원근 왜곡이 적음), 위·옆 여백 2%, **아래 여백 0**.
 
-`fitCameraToBounds(standing, 상자, all)`: 크기는 **서 있는 자세(`standing`)**로만 정하고, `all`(모든 동작)은 깊이 범위에만 씁니다. 기준은 **발 = 모델 원점(x = 0, z = 0)**, 바닥 높이 `g` = standing.min.y(서 있을 때의 발바닥)입니다. 이 평면에서 화면 반높이 `H`, 거리 `D = H / tan(10°)`, 앞으로 나온 깊이 `f = max(max.z, 0)`, 여백을 뺀 범위 `u = 0.98`, 가로 반폭 `w = max(−min.x, max.x)`.
+`fitCameraToBounds(standing, 상자, all)`: 크기는 **서 있는 자세(`standing`)**로만 정하고, `all`(모든 동작)은 깊이 범위에만 씁니다. 기준은 **발 = 모델 원점(x = 0, z = 0)**, 바닥 높이 `g` = standing.min.y(서 있을 때의 **발바닥** — 발보다 낮은 꼬리·머리카락은 작업 표시줄 아래로 들어가 가려짐, [anim.md](anim.md) `standingBounds`)입니다. 이 평면에서 화면 반높이 `H`, 거리 `D = H / tan(10°)`, 앞으로 나온 깊이 `f = max(max.z, 0)`, 여백을 뺀 범위 `u = 0.98`, 가로 반폭 `w = max(−min.x, max.x)`.
 
 1. 앞으로 f만큼 나온 점은 `D / (D − f)`배 커 보이므로, 축에서 a 떨어진 점이 들어오려면 `a ≤ u·(H − f·tan)`
 2. `H = max((max.y − g + u·f·tan) / (1 + u), w ÷ (화면비·u) + f·tan)`
