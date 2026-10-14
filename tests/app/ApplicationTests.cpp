@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -1231,6 +1232,101 @@ TEST_F(ApplicationTest, SettingsActions_ApplyAndAreSavedImmediately) {
     EXPECT_TRUE(has("animation", "look_at", "false"));
     EXPECT_TRUE(has("character", "walk_on_windows", "false"));
     EXPECT_TRUE(has("animation", "idle_motion", "true"));
+}
+
+namespace {
+
+// 설정 창 동작을 적용하고 쓴 값을 모음
+struct SettingsHarness {
+    std::vector<core::IniValue> written;
+    bool has(const char* section, const char* key, const char* value) const {
+        return std::ranges::any_of(written, [&](const core::IniValue& v) {
+            return v.section == section && v.key == key && v.value == value;
+        });
+    }
+    void attach(Application& app) {
+        app.setSettingsWriter([this](const std::vector<core::IniValue>& values) {
+            written.insert(written.end(), values.begin(), values.end());
+        });
+    }
+};
+
+}  // namespace
+
+TEST_F(ApplicationTest, GraphicsSettings_AreAppliedToRendererAndSaved) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    app->applySettingsAction({Kind::SetVsync, 0, {}, 0, false});
+    app->applySettingsAction({Kind::SetMsaa, 0, {}, 8, false});
+    app->applySettingsAction({Kind::SetMsaa, 0, {}, 3, false});  // 지원하지 않는 값은 무시
+    app->applySettingsAction(
+        {Kind::SetOutline, 0, {}, static_cast<int>(deskpet::core::OutlineMode::Off), false});
+
+    EXPECT_FALSE(renderer_.options.vsync);
+    EXPECT_EQ(renderer_.options.msaaSamples, 8);
+    EXPECT_EQ(renderer_.options.outline, deskpet::core::OutlineMode::Off);
+    EXPECT_EQ(renderer_.setOptionsCount, 3);
+    EXPECT_TRUE(h.has("renderer", "vsync", "false"));
+    EXPECT_TRUE(h.has("renderer", "msaa", "8"));
+    EXPECT_FALSE(h.has("renderer", "msaa", "3"));
+    EXPECT_TRUE(h.has("renderer", "outline", "off"));
+}
+
+TEST_F(ApplicationTest, WindowAndMovementSettings_AreAppliedAndSaved) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    app->applySettingsAction({Kind::SetAlwaysOnTop, 0, {}, 0, false});
+    app->applySettingsAction({Kind::SetWalk, 0, {}, 0, false});
+    app->applySettingsAction({Kind::SetGravity, 0, {}, 1200, false});
+    app->applySettingsAction({Kind::SetJumpSpeed, 0, {}, 600, false});
+    app->applySettingsAction({Kind::SetDragThreshold, 0, {}, 10, false});
+
+    EXPECT_EQ(window_.alwaysOnTop, std::optional<bool>(false));
+    const auto& params = app->character().params();
+    EXPECT_FLOAT_EQ(params.walkSpeed, 0.0f);  // 걷기 끔
+    EXPECT_FLOAT_EQ(params.gravity, 1200.0f);
+    EXPECT_FLOAT_EQ(params.jumpSpeed, 600.0f);
+    EXPECT_FLOAT_EQ(params.dragThreshold, 10.0f);
+    EXPECT_TRUE(h.has("window", "always_on_top", "false"));
+    EXPECT_TRUE(h.has("character", "walk", "false"));
+    EXPECT_TRUE(h.has("character", "gravity", "1200"));
+
+    app->applySettingsAction({Kind::SetWalk, 0, {}, 0, true});
+    app->applySettingsAction({Kind::SetWalkSpeed, 0, {}, 90, false});
+    EXPECT_FLOAT_EQ(app->character().params().walkSpeed, 90.0f);
+    app->applySettingsAction({Kind::ResetMovement, 0, {}, 0, false});
+    const deskpet::core::CharacterConfig defaults;
+    EXPECT_FLOAT_EQ(app->character().params().gravity, defaults.gravity);
+    EXPECT_FLOAT_EQ(app->character().params().walkSpeed, defaults.walkSpeed);
+    EXPECT_TRUE(h.has("character", "walk_speed", "60"));
+}
+
+TEST_F(ApplicationTest, LoopStartSetting_IsSavedAndUsedForNextClip) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    float loopStart = -1.0f;
+    app->setClipLoader([&](deskpet::anim::Motion, const std::string&,
+                           float start) -> std::shared_ptr<const deskpet::model::MotionClip> {
+        loopStart = start;
+        auto clip = std::make_shared<deskpet::model::MotionClip>();
+        clip->frameCount = 31;  // 1초
+        clip->loopStart = start;
+        return clip;
+    });
+    app->applySettingsAction({Kind::SetClip, 1, "models/pet.glb#Walk", 0, false});
+    deskpet::ui::SettingsAction loop{Kind::SetLoopStart, 1, {}, 0, false};
+    loop.value = 0.5f;
+    app->applySettingsAction(loop);
+    EXPECT_TRUE(h.has("animation", "walk_loop_start", "0.5"));
+    // 다른 클립으로 바꿔도 같은 반복 시작 시각으로 읽음
+    app->applySettingsAction({Kind::SetClip, 1, "models/pet.glb#Run", 0, false});
+    EXPECT_FLOAT_EQ(loopStart, 0.5f);
 }
 
 TEST_F(ApplicationTest, ClearingClip_ReturnsToCodeMotionWithoutLoading) {

@@ -42,6 +42,8 @@ gravity = 1200.5
 jump_speed = 500
 drag_threshold = 8
 max_fall_speed = 2000
+walk = false
+walk_speed = 90
 
 [renderer]
 vsync = false
@@ -62,6 +64,8 @@ to_file = no
     EXPECT_FLOAT_EQ(c.character.jumpSpeed, 500.0f);
     EXPECT_FLOAT_EQ(c.character.dragThreshold, 8.0f);
     EXPECT_FLOAT_EQ(c.character.maxFallSpeed, 2000.0f);
+    EXPECT_FALSE(c.character.walk);
+    EXPECT_FLOAT_EQ(c.character.walkSpeed, 90.0f);
     EXPECT_FALSE(c.renderer.vsync);
     EXPECT_TRUE(c.renderer.debugLayer);
     EXPECT_EQ(c.renderer.msaa, 8);

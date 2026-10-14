@@ -207,6 +207,17 @@ void Win32Window::setClickThrough(bool enabled) {
     clickThrough_ = enabled;
 }
 
+void Win32Window::setAlwaysOnTop(bool enabled) {
+    if (hwnd_ == nullptr) {
+        return;
+    }
+    // WS_EX_TOPMOST는 SetWindowLongPtr로 바꿀 수 없고 SetWindowPos의 HWND_TOPMOST/NOTOPMOST로만
+    // 바뀜. 위치·크기·활성 상태는 그대로 (펫을 눌러도 다른 창의 포커스를 빼앗지 않게)
+    SetWindowPos(hwnd_, enabled ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    core::logging::info("항상 위 = {}", enabled);
+}
+
 bool Win32Window::fullscreenAppActive(core::PointI screen) const {
     // 1) 전용 전체 화면 D3D 게임, 프레젠테이션 모드 (모니터 구분 없이 Windows가 알려 줌)
     QUERY_USER_NOTIFICATION_STATE state{};

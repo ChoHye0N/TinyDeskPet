@@ -32,6 +32,7 @@ public:
     bool showTrayIcon(const std::string& tooltip) override;
 
     void setClickThrough(bool enabled) override;
+    void setAlwaysOnTop(bool enabled) override;
     [[nodiscard]] core::PointI cursorPosition() const override;
     [[nodiscard]] bool fullscreenAppActive(core::PointI screen) const override;
     [[nodiscard]] std::vector<core::RectI> windowSurfaces() const override;

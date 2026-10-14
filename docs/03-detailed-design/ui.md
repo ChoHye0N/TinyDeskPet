@@ -25,19 +25,28 @@
 ```cpp
 namespace deskpet::ui {
 struct ClipChoice { std::string label; std::string value; };  // value "" = 기본 동작
-struct MotionSetting { std::string name; std::string current; std::vector<ClipChoice> choices; };
+struct MotionSetting {
+    std::string name; std::string current; std::vector<ClipChoice> choices;
+    float duration, loopStart;  // 지금 클립 길이(0이면 클립 없음 → 반복 시작 슬라이더 없음), 반복 시작 (s)
+};
+struct MovementSetting { int gravity, jumpSpeed, walkSpeed, dragThreshold; };  // 고급 (px 단위)
 struct SettingsState {  // 앱이 매 프레임 채움
     std::string version;
     bool modelLoading; std::string modelName, modelAuthor, modelLicense, modelFile;
     std::array<MotionSetting, 4> motions;  // 대기, 걷기, 끌려 다닐 때, 공중
     int scalePercent, minScalePercent, maxScalePercent, scaleStepPercent;
-    bool lookAt, walkOnWindows, idleMotion;
+    bool walk, walkOnWindows, lookAt, idleMotion, alwaysOnTop;
+    bool vsync; int msaa; core::OutlineMode outline;  // 그래픽
+    MovementSetting movement;                        // 고급
 };
 struct SettingsAction {
-    enum class Kind : std::uint8_t { OpenModel, SetClip, SetScale, SetLookAt, SetWalkOnWindows, SetIdleMotion };
-    Kind kind; std::size_t motion; std::string text; int number; bool flag;
+    enum class Kind : std::uint8_t {
+        OpenModel, SetClip, SetScale, SetLookAt, SetWalkOnWindows, SetIdleMotion,
+        SetLoopStart, SetWalk, SetAlwaysOnTop, SetVsync, SetMsaa, SetOutline,
+        SetGravity, SetJumpSpeed, SetWalkSpeed, SetDragThreshold, ResetMovement };
+    Kind kind; std::size_t motion; std::string text; int number; bool flag; float value;
 };
-enum class SettingsTab : std::uint8_t { Model, Motion, Display, About };
+enum class SettingsTab : std::uint8_t { Model, Motion, Display, Graphics, Advanced, About };
 
 class SettingsUi {
 public:
@@ -91,8 +100,10 @@ public:
 | 탭 | 내용 | 동작 |
 |---|---|---|
 | 모델 | 이름(없으면 "모델 없음", 읽는 중이면 "불러오는 중…"), 작가, 라이선스, 파일 | "모델 열기…" → `OpenModel` |
-| 동작 | 대기·걷기·끌려 다닐 때·공중 콤보 (선택지 = 앱이 준 `choices`) | 다른 항목 선택 → `SetClip(motion, value)` |
-| 화면 | 크기 슬라이더(최소~최대, 단계), 토글 3개 | `SetScale`, `SetLookAt`, `SetWalkOnWindows`, `SetIdleMotion` |
+| 동작 | 대기·걷기·끌려 다닐 때·공중 콤보 (선택지 = 앱이 준 `choices`). 클립이 있는 동작은 아래에 반복 시작 슬라이더 (0 ~ 클립 길이, 0.1초 단위). 넘치면 휠로 스크롤 | 다른 항목 선택 → `SetClip(motion, value)`, 슬라이더 → `SetLoopStart(motion, value)` |
+| 화면 | 크기 슬라이더(최소~최대, 단계), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 항상 위) | `SetScale`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
+| 그래픽 | 수직 동기화 토글, 안티에일리어싱(끔·2x·4x·8x)과 외곽선(모델 지정·모든 재질·끔)은 붙은 선택 버튼 | `SetVsync`, `SetMsaa(샘플 수)`, `SetOutline(core::OutlineMode)` |
+| 고급 | 중력(500~6000, 100), 점프 세기(300~2000, 50), 걷기 속도(20~200, 5), 끌기 시작 거리(0~20, 1) 슬라이더, "기본값으로" | `SetGravity` 등 (`number`), `ResetMovement` |
 | 정보 | 버전, 소개, 저장소, 설정 저장 위치 | — |
 
 ## 5. 테스트 항목
@@ -108,6 +119,9 @@ public:
 | `CloseButton_ClosesWindow` | 닫기 클릭 → 닫힘, 마우스를 놓아줌(`wantsMouse` false), 다음 프레임 nullptr |
 | `ClickingTab_SelectsIt` | 세 번째 탭 클릭 → 화면 탭 |
 | `DraggingTitle_MovesWindow` | 제목 줄 끌기 → 창이 같은 만큼 이동 |
+| `ClickingGraphicsAndAdvancedTabs_SelectsThem` | 네 번째·다섯 번째 탭 클릭 → 그래픽·고급 |
+| `EveryTab_DrawsWithClipLoopSliders` | 모든 탭이 그려지고(ImGui 단언 없음), 클릭 없이는 동작 없음 |
+| `GraphicsTab_VsyncToggleEmitsAction` | 수직 동기화 스위치 클릭 → `SetVsync(false)` |
 
 앱 쪽 처리(적용·저장·입력 가로채기)는 `ApplicationTests`(app.md §5)
 

@@ -77,6 +77,9 @@ public:
     // 앱이 커서 아래 픽셀의 알파를 보고 매 프레임 결정합니다
     virtual void setClickThrough(bool enabled) = 0;
 
+    // 다른 창보다 항상 위에 둘지 (설정 창). 만들 때는 WindowDesc::alwaysOnTop
+    virtual void setAlwaysOnTop(bool enabled) = 0;
+
     // 마우스 커서 위치 (화면 좌표). 클릭 통과 중에는 마우스 메시지가 오지 않으므로 직접 물어봄
     [[nodiscard]] virtual core::PointI cursorPosition() const = 0;
 

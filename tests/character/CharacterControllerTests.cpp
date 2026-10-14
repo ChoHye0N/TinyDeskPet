@@ -355,6 +355,36 @@ TEST(CharacterWalk, ZeroWalkSpeed_DisablesWalking) {
     }
 }
 
+TEST(CharacterWalk, FromConfig_WalkOffMeansZeroSpeed) {
+    deskpet::core::CharacterConfig config;
+    config.walkSpeed = 90.0f;
+    EXPECT_FLOAT_EQ(Params::fromConfig(config).walkSpeed, 90.0f);
+    config.walk = false;
+    EXPECT_FLOAT_EQ(Params::fromConfig(config).walkSpeed, 0.0f);
+}
+
+TEST(CharacterWalk, SetParams_DisablingWalkStopsCurrentWalk) {
+    // 설정 창에서 걷기를 끄면 걷던 중이어도 바로 멈춤. 위치·상태는 그대로 이어짐
+    CharacterController c(walkingParams());
+    c.setGround(kGround);
+    c.setHorizontalBounds(0.0f, 2000.0f);
+    c.teleport({1000.0f, kGround});
+    for (int i = 0; i < static_cast<int>(1.1f / kDt); ++i) {
+        c.update(kDt);
+    }
+    ASSERT_EQ(c.state(), State::Walk);
+    Params off = walkingParams();
+    off.walkSpeed = 0.0f;
+    c.setParams(off);
+    EXPECT_EQ(c.state(), State::Idle);
+    const float x = c.position().x;
+    for (int i = 0; i < static_cast<int>(5.0f / kDt); ++i) {
+        c.update(kDt);
+        ASSERT_EQ(c.state(), State::Idle);
+    }
+    EXPECT_FLOAT_EQ(c.position().x, x);
+}
+
 TEST(CharacterWalk, CanJumpAndBeDraggedWhileWalking) {
     CharacterController c(walkingParams());
     c.setGround(kGround);

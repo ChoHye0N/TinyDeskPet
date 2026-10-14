@@ -49,6 +49,7 @@ struct FakeWindowState {
     core::PointI position;
     std::vector<core::PointI> positionHistory;
     bool clickThrough = false;  // true면 클릭이 아래 창으로 통과
+    std::optional<bool> alwaysOnTop;  // setAlwaysOnTop으로 마지막에 바꾼 값 (안 바꿨으면 없음)
     int clickThroughChanges = 0;
     int menuShownCount = 0;
     int openFileDialogCount = 0;
@@ -130,6 +131,7 @@ public:
         }
         state_.clickThrough = enabled;
     }
+    void setAlwaysOnTop(bool enabled) override { state_.alwaysOnTop = enabled; }
     [[nodiscard]] core::PointI cursorPosition() const override { return state_.cursor; }
     [[nodiscard]] bool fullscreenAppActive(core::PointI /*screen*/) const override {
         return state_.fullscreenApp;
@@ -168,7 +170,8 @@ struct FakeRendererState {
     renderer::RenderScene lastScene;
     core::SizeI initialSize;
     core::SizeI lastResize;
-    renderer::RendererOptions options;
+    renderer::RendererOptions options;  // initialize 또는 마지막 setOptions 값
+    int setOptionsCount = 0;
     // 창 내부 좌표 → 그 픽셀의 알파. 기본은 전부 투명
     std::function<float(core::PointI)> alphaAt = [](core::PointI) { return 0.0f; };
 };
@@ -193,6 +196,10 @@ public:
     }
 
     void resize(core::SizeI size) override { state_.lastResize = size; }
+    void setOptions(const renderer::RendererOptions& options) override {
+        state_.options = options;
+        ++state_.setOptionsCount;
+    }
     // 실제 렌더러는 몇 프레임 늦게 결과가 오지만, 가짜는 바로 돌려줌
     std::optional<renderer::AlphaSample> sampleAlpha(core::PointI local) override {
         return renderer::AlphaSample{local, state_.alphaAt(local)};

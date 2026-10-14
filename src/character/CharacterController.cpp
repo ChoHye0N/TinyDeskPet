@@ -14,12 +14,20 @@ Params Params::fromConfig(const core::CharacterConfig& config) {
     params.jumpSpeed = config.jumpSpeed;
     params.dragThreshold = config.dragThreshold;
     params.maxFallSpeed = config.maxFallSpeed;
+    params.walkSpeed = config.walk ? config.walkSpeed : 0.0f;
     return params;
 }
 
 CharacterController::CharacterController(Params params)
     : params_(params), random_(params.randomSeed) {
     idleTimer_ = randomBetween(params_.idleTimeMin, params_.idleTimeMax);
+}
+
+void CharacterController::setParams(const Params& params) {
+    params_ = params;  // 난수 상태·위치·속도는 그대로 (실행 중 설정 변경)
+    if (params_.walkSpeed <= 0.0f && state_ == State::Walk) {
+        transitionTo(State::Idle);
+    }
 }
 
 void CharacterController::setHorizontalBounds(float minX, float maxX) noexcept {

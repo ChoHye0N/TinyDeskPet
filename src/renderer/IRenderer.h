@@ -48,6 +48,9 @@ public:
                                           const RendererOptions& options) = 0;
     [[nodiscard]] virtual FrameResult render(const RenderScene& scene) = 0;
     virtual void resize(core::SizeI size) = 0;
+    // 실행 중 옵션 바꾸기 (설정 창): vsync·MSAA·외곽선. debugLayer는 디바이스를 만들 때만 반영.
+    // 다음 render에서 적용되고, 장면이 같아도 한 번 다시 그림
+    virtual void setOptions(const RendererOptions& options) = 0;
     // local 픽셀의 알파 읽기를 요청하고, 지금까지 도착한 가장 최근 결과를 돌려줌 (FR-04 클릭 통과).
     // GPU를 기다리지 않아 결과는 2~3프레임 늦음. 아직 결과가 없거나 창 밖이면 nullopt
     [[nodiscard]] virtual std::optional<AlphaSample> sampleAlpha(core::PointI local) = 0;
