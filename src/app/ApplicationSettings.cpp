@@ -198,6 +198,7 @@ ui::SettingsState Application::settingsState() const {
     state.msaa = config_.renderer.msaa;
     state.outline = config_.renderer.outline;
     state.texturePadding = config_.renderer.texturePadding;
+    state.outlineScale = config_.renderer.outlineScale;
 
     const core::CharacterConfig& c = config_.character;
     state.movement = {static_cast<int>(std::lround(c.gravity)),
@@ -212,6 +213,7 @@ renderer::RendererOptions Application::rendererOptions() const {
     options.debugLayer = config_.renderer.debugLayer;
     options.msaaSamples = config_.renderer.msaa;
     options.outline = config_.renderer.outline;
+    options.outlineScale = static_cast<float>(config_.renderer.outlineScale) / 100.0f;
     return options;
 }
 
@@ -292,6 +294,12 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             break;
         }
         case Kind::SetTexturePadding: setTexturePadding(action.number); break;
+        case Kind::SetOutlineScale:
+            config_.renderer.outlineScale = std::clamp(action.number, 0, 300);
+            renderer_->setOptions(rendererOptions());
+            writeSettings(
+                {{"renderer", "outline_scale", std::to_string(config_.renderer.outlineScale)}});
+            break;
         case Kind::SetGravity:
             config_.character.gravity = static_cast<float>(std::max(action.number, 1));
             applyMovement();

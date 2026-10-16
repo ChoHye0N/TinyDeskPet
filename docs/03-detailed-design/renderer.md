@@ -82,7 +82,7 @@ public:
     // 실행 중 옵션 바꾸기 (설정 창). vsync는 Present 간격만, MSAA는 3D 영역 텍스처를 다음 프레임에
     // 새 샘플 수로 다시 만들고(깊이 버퍼는 MeshPass가 따라감), 외곽선은 MeshPass가 다음 execute에서
     // 재질별 굵기만 다시 계산(모델을 다시 올리지 않음). debugLayer는 디바이스를 만들 때만
-    virtual void setOptions(const RendererOptions& options) = 0;
+    virtual void setOptions(const RendererOptions& options) = 0;  // outlineScale: 외곽선 굵기 배율 (그릴 때 곱함, 0이면 외곽선 패스 생략)
     virtual void shutdown() = 0;
 };
 }

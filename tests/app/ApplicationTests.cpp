@@ -1339,6 +1339,13 @@ TEST_F(ApplicationTest, GraphicsSettings_AreAppliedToRendererAndSaved) {
     EXPECT_TRUE(h.has("renderer", "msaa", "8"));
     EXPECT_FALSE(h.has("renderer", "msaa", "3"));
     EXPECT_TRUE(h.has("renderer", "outline", "off"));
+
+    // 외곽선 두께 (%): 모델이 정한 굵기에 곱하는 배율. 0 ~ 300으로 제한
+    app->applySettingsAction({Kind::SetOutlineScale, 0, {}, 150, false});
+    EXPECT_FLOAT_EQ(renderer_.options.outlineScale, 1.5f);
+    EXPECT_TRUE(h.has("renderer", "outline_scale", "150"));
+    app->applySettingsAction({Kind::SetOutlineScale, 0, {}, 900, false});
+    EXPECT_FLOAT_EQ(renderer_.options.outlineScale, 3.0f);
 }
 
 TEST_F(ApplicationTest, TexturePaddingSetting_ReloadsModelAndSaves) {

@@ -15,6 +15,7 @@ struct RendererOptions {
     bool vsync = true;        // true면 Present가 VSync까지 대기 → CPU 휴식
     bool debugLayer = false;  // D3D11 디버그 레이어 (Windows "그래픽 도구" 필요)
     int msaaSamples = 4;
+    float outlineScale = 1.0f;  // 외곽선 두께 배율 (모델이 정한 굵기 × 이 값)
     core::OutlineMode outline =
         core::OutlineMode::Model;  // 외곽선 대상 재질  // 1이면 MSAA 끔. 지원하지 않으면
                                    // chooseSampleCount로 낮춤

@@ -182,6 +182,10 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          [](std::string_view v, AppConfig& c) {
              return assignPadding(v, c.renderer.texturePadding);
          }},
+        {"renderer.outline_scale",
+         [](std::string_view v, AppConfig& c) {
+             return assignInt(v, 0, 300, c.renderer.outlineScale);
+         }},
         {"renderer.msaa",
          [](std::string_view v, AppConfig& c) { return assignSampleCount(v, c.renderer.msaa); }},
         {"model.path",

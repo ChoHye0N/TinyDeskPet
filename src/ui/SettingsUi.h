@@ -71,6 +71,7 @@ struct SettingsState {
     int msaa = 4;  // 1 = 끔, 2, 4, 8
     core::OutlineMode outline = core::OutlineMode::Model;
     core::TexturePadding texturePadding = core::TexturePadding::Auto;
+    int outlineScale = 100;  // %
     // 고급
     MovementSetting movement;
 };
@@ -90,6 +91,7 @@ struct SettingsAction {
         SetMsaa,            // 샘플 수 = number (1 = 끔)
         SetOutline,         // number = core::OutlineMode
         SetTexturePadding,  // number = core::TexturePadding (모델을 다시 읽음)
+        SetOutlineScale,    // 외곽선 두께 = number (%)
         SetGravity,         // number (px/s²)
         SetWalkSpeed,       // number (px/s)
         SetDragThreshold,   // number (px)

@@ -471,7 +471,7 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
     }
     const bool anyOutline = std::ranges::any_of(
         drawOrder_, [](const GpuPrimitive& p) { return p.outlineWidth > 0.0f; });
-    if (anyOutline) {
+    if (anyOutline && outlineScale_ > 0.0f) {  // 두께 0%면 외곽선 패스를 통째로 건너뜀
         context->PSSetShader(outlineShader_.Get(), nullptr, 0);
         for (const GpuPrimitive& primitive : drawOrder_) {
             if (primitive.outlineWidth > 0.0f) {
@@ -578,7 +578,7 @@ void MeshPass::drawOutline(const D3D11Context& ctx, const model::Model& model,
     constants.baseColor = material.baseColor;
     constants.alphaCutoff =
         material.alphaMode == model::AlphaMode::Mask ? material.alphaCutoff : -1.0f;
-    constants.outlineWidth = primitive.outlineWidth;
+    constants.outlineWidth = primitive.outlineWidth * outlineScale_;
     constants.outlineColor = material.outlineColor;
     ID3D11ShaderResourceView* texture = textureView(material.baseColorTexture);
     constants.hasTexture = texture != nullptr ? 1.0f : 0.0f;

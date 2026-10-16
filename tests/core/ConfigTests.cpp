@@ -57,6 +57,7 @@ vsync = false
 debug_layer = true
 msaa = 8
 texture_padding = off
+outline_scale = 150
 
 [log]
 level = debug
@@ -80,6 +81,7 @@ to_file = no
     EXPECT_TRUE(c.renderer.debugLayer);
     EXPECT_EQ(c.renderer.msaa, 8);
     EXPECT_EQ(c.renderer.texturePadding, TexturePadding::Off);
+    EXPECT_EQ(c.renderer.outlineScale, 150);
     EXPECT_EQ(c.log.level, logging::Level::Debug);
     EXPECT_FALSE(c.log.toFile);
 }

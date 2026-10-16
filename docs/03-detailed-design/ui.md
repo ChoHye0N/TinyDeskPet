@@ -42,7 +42,7 @@ struct SettingsState {  // 앱이 매 프레임 채움
 struct SettingsAction {
     enum class Kind : std::uint8_t {
         OpenModel, SetClip, SetScale, SetLookAt, SetWalkOnWindows, SetIdleMotion,
-        SetLoopStart, SetWalk, SetAlwaysOnTop, SetVsync, SetMsaa, SetOutline, SetTexturePadding,
+        SetLoopStart, SetWalk, SetAlwaysOnTop, SetVsync, SetMsaa, SetOutline, SetTexturePadding, SetOutlineScale,
         SetGravity, SetWalkSpeed, SetDragThreshold, ResetMovement };
     Kind kind; std::size_t motion; std::string text; int number; bool flag; float value;
 };
@@ -102,7 +102,7 @@ public:
 | 모델 | 이름(없으면 "모델 없음", 읽는 중이면 "불러오는 중…"), 작가, 라이선스, 파일 | "모델 열기…" → `OpenModel` |
 | 동작 | 대기·걷기·끌려 다닐 때·공중·상호작용 콤보 (상호작용의 기본 동작은 "점프 (기본 동작)", 반복 시작 슬라이더 없음) (선택지 = 앱이 준 `choices`). 클립이 있는 동작은 아래에 반복 시작 슬라이더 (0 ~ 클립 길이, 0.1초 단위). 넘치면 휠로 스크롤 | 다른 항목 선택 → `SetClip(motion, value)`, 슬라이더 → `SetLoopStart(motion, value)` |
 | 화면 | 크기 슬라이더(최소~최대, 단계), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 다른 창보다 항상 위에) | `SetScale`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
-| 그래픽 | 수직 동기화 토글, 안티에일리어싱(끔·2x·4x·8x)·외곽선(모델 지정·모든 재질·끔)·텍스처 여백 채우기(자동·모두 채움·끔)는 붙은 선택 버튼 | `SetVsync`, `SetMsaa(샘플 수)`, `SetOutline(core::OutlineMode)`, `SetTexturePadding(core::TexturePadding)` |
+| 그래픽 | 수직 동기화 토글, 안티에일리어싱(끔·2x·4x·8x)·외곽선(모델 지정·모든 재질·끔)·텍스처 여백 채우기(자동·모두 채움·끔)는 붙은 선택 버튼, 외곽선 두께 슬라이더(0~300%, 10% 단위, 외곽선을 끄면 비활성). 설명은 각 설정 바로 아래 한 줄씩(`hint`) | `SetVsync`, `SetMsaa(샘플 수)`, `SetOutline(core::OutlineMode)`, `SetOutlineScale(%)`, `SetTexturePadding(core::TexturePadding)` |
 | 고급 | 중력(500~6000, 100), 걷기 속도(20~200, 5), 끌기 시작 거리(0~20, 1) 슬라이더, "기본값으로" | `SetGravity` 등 (`number`), `ResetMovement` |
 | 정보 | 버전, 소개, 저장소, 설정 저장 위치 | — |
 
