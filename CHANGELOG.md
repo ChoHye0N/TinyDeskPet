@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-16
+
+외곽선이 모델에 맞춰 자동으로 정해집니다. 외곽선 정보가 없는 모델(게임에서 내보낸 glTF 등)은 캐릭터 바깥 테두리에만 선이 생기고, 설정 창에서 외곽선 두께와 텍스처 여백 채우기를 바꿀 수 있습니다.
+
 ### Added
 
 - 외곽선 "모든 재질"에서 눈·입·눈썹·헤일로 등을 자동으로 뺌 (눈 본, 재질 이름, 납작한 판). 뺀 재질과 이유는 로그에
@@ -162,7 +166,8 @@
 - 단위 테스트 58개 (core, character, app)
 - CI/CD: 포맷 검사, clang-tidy, Linux(ASan/UBSan)·Windows 빌드와 테스트, CodeQL, 태그 기반 자동 릴리스, Dependabot
 
-[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ChoHye0N/TinyDeskPet/compare/v1.1.0...v1.2.0
