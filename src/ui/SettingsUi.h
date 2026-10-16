@@ -69,7 +69,7 @@ struct SettingsState {
     // 그래픽
     bool vsync = true;
     int msaa = 4;  // 1 = 끔, 2, 4, 8
-    core::OutlineMode outline = core::OutlineMode::Model;
+    core::OutlineMode outline = core::OutlineMode::Auto;
     core::TexturePadding texturePadding = core::TexturePadding::Auto;
     int outlineScale = 100;  // %
     // 고급

@@ -30,3 +30,4 @@ ADR(Architecture Decision Record)은 **중요한 기술 결정과 그 이유**�
 | [0014](0014-motion-clip-extensions.md) | 모션 클립 확장 — 손가락·비휴머노이드 본·엉덩이 이동·반복 구간 | 승인 |
 | [0015](0015-plain-gltf-humanoid-and-clip-selection.md) | 일반 glTF의 본 이름 매핑, 소품 메시 버리기, 파일 안 애니메이션 고르기 | 승인 |
 | [0016](0016-imgui-settings-window.md) | Dear ImGui 설정 창 | 승인 |
+| [0017](0017-silhouette-outline-and-auto.md) | 외곽선 자동 선택과 화면 실루엣 외곽선 | 승인 |

@@ -13,6 +13,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 using deskpet::app::Application;
@@ -331,6 +332,42 @@ TEST_F(ApplicationTest, ConfigOptions_ArePassedToRenderer) {
     EXPECT_TRUE(renderer_.options.debugLayer);
     EXPECT_EQ(renderer_.options.msaaSamples, 2);
     EXPECT_EQ(renderer_.options.outline, core::OutlineMode::All);
+}
+
+TEST_F(ApplicationTest, OutlineAuto_UsesModelOutlineOrSilhouette) {
+    // 자동: 모델에 외곽선 정보(재질별 굵기)가 있으면 모델 지정, 없으면 화면 실루엣 외곽만.
+    // 실루엣 두께(px)는 상자 높이 × 외곽선 두께에 비례
+    const auto run = [&](float materialOutline, deskpet::core::OutlineMode mode, int scale) {
+        auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+        model->materials.resize(1);
+        model->materials[0].outlineWidth = materialOutline;
+        config_.renderer.outline = mode;
+        config_.renderer.outlineScale = scale;
+        renderer_.lastScene = {};
+        renderer_.renderCount = 0;
+        window_.pollCount = 0;  // 가짜 창은 poll 횟수가 이어지므로 실행마다 처음부터
+        window_.pollsBeforeQuit = 3;
+        auto app = makeApp();
+        app->setModel(model);
+        (void)app->run();
+        EXPECT_GT(renderer_.renderCount, 0U);
+        return std::pair{renderer_.options.outline, renderer_.lastScene.silhouetteWidth};
+    };
+    using deskpet::core::OutlineMode;
+    const auto [withInfo, withInfoWidth] = run(0.004f, OutlineMode::Auto, 100);
+    EXPECT_EQ(withInfo, OutlineMode::Model);
+    EXPECT_FLOAT_EQ(withInfoWidth, 0.0f);
+
+    const auto [without, width] = run(0.0f, OutlineMode::Auto, 100);
+    EXPECT_EQ(without, OutlineMode::Off);  // 메시 외곽선은 그리지 않고
+    EXPECT_GT(width, 0.5f);                // 화면 실루엣
+    const auto [thick, thickWidth] = run(0.0f, OutlineMode::Silhouette, 200);
+    EXPECT_EQ(thick, OutlineMode::Off);
+    EXPECT_NEAR(thickWidth, width * 2.0f, 1e-4f);
+    EXPECT_FLOAT_EQ(run(0.0f, OutlineMode::Silhouette, 0).second, 0.0f);  // 두께 0%
+    const auto [all, allWidth] = run(0.0f, OutlineMode::All, 100);
+    EXPECT_EQ(all, OutlineMode::All);
+    EXPECT_FLOAT_EQ(allWidth, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +708,7 @@ TEST_F(ApplicationTest, IdleMotionClip_IsPlayedWhetherSetBeforeOrAfterModel) {
     clips[static_cast<std::size_t>(deskpet::anim::Motion::Idle)] = clip;
     const auto model = makeSkinnedModel();
     const auto handY = [&](bool clipsFirst) {
+        window_.pollCount = 0;  // 가짜 창은 poll 횟수가 이어지므로 실행마다 처음부터
         window_.pollsBeforeQuit = 2;
         auto app = makeApp();
         if (clipsFirst) {
@@ -859,6 +897,8 @@ TEST_F(ApplicationTest, SceneRegion_GrowsOnlyWhileLargerMotionPlays) {
     clips[static_cast<std::size_t>(deskpet::anim::Motion::Dragged)] = clip;
     const auto model = makeSkinnedModel();
     const auto run = [&](bool drag, bool withClip) {
+        window_.pollCount = 0;  // 가짜 창은 poll 횟수가 이어지므로 실행마다 처음부터
+        renderer_.lastScene = {};
         window_.frames.clear();
         if (drag) {
             window_.frames.push_back(

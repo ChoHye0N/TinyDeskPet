@@ -568,13 +568,23 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
     hint("높을수록 테두리가 매끄럽지만 GPU 부담이 늘어납니다.");
 
     ImGui::TextDisabled("외곽선");
+    // 버튼 순서 ↔ core::OutlineMode (열거형 순서와 다름)
+    constexpr std::array<core::OutlineMode, 5> kOutlines = {
+        core::OutlineMode::Auto, core::OutlineMode::Model, core::OutlineMode::All,
+        core::OutlineMode::Silhouette, core::OutlineMode::Off};
+    const auto outlineIndex =
+        static_cast<std::size_t>(std::ranges::find(kOutlines, state.outline) - kOutlines.begin());
     if (const auto picked =
-            segmented("##outline", std::array<const char*, 3>{"모델 지정", "모든 재질", "끔"},
-                      static_cast<std::size_t>(state.outline), p, s)) {
+            segmented("##outline",
+                      std::array<const char*, 5>{"자동", "모델 지정", "모든 재질", "외곽만", "끔"},
+                      outlineIndex, p, s)) {
         actions.push_back(
-            {SettingsAction::Kind::SetOutline, 0, {}, static_cast<int>(*picked), false});
+            {SettingsAction::Kind::SetOutline, 0, {}, static_cast<int>(kOutlines[*picked]), false});
     }
-    hint("모델 지정: 모델이 외곽선을 정한 재질만. 모든 재질: 정보가 없는 모델도 그립니다.");
+    hint(
+        "자동: 모델에 외곽선 정보가 있으면 모델 지정, 없으면 외곽만. 외곽만: 캐릭터 바깥 "
+        "테두리에만 "
+        "그려 눈·입에 선이 생기지 않습니다.");
 
     // 외곽선을 끄면 두께는 의미가 없으므로 흐리게 하고 누를 수 없게 함
     const bool outlineOff = state.outline == core::OutlineMode::Off;

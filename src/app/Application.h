@@ -178,7 +178,9 @@ private:
     // 설정 창 (ApplicationSettings.cpp)
     [[nodiscard]] ImDrawData* updateSettings(float dt);  // 닫혀 있으면 nullptr
     [[nodiscard]] ui::SettingsState settingsState() const;
-    [[nodiscard]] renderer::RendererOptions rendererOptions() const;  // config_.renderer 그대로
+    [[nodiscard]] renderer::RendererOptions rendererOptions()
+        const;  // config_.renderer (자동은 정함)
+    [[nodiscard]] core::OutlineMode effectiveOutline() const;  // 자동 → 모델 지정·외곽만
     void applyMovement();
     void setTexturePadding(int number);
     void setLoopStart(std::size_t motion,

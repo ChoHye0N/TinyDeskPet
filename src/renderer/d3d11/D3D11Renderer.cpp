@@ -13,6 +13,11 @@
 
 namespace deskpet::renderer::d3d11 {
 
+namespace {
+// 화면 실루엣 외곽선 색 (sRGB). 검정보다 살짝 밝은 보랏빛 회색이라 피부·머리색과 덜 부딪힘
+constexpr core::Vec3 kSilhouetteColor{0.16f, 0.13f, 0.16f};
+}  // namespace
+
 // 두 사각형을 모두 덮는 사각형 (빈 사각형은 무시)
 static core::RectI unite(const core::RectI& a, const core::RectI& b) {
     if (a.width() <= 0 || a.height() <= 0) {
@@ -168,6 +173,7 @@ void D3D11Renderer::setOptions(const RendererOptions& options) {
         msaaView_.Reset();
         msaaTarget_.Reset();
         regionView_.Reset();
+        regionSrv_.Reset();
         regionTexture_.Reset();
         regionCapacity_ = {};
         regionSmallFrames_ = 0;
@@ -196,6 +202,9 @@ bool D3D11Renderer::createDeviceResources() {
         return false;
     }
 
+    if (!silhouette_.create(device_.Get())) {
+        return false;
+    }
     const D3D11Context ctx = makeContext();
     for (const auto* passes : {&scenePasses_, &overlayPasses_}) {
         for (const auto& pass : *passes) {
@@ -216,6 +225,7 @@ void D3D11Renderer::releaseDeviceResources() {
             pass->release();
         }
     }
+    silhouette_.release();
     releaseRenderTargets();
 
     dcompVisual_.Reset();
@@ -494,12 +504,16 @@ bool D3D11Renderer::ensureRegionTargets(core::SizeI needed) {
         DXGI_FORMAT_B8G8R8A8_UNORM;  // 프레임 텍스처로 복사·resolve하려면 형식이 같아야 함
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    // 실루엣 외곽선 패스가 셰이더로 읽으므로 셰이더 리소스로도 씀
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     if (!check(device_->CreateTexture2D(&desc, nullptr, regionTexture_.ReleaseAndGetAddressOf()),
                "3D 영역 텍스처") ||
         !check(device_->CreateRenderTargetView(regionTexture_.Get(), nullptr,
                                                regionView_.ReleaseAndGetAddressOf()),
-               "3D 영역 RTV")) {
+               "3D 영역 RTV") ||
+        !check(device_->CreateShaderResourceView(regionTexture_.Get(), nullptr,
+                                                 regionSrv_.ReleaseAndGetAddressOf()),
+               "3D 영역 SRV")) {
         return false;
     }
     if (sampleCount_ <= 1) {
@@ -588,6 +602,12 @@ std::optional<core::RectI> D3D11Renderer::drawSceneRegion(const RenderScene& sce
         context_->ResolveSubresource(regionTexture_.Get(), 0, msaaTarget_.Get(), 0,
                                      DXGI_FORMAT_B8G8R8A8_UNORM);
     }
+    if (scene.silhouetteWidth > 0.0f && regionSrv_) {
+        // 복사 대신 셰이더로 옮기며 캐릭터 바깥 테두리에만 외곽선 (눈·입 같은 안쪽 선 없음)
+        silhouette_.draw(context_.Get(), renderTarget_.Get(), regionSrv_.Get(), region,
+                         scene.silhouetteWidth, kSilhouetteColor);
+        return region;
+    }
     const D3D11_BOX box{
         0, 0, 0, static_cast<UINT>(region.width()), static_cast<UINT>(region.height()), 1};
     context_->CopySubresourceRegion(frameTexture_.Get(), 0, static_cast<UINT>(region.left),
@@ -636,6 +656,7 @@ void D3D11Renderer::releaseRenderTargets() {
     msaaView_.Reset();
     msaaTarget_.Reset();
     regionView_.Reset();
+    regionSrv_.Reset();
     regionTexture_.Reset();
     regionCapacity_ = {};
     regionSmallFrames_ = 0;

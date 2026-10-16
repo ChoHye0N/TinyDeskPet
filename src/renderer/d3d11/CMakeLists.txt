@@ -5,6 +5,7 @@ add_library(deskpet_renderer_d3d11 STATIC
   ImGuiPass.cpp
   MeshPass.cpp
   PlaceholderPass.cpp
+  SilhouettePass.cpp
   WicTexture.cpp)
 add_library(deskpet::renderer_d3d11 ALIAS deskpet_renderer_d3d11)
 
@@ -42,6 +43,8 @@ endfunction()
 deskpet_compile_shader(shaders/Mesh.hlsl VSMain vs_5_0 g_MeshVS)
 deskpet_compile_shader(shaders/Mesh.hlsl PSMain ps_5_0 g_MeshPS)
 deskpet_compile_shader(shaders/Mesh.hlsl PSOutline ps_5_0 g_MeshOutlinePS)
+deskpet_compile_shader(shaders/Silhouette.hlsl VSMain vs_5_0 g_SilhouetteVS)
+deskpet_compile_shader(shaders/Silhouette.hlsl PSMain ps_5_0 g_SilhouettePS)
 target_include_directories(deskpet_renderer_d3d11 PRIVATE "${DESKPET_SHADER_DIR}")
 
 # 생성된 헤더를 포함하는 소스는 의존성을 명시해야 합니다. Ninja Multi-Config에서 컴파일러가 보고하는
@@ -49,3 +52,5 @@ target_include_directories(deskpet_renderer_d3d11 PRIVATE "${DESKPET_SHADER_DIR}
 # 실행 파일에 남는 일이 있었습니다.
 set_source_files_properties(MeshPass.cpp PROPERTIES OBJECT_DEPENDS
   "${DESKPET_SHADER_DIR}/g_MeshVS.h;${DESKPET_SHADER_DIR}/g_MeshPS.h;${DESKPET_SHADER_DIR}/g_MeshOutlinePS.h")
+set_source_files_properties(SilhouettePass.cpp PROPERTIES OBJECT_DEPENDS
+  "${DESKPET_SHADER_DIR}/g_SilhouetteVS.h;${DESKPET_SHADER_DIR}/g_SilhouettePS.h")
