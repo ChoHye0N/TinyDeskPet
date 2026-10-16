@@ -1388,6 +1388,58 @@ TEST_F(ApplicationTest, TexturePaddingSetting_ReloadsModelAndSaves) {
     EXPECT_TRUE(h.has("renderer", "texture_padding", "off"));
 }
 
+TEST_F(ApplicationTest, TexturePaddingSetting_RetexturesWithoutReloadingFile) {
+    // 텍스처 처리기가 있으면 파일을 다시 읽지 않고(파싱·클립·자세 경계 상자 생략) 지금 모델을
+    // 복사해 텍스처만 다시 준비. 처리기가 실패하면(원본 픽셀이 없는 텍스처 등) 파일을 다시 읽음
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    using deskpet::core::TexturePadding;
+    const auto model = std::make_shared<deskpet::model::Model>(deskpet::test::makeSkeletonModel());
+    int loads = 0;
+    std::vector<TexturePadding> processed;
+    bool processorSucceeds = true;
+    const deskpet::model::Model* afterRetexture = nullptr;
+    int loadsAfterRetexture = 0;
+    Application* appPtr = nullptr;
+    window_.onPoll = [&](int poll, FakeWindowState&) {
+        if (appPtr == nullptr) {
+            return;
+        }
+        if (poll == 2) {
+            appPtr->applySettingsAction(
+                {Kind::SetTexturePadding, 0, {}, static_cast<int>(TexturePadding::Off), false});
+            appPtr->waitForModelLoad();
+        } else if (poll == 4) {
+            afterRetexture = renderer_.lastScene.character.model;
+            loadsAfterRetexture = loads;
+            processorSucceeds = false;
+            appPtr->applySettingsAction(
+                {Kind::SetTexturePadding, 0, {}, static_cast<int>(TexturePadding::On), false});
+            appPtr->waitForModelLoad();
+        }
+    };
+    window_.pollsBeforeQuit = 6;
+    auto app = makeApp();
+    appPtr = app.get();
+    app->setModelLoader([&](const std::filesystem::path&) {
+        ++loads;
+        return std::shared_ptr<const deskpet::model::Model>(model);
+    });
+    app->setTextureProcessor([&](deskpet::model::Model&, TexturePadding padding) {
+        processed.push_back(padding);
+        return processorSucceeds;
+    });
+    app->loadModelAsync("C:/models/pet.glb");
+    app->waitForModelLoad();
+    (void)app->run();
+
+    EXPECT_EQ(loadsAfterRetexture, 1);  // 파일을 다시 읽지 않음
+    ASSERT_NE(afterRetexture, nullptr);
+    EXPECT_NE(afterRetexture, model.get());  // 텍스처를 바꾼 복사본
+    EXPECT_EQ(processed, (std::vector<TexturePadding>{TexturePadding::Off, TexturePadding::On}));
+    EXPECT_EQ(loads, 2);  // 처리기가 실패하면 파일을 다시 읽음
+    EXPECT_EQ(app->modelPath(), std::filesystem::path("C:/models/pet.glb"));
+}
+
 TEST_F(ApplicationTest, WindowAndMovementSettings_AreAppliedAndSaved) {
     using Kind = deskpet::ui::SettingsAction::Kind;
     auto app = makeApp();

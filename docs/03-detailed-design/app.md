@@ -273,7 +273,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetWalk` / `SetGravity` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `walk_speed`, `drag_threshold` |
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
-| `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 로더가 쓰는 값, 작업 스레드에서 읽으므로 atomic) → 지금 모델을 `loadModelAsync`로 다시 읽음 (여백 채우기는 텍스처를 준비할 때). 같은 값이면 아무것도 안 함 | `[renderer] texture_padding` (auto·on·off) |
+| `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 다음에 읽는 모델이 쓸 값, atomic). 같은 값이면 아무것도 안 함. `TextureProcessor`가 있으면 **`retextureAsync`**: 지금 모델을 복사해 텍스처만 작업 스레드에서 다시 준비하고 자세 경계 상자는 그대로 씀 (파일 파싱·클립·경계 상자 계산 생략). 처리기가 실패하면(압축 원본이 없는 텍스처) 파일을 다시 읽음. 측정(변경 → 새 텍스처가 GPU에): Michiru Debug 2.07 → 0.17초, Release 0.19 → 0.05초 / Seia Debug 0.79 → 0.17초, Release 0.12 → 0.05초 | `[renderer] texture_padding` (auto·on·off) |
 | `SetOutlineScale` | `config_.renderer.outlineScale`(0~300으로 제한) → `renderer.setOptions` (`outlineScale` = %/100, MeshPass가 외곽선을 그릴 때 곱함) | `[renderer] outline_scale` |
 
 - **클립을 바꾼 뒤 (`refreshAnimationAsync`)**: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산(`displayBoundsFor`, 큰 모델은 수백 ms). 결과는 모델 읽기와 같은 `pendingModel_` → `applyLoadedModel`이 새 클립으로 애니메이터를 교체. 읽던 모델이 있으면 먼저 반영(덮어쓰면 그 결과를 잃음). 모델이 없으면 클립만 바꿈

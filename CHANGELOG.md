@@ -11,14 +11,13 @@
 ### Added
 
 - 설정 창 그래픽 탭에 외곽선 두께 (0 ~ 300%, `[renderer] outline_scale`). 모델이 정한 굵기에 곱하고 바로 적용
+- 설정 `[renderer] texture_padding` (auto / on / off)와 설정 창 그래픽 탭의 "텍스처 여백 채우기". 바꾸면 모델을 다시 읽음
 
 ### Changed
 
+- 텍스처 여백 채우기를 바꿀 때 파일을 다시 읽지 않고 텍스처만 다시 준비 (Debug 2.07 → 0.17초, Release 0.19 → 0.05초)
+- 모델 읽기·클립 변경 때 자세 경계 상자와 화면 폭을 한 번의 스키닝으로 계산 (Debug 2.57 → 1.29초, Release 155 → 83ms)
 - 설정 창 그래픽 탭의 설명을 맨 아래 한 곳에서 각 설정 바로 아래로 나눔
-
-### Added
-
-- 설정 `[renderer] texture_padding` (auto / on / off)와 설정 창 그래픽 탭의 "텍스처 여백 채우기". 바꾸면 모델을 다시 읽음
 
 ### Fixed
 

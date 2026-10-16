@@ -100,6 +100,10 @@ public:
     // 설정 창에서 텍스처 여백 채우기 방식을 바꿀 때 모델 로더에 알리는 함수 (다음에 읽는 모델부터)
     using TexturePaddingHandler = std::function<void(core::TexturePadding padding)>;
     void setTexturePaddingHandler(TexturePaddingHandler handler);
+    // 모델의 텍스처를 그 방식으로 다시 준비하는 함수 (작업 스레드에서 불림). 있으면 여백 채우기를
+    // 바꿀 때 파일을 다시 읽지 않고 텍스처만 다시 준비. 실패하면(압축 원본이 없는 텍스처 등) false
+    using TextureProcessor = std::function<bool(model::Model& model, core::TexturePadding padding)>;
+    void setTextureProcessor(TextureProcessor processor);
     // 설정 창 글꼴(TrueType 파일)과 테마. run() 전에
     void setUiFont(const std::filesystem::path& file) { settingsUi_.setFont(file); }
     void setUiDarkTheme(bool dark) { settingsUi_.setDarkTheme(dark); }
@@ -180,7 +184,10 @@ private:
     void setLoopStart(std::size_t motion,
                       float value);  // config_.character → 캐릭터 물리·걷기 (실행 중 변경)
     void refreshClipChoices();  // 모델 파일 안 애니메이션 목록 (모델이 바뀌면)
-    void refreshAnimationAsync();  // 클립이 바뀜 → 작업 스레드에서 자세 경계 상자 다시 계산
+    void refreshAnimationAsync();
+    void retextureAsync(
+        core::TexturePadding padding);  // 여백 채우기 변경 → 텍스처만 다시 준비  // 클립이 바뀜 →
+                                        // 작업 스레드에서 자세 경계 상자 다시 계산
     void writeSettings(const std::vector<core::IniValue>& values) const;
 
     // 설정 창이 ImGui 컨텍스트를 소유하고 렌더러 백엔드가 그 컨텍스트를 씀 → 렌더러보다 먼저
@@ -191,6 +198,7 @@ private:
     ClipLoader clipLoader_;
     SettingsWriter settingsWriter_;
     TexturePaddingHandler texturePaddingHandler_;
+    TextureProcessor textureProcessor_;
     std::vector<ui::ClipChoice> clipChoices_;  // modelPath_ 파일 안 애니메이션 (+ 기본 동작)
     std::filesystem::path clipChoicesPath_;  // clipChoices_를 만든 모델 파일
 
