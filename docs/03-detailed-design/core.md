@@ -197,7 +197,7 @@ walk_speed = 60        ; px/s, 1 ~ 1000
 vsync = true
 debug_layer = false
 msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
-outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불투명 재질) / off
+outline = auto      ; 외곽선: auto(모델에 정보가 있으면 model, 없으면 silhouette) / model / all / silhouette(바깥 테두리만) / off (ADR-0017)
 texture_padding = auto ; 텍스처 여백 채우기: auto(점·선으로 찍는 색 칸 보존) / on(모두 채움) / off
 outline_scale = 100 ; 외곽선 두께 배율 %, 0 ~ 300 (0이면 외곽선 패스를 건너뜀)
 

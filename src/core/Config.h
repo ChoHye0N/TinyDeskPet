@@ -15,7 +15,10 @@
 namespace deskpet::core {
 
 // 외곽선 (반전 헐) 대상: 모델이 지정한 재질만 / 모든 불투명 재질 / 끔
-enum class OutlineMode : std::uint8_t { Model, All, Off };
+// 외곽선 (renderer.md §외곽선). Model: 모델이 정한 재질만 (VRM MToon·PMX 에지). All: 모든 불투명
+// 재질 (눈·입·헤일로 등은 자동으로 뺌). Silhouette: 화면 위 실루엣 바깥 테두리만. Auto: 모델에
+// 외곽선 정보가 있으면 Model, 없으면 Silhouette
+enum class OutlineMode : std::uint8_t { Model, All, Off, Silhouette, Auto };
 
 // 텍스처 여백 채우기 (UV 섬 밖을 섬 색으로 채워 이음매 선 방지, model.md §4.8).
 // Auto: 점·선으로 색을 찍는 삼각형(넓이가 텍셀 하나보다 작음)이 쓰는 텍셀은 보존
@@ -43,8 +46,8 @@ struct RendererConfig {
     bool vsync = true;
     int msaa = 4;
     OutlineMode outline =
-        OutlineMode::Model;  // all이면 외곽선 정보가 없는 모델(MMD 변환 등)도 그림  // MSAA 샘플 수
-                             // (1 = 끔, 2, 4, 8). 장치가 지원하지 않으면 렌더러가 낮춤
+        OutlineMode::Auto;  // all이면 외곽선 정보가 없는 모델(MMD 변환 등)도 그림  // MSAA 샘플 수
+                            // (1 = 끔, 2, 4, 8). 장치가 지원하지 않으면 렌더러가 낮춤
 #ifdef NDEBUG
     bool debugLayer = false;
 #else

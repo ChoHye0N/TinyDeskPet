@@ -561,7 +561,10 @@ float MeshPass::outlineWidthFor(const model::Material* material) const {
         return 0.0f;
     }
     switch (outlineMode_) {
-        case core::OutlineMode::Off: return 0.0f;
+        case core::OutlineMode::Off:
+        case core::OutlineMode::Silhouette:  // 화면 실루엣은 렌더러가 따로 그림
+        case core::OutlineMode::Auto:  // 앱이 Model·Silhouette 중 하나로 정해서 넘김
+            return 0.0f;
         case core::OutlineMode::All:
             return material->outlineWidth > 0.0f ? material->outlineWidth : kDefaultOutlineWidth;
         case core::OutlineMode::Model:

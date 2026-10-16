@@ -27,6 +27,8 @@ constexpr int kHiddenWaitMs = 100;
 
 // 걷는 방향으로 몸을 돌리는 각도. 90°면 옆모습만 보이므로 얼굴이 보이게 덜 돌림
 constexpr float kWalkTurnRadians = 50.0f * std::numbers::pi_v<float> / 180.0f;
+// 화면 실루엣 외곽선 두께 = 상자 높이 × 이 값 × 외곽선 두께(%) (기본 크기 340px에서 약 1.5px)
+constexpr float kSilhouetteHeightRatio = 0.0045f;
 // 동작이 바뀌어 그려지는 폭이 넓어질 때 벽이 따라가는 속도 (상자 폭/s). 상자 폭의 30%가 0.2초
 constexpr float kWallSpeedBoxesPerSecond = 1.5f;
 // 몸 돌리기 속도: 정면 ↔ 걷는 방향을 자세 전환과 같은 시간에 돎 (방향을 바꾸면 그 두 배)
@@ -125,6 +127,7 @@ void Application::setModel(std::shared_ptr<const model::Model> model) {
         animator_.emplace(*model_);
     }
     applyAnimation();
+    renderer_->setOptions(rendererOptions());  // 자동 외곽선은 모델에 따라 바뀜
 }
 
 void Application::setMotionClips(MotionClips clips) {
@@ -224,6 +227,7 @@ void Application::applyLoadedModel() {
         animator_->setClip(static_cast<anim::Motion>(m), clips_[m]);
     }
     poseBounds_ = loaded.bounds;
+    renderer_->setOptions(rendererOptions());  // 자동 외곽선은 모델에 따라 바뀜
     hasLastFeet_ = false;  // 흔들림 관성이 이전 모델 기준으로 튀지 않게
     refitCamera();
     refreshBounds();
@@ -978,6 +982,12 @@ renderer::RenderScene Application::buildScene() const {
         scene.character.expressionWeights = animation_.expressions;
         scene.character.morphWeights = animation_.morphWeights;
         scene.sceneRegion = sceneRegionFor(scene.character.viewProjection);
+        if (effectiveOutline() == core::OutlineMode::Silhouette) {
+            // 두께는 캐릭터 크기에 비례 (상자 높이의 0.45% × 외곽선 두께): 크기·DPI를 바꿔도 같은
+            // 느낌
+            scene.silhouetteWidth = kSilhouetteHeightRatio * height *
+                                    static_cast<float>(config_.renderer.outlineScale) / 100.0f;
+        }
     }
 
     return scene;

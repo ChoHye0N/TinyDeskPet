@@ -5,6 +5,7 @@
 
 #include "renderer/IRenderer.h"
 #include "renderer/d3d11/IRenderPass.h"
+#include "renderer/d3d11/SilhouettePass.h"
 
 #include <d2d1_1.h>
 #include <d3d11.h>
@@ -108,6 +109,8 @@ private:
                                  // 용량보다 많이 작은 영역만 연속으로 쓴 프레임 수
     ComPtr<ID3D11Texture2D> regionTexture_;
     ComPtr<ID3D11RenderTargetView> regionView_;
+    ComPtr<ID3D11ShaderResourceView> regionSrv_;  // 실루엣 외곽선 패스가 읽음
+    SilhouettePass silhouette_;
     ComPtr<ID3D11Texture2D> msaaTarget_;  // sampleCount_ > 1일 때만
     ComPtr<ID3D11RenderTargetView> msaaView_;
 

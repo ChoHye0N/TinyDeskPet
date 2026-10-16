@@ -270,15 +270,19 @@ TEST(Config, Msaa_DefaultsToFourAndAcceptsOnlyPowersOfTwo) {
     }
 }
 
-TEST(Config, RendererOutline_AcceptsModelAllOff) {
+TEST(Config, RendererOutline_AcceptsAutoModelAllSilhouetteOff) {
     using deskpet::core::OutlineMode;
-    EXPECT_EQ(AppConfig{}.renderer.outline, OutlineMode::Model);
+    EXPECT_EQ(AppConfig{}.renderer.outline, OutlineMode::Auto);  // 모델에 따라 모델 지정/외곽만
+    EXPECT_EQ(parseConfig("[renderer]\noutline = model\n").config.renderer.outline,
+              OutlineMode::Model);
     EXPECT_EQ(parseConfig("[renderer]\noutline = all\n").config.renderer.outline, OutlineMode::All);
+    EXPECT_EQ(parseConfig("[renderer]\noutline = silhouette\n").config.renderer.outline,
+              OutlineMode::Silhouette);
     EXPECT_EQ(parseConfig("[renderer]\noutline = OFF\n").config.renderer.outline, OutlineMode::Off);
 
     const auto result = parseConfig("[renderer]\noutline = thick\n");
     EXPECT_EQ(result.warnings.size(), 1U);
-    EXPECT_EQ(result.config.renderer.outline, OutlineMode::Model);
+    EXPECT_EQ(result.config.renderer.outline, OutlineMode::Auto);
 }
 
 TEST(Config, StateScale_IsOptionalPercentWithinRange) {

@@ -107,8 +107,12 @@ ApplyResult assignOutline(std::string_view value, OutlineMode& out) {
         out = OutlineMode::All;
     } else if (lower == "off") {
         out = OutlineMode::Off;
+    } else if (lower == "silhouette") {
+        out = OutlineMode::Silhouette;
+    } else if (lower == "auto") {
+        out = OutlineMode::Auto;
     } else {
-        return std::string("model/all/off 중 하나가 아닙니다");
+        return std::string("auto/model/all/silhouette/off 중 하나가 아닙니다");
     }
     return std::nullopt;
 }

@@ -273,6 +273,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetWalk` / `SetGravity` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `walk_speed`, `drag_threshold` |
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
+| (외곽선 자동) | `effectiveOutline()`: `auto`면 모델 재질 중 `outlineWidth > 0`이 있으면 `model`, 없으면 `silhouette`. `rendererOptions().outline` = 메시 방식(실루엣이면 `off`), 실루엣이면 `buildScene`이 `silhouetteWidth = 상자 높이 × 0.45% × 외곽선 두께`. 모델이 바뀌면(`setModel`·`applyLoadedModel`) `renderer.setOptions` 다시 (ADR-0017) | — |
 | `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 다음에 읽는 모델이 쓸 값, atomic). 같은 값이면 아무것도 안 함. `TextureProcessor`가 있으면 **`retextureAsync`**: 지금 모델을 복사해 텍스처만 작업 스레드에서 다시 준비하고 자세 경계 상자는 그대로 씀 (파일 파싱·클립·경계 상자 계산 생략). 처리기가 실패하면(압축 원본이 없는 텍스처) 파일을 다시 읽음. 측정(변경 → 새 텍스처가 GPU에): Michiru Debug 2.07 → 0.17초, Release 0.19 → 0.05초 / Seia Debug 0.79 → 0.17초, Release 0.12 → 0.05초 | `[renderer] texture_padding` (auto·on·off) |
 | `SetOutlineScale` | `config_.renderer.outlineScale`(0~300으로 제한) → `renderer.setOptions` (`outlineScale` = %/100, MeshPass가 외곽선을 그릴 때 곱함) | `[renderer] outline_scale` |
 
@@ -306,6 +307,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `GroundTests`: 창이 없으면 작업 영역 바닥, 발 아래 윗변, 발 x 밖·발 위 창 무시(서 있을 때 위쪽 여유 안이면 사용), 가장 높은 윗변, 앞 창에 가려진 윗변 무시, 작업 영역 아래 창 무시 / 앱: 창 위로 떨어뜨리면 윗변에 착지, 창이 닫히면 떨어짐, 설정으로 끄면 무시, 저장 위치가 창 위면 그 창에 착지 | M6 |
 | 메뉴는 설정·위치 초기화·숨기기·종료만, 설정 창 크기 조절(50~200%로 제한, 발은 바닥 그대로), 작업 스레드로 읽은 모델이 다음 프레임에 나타남, 첫 모델을 읽는 동안 아무것도 그리지 않음, 실패하면 지금 모델 유지, 대화상자로 고른 파일을 읽음·취소하면 아무것도 안 함 | FR-23 |
 | 설정 창에서 텍스처 여백 채우기를 바꾸면 로더에 알리고 지금 모델을 다시 읽음, 같은 값이면 다시 읽지 않음, `texture_padding`에 저장 | — |
+| 외곽선 자동: 모델에 외곽선 정보가 있으면 모델 지정·실루엣 없음, 없으면 메시 외곽선 끔·실루엣 두께 > 0, 두께 200%면 두 배, 0%면 없음, 모든 재질은 실루엣 없음 | ADR-0017 |
 | 더블클릭: 상호작용 클립이 있으면 제자리에서 클립 길이만큼 Interact 뒤 대기(뛰지 않음), 없으면 점프. 설정 창 상호작용 슬롯은 `interact_clip`에 저장하고 반복 시작 없이 읽음. 크기는 10~200%로 제한 | FR-13, FR-06 |
 | 메뉴 "설정…" → 설정 창이 캐릭터 옆에 열리고 매 프레임 그려짐(`uiFrame`이 바뀜), 설정 창 위에서 누르고 끌어도 캐릭터를 끌지 않고 창이 클릭을 받음, 닫기 버튼으로 닫으면 빈 곳이 다시 클릭 통과, 설정 동작이 적용되고 바로 저장됨(클립은 설정의 반복 시작 시각으로 읽음), 기본 동작으로 되돌리면 읽지 않고 빈 값 저장 | ADR-0016 |
 

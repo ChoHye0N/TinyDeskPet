@@ -50,6 +50,9 @@ struct RenderScene {
     // 설정 창 (Dear ImGui, ADR-0016). 닫혀 있으면 nullptr. 소유하지 않음 (ui 모듈의 이번 프레임
     // 데이터). 열려 있는 동안 앱이 uiFrame을 매 프레임 올려 Present를 생략하지 않게 함
     ImDrawData* ui = nullptr;
+    // 화면 실루엣 외곽선 두께 (px). 0이면 없음. 3D 영역을 프레임에 옮길 때 캐릭터 바깥 테두리에만
+    // 그림 (눈·입 같은 안쪽 선이 없음, 모델 형식과 무관)
+    float silhouetteWidth = 0.0f;
     std::uint64_t uiFrame = 0;
 
     // 렌더러가 "변화 없음"을 판단할 때 사용 (DEBT-02)

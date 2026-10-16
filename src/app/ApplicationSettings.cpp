@@ -59,6 +59,8 @@ const char* outlineText(core::OutlineMode mode) {
     switch (mode) {
         case core::OutlineMode::All: return "all";
         case core::OutlineMode::Off: return "off";
+        case core::OutlineMode::Silhouette: return "silhouette";
+        case core::OutlineMode::Auto: return "auto";
         case core::OutlineMode::Model:
         default: return "model";
     }
@@ -216,9 +218,26 @@ renderer::RendererOptions Application::rendererOptions() const {
     options.vsync = config_.renderer.vsync;
     options.debugLayer = config_.renderer.debugLayer;
     options.msaaSamples = config_.renderer.msaa;
-    options.outline = config_.renderer.outline;
+    // 렌더러에는 메시 외곽선 방식만 (자동은 모델에 따라 정하고, 실루엣은 장면의 두께로 넘김)
+    const core::OutlineMode effective = effectiveOutline();
+    options.outline =
+        effective == core::OutlineMode::Silhouette ? core::OutlineMode::Off : effective;
     options.outlineScale = static_cast<float>(config_.renderer.outlineScale) / 100.0f;
     return options;
+}
+
+// 자동이면 모델에 외곽선 정보(재질별 굵기, VRM MToon·PMX 에지)가 있는지로 모델 지정·외곽만을 고름.
+// 정보가 없는 모델(게임에서 내보낸 glTF 등)에 모든 재질을 쓰면 눈·입에도 선이 생기므로 실루엣
+core::OutlineMode Application::effectiveOutline() const {
+    const core::OutlineMode mode = config_.renderer.outline;
+    if (mode != core::OutlineMode::Auto) {
+        return mode;
+    }
+    const bool hasOutlineInfo =
+        model_ && std::ranges::any_of(model_->materials, [](const model::Material& material) {
+            return material.outlineWidth > 0.0f;
+        });
+    return hasOutlineInfo ? core::OutlineMode::Model : core::OutlineMode::Silhouette;
 }
 
 void Application::applyMovement() {
@@ -289,7 +308,7 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             writeSettings({{"renderer", "msaa", std::to_string(action.number)}});
             break;
         case Kind::SetOutline: {
-            if (action.number < 0 || action.number > static_cast<int>(core::OutlineMode::Off)) {
+            if (action.number < 0 || action.number > static_cast<int>(core::OutlineMode::Auto)) {
                 break;
             }
             config_.renderer.outline = static_cast<core::OutlineMode>(action.number);
