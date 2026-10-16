@@ -1,6 +1,7 @@
 #include "model/ModelLoader.h"
 
 #include "model/Importers.h"
+#include "model/OutlineHints.h"
 
 #include <algorithm>
 #include <cctype>
@@ -103,15 +104,20 @@ ModelFormat detectModelFormat(std::span<const std::uint8_t> bytes, std::string_v
 
 LoadResult loadModelFromMemory(std::span<const std::uint8_t> bytes, std::string_view extension,
                                const ImportContext& context) {
+    LoadResult result;
     switch (detectModelFormat(bytes, extension)) {
-        case ModelFormat::Gltf: return detail::importGltf(bytes, context);
-        case ModelFormat::Pmx: return detail::importPmx(bytes, context);
-        case ModelFormat::Fbx: return detail::importFbx(bytes, context);
-        case ModelFormat::Unknown: break;
+        case ModelFormat::Gltf: result = detail::importGltf(bytes, context); break;
+        case ModelFormat::Pmx: result = detail::importPmx(bytes, context); break;
+        case ModelFormat::Fbx: result = detail::importFbx(bytes, context); break;
+        case ModelFormat::Unknown:
+            return {std::nullopt, std::format("지원하지 않는 모델 형식입니다 (확장자 '{}'). "
+                                              "VRM/glTF/GLB, PMX, FBX만 읽을 수 있습니다",
+                                              extension)};
     }
-    return {std::nullopt, std::format("지원하지 않는 모델 형식입니다 (확장자 '{}'). "
-                                      "VRM/glTF/GLB, PMX, FBX만 읽을 수 있습니다",
-                                      extension)};
+    if (result.model) {
+        markOutlineSkips(*result.model);  // 형식과 무관한 후처리 ("모든 재질" 외곽선용)
+    }
+    return result;
 }
 
 LoadResult loadModelFile(const std::filesystem::path& path) {

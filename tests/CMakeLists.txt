@@ -28,6 +28,7 @@ add_executable(deskpet_tests
   model/GltfBuilder.h
   model/HumanoidTests.cpp
   model/ModelFormatTests.cpp
+  model/OutlineHintsTests.cpp
   model/ModelLoaderTests.cpp
   model/MotionLoaderTests.cpp
   model/PmxBuilder.h

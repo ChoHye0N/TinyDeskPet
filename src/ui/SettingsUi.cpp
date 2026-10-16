@@ -583,8 +583,7 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
     }
     hint(
         "자동: 모델에 외곽선 정보가 있으면 모델 지정, 없으면 외곽만. 외곽만: 캐릭터 바깥 "
-        "테두리에만 "
-        "그려 눈·입에 선이 생기지 않습니다.");
+        "테두리에만 그립니다. 모든 재질: 눈·입·헤일로는 자동으로 뺍니다.");
 
     // 외곽선을 끄면 두께는 의미가 없으므로 흐리게 하고 누를 수 없게 함
     const bool outlineOff = state.outline == core::OutlineMode::Off;

@@ -118,10 +118,14 @@ struct SpringGroup {
 };
 
 // 같은 머티리얼로 그리는 인덱스 구간
+// "모든 재질" 외곽선에서 뺄 이유 (OutlineHints.h). None이면 그림
+enum class OutlineSkip : std::uint8_t { None, EyeBone, Name, Flat };
+
 struct Primitive {
     std::uint32_t firstIndex = 0;
     std::uint32_t indexCount = 0;
     int material = -1;  // Model::materials 인덱스, 없으면 -1 (기본 흰색)
+    OutlineSkip outlineSkip = OutlineSkip::None;  // 로더가 markOutlineSkips로 채움
 };
 
 struct Bounds {

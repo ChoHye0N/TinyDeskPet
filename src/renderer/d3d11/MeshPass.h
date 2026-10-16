@@ -40,6 +40,7 @@ private:
         bool blend = false;
         bool doubleSided = false;
         float outlineWidth = 0.0f;  // 0이면 외곽선 없음 (outlineMode_ 반영 후)
+        model::OutlineSkip outlineSkip = model::OutlineSkip::None;
     };
 
     [[nodiscard]] bool upload(const D3D11Context& ctx, const model::Model& model);
@@ -53,7 +54,9 @@ private:
                        const GpuPrimitive& primitive);
     void drawOutline(const D3D11Context& ctx, const model::Model& model,
                      const GpuPrimitive& primitive);
-    [[nodiscard]] float outlineWidthFor(const model::Material* material) const;
+    // skip: "모든 재질"에서 뺄 primitive (눈·입·헤일로, model::markOutlineSkips)
+    [[nodiscard]] float outlineWidthFor(const model::Material* material,
+                                        model::OutlineSkip skip) const;
     [[nodiscard]] ID3D11ShaderResourceView* textureView(int index) const;
 
     static constexpr UINT kMaterialTextures = 4;  // 기본색, 그림자, MatCap, 발광 (t0 ~ t3)
