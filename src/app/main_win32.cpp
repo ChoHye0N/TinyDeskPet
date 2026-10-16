@@ -336,6 +336,28 @@ int runApplication(HINSTANCE instance) {
     gTexturePadding = loaded.config.renderer.texturePadding;
     application.setTexturePaddingHandler(
         [](core::TexturePadding padding) { gTexturePadding = padding; });
+    application.setTextureProcessor([](model::Model& model, core::TexturePadding padding) {
+        // 압축 원본이 없는 텍스처(미리 푼 TGA 등)는 여백 채우기 전 픽셀이 없어 다시 준비할 수 없음
+        // → false (앱이 파일을 다시 읽음)
+        if (std::ranges::any_of(model.textures,
+                                [](const model::Texture& t) { return t.encoded.empty(); })) {
+            return false;
+        }
+        const WorkerCom com;
+        if (!com.usable()) {
+            return false;
+        }
+        for (model::Texture& texture : model.textures) {
+            texture.rgba.clear();
+            texture.prepared = false;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        const int prepared = renderer::d3d11::prepareTextures(model, padding);
+        logging::info(
+            "텍스처 여백 채우기 다시 적용: {}장, {:.2f}초", prepared,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+        return prepared == static_cast<int>(model.textures.size());
+    });
     // 큰 모델은 읽는 데 1초 넘게 걸리므로 작업 스레드에서 (그동안 창·메뉴는 바로 동작)
     application.setModelLoader(&loadModel);
     const fs::path configuredModel = loaded.config.model.path.empty()

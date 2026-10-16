@@ -62,7 +62,15 @@ Application::PoseBounds poseBoundsFor(anim::ProceduralAnimator& animator,
         animator.setClip(static_cast<anim::Motion>(m), clips[m]);
     }
     Application::PoseBounds bounds;
-    bounds.motions = animator.motionBounds(kWalkTurnRadians);
+    bounds.standing = animator.standingBounds();
+    // 화면 x 범위는 카메라에 따라 다름. 카메라의 가로 투영은 서 있는 자세와 상자의 가로세로
+    // 비율로만 정해지므로(모든 동작 상자는 깊이 범위에만 쓰임) 먼저 서 있는 자세로 카메라를 맞춘
+    // 뒤, 자세마다 한 번의 스키닝으로 동작별 상자와 화면 범위를 함께 잼. 크기(%)·DPI가 바뀌어도
+    // 그대로
+    const anim::PoseExtents extents = animator.poseExtents(
+        fitCameraToBounds(bounds.standing, box, bounds.standing), kWalkTurnRadians);
+    bounds.motions = extents.motions;
+    bounds.screenX = extents.screenX;
     bounds.all = bounds.motions[0];
     for (const model::Bounds& b : bounds.motions) {  // displayBounds와 같음 (다시 재지 않음)
         bounds.all.min = {std::min(bounds.all.min.x, b.min.x), std::min(bounds.all.min.y, b.min.y),
@@ -70,11 +78,6 @@ Application::PoseBounds poseBoundsFor(anim::ProceduralAnimator& animator,
         bounds.all.max = {std::max(bounds.all.max.x, b.max.x), std::max(bounds.all.max.y, b.max.y),
                           std::max(bounds.all.max.z, b.max.z)};
     }
-    bounds.standing = animator.standingBounds();
-    // 화면 x 범위는 카메라에 따라 다름. 카메라는 상자의 가로세로 비율로만 정해지므로 크기(%)·DPI가
-    // 바뀌어도 그대로 (refitCamera와 같은 맞춤)
-    bounds.screenX = animator.screenXRange(fitCameraToBounds(bounds.standing, box, bounds.all),
-                                           kWalkTurnRadians);
     return bounds;
 }
 
@@ -168,6 +171,34 @@ void Application::refreshAnimationAsync() {
         std::launch::async, [model = model_, clips = clips_, path = modelPath_, box = boxSize_] {
             anim::ProceduralAnimator animator(*model);
             return LoadedModel{path, model, poseBoundsFor(animator, clips, box)};
+        });
+}
+
+// 여백 채우기 방식이 바뀜: 지금 모델을 복사해 텍스처만 작업 스레드에서 다시 준비하고, 자세 경계
+// 상자는 그대로 씀 (텍스처와 무관). 끝나면 applyLoadedModel이 교체. 처리기가 실패하면 파일을
+// 다시 읽음 (loadModelAsync와 같은 결과)
+void Application::retextureAsync(core::TexturePadding padding) {
+    if (pendingModel_.valid()) {
+        pendingModel_.wait();  // 읽던 모델을 먼저 반영 (덮어쓰면 그 결과를 잃음)
+        applyLoadedModel();
+    }
+    if (!model_) {
+        return;
+    }
+    pendingModel_ =
+        std::async(std::launch::async, [processor = textureProcessor_, loader = modelLoader_,
+                                        model = model_, clips = clips_, path = modelPath_,
+                                        bounds = poseBounds_, box = boxSize_, padding] {
+            auto copy = std::make_shared<model::Model>(*model);
+            if (processor(*copy, padding)) {
+                return LoadedModel{path, std::move(copy), bounds};
+            }
+            LoadedModel loaded{path, loader && !path.empty() ? loader(path) : nullptr, {}};
+            if (loaded.model) {
+                anim::ProceduralAnimator animator(*loaded.model);
+                loaded.bounds = poseBoundsFor(animator, clips, box);
+            }
+            return loaded;
         });
 }
 

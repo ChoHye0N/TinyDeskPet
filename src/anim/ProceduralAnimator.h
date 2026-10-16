@@ -32,6 +32,12 @@ struct ScreenRange {
     float max = -std::numeric_limits<float>::max();
 };
 
+// 동작별 경계 상자와 화면 x 범위를 한 번의 스키닝으로 함께 잰 결과 (poseExtents)
+struct PoseExtents {
+    std::array<model::Bounds, kMotionCount> motions{};
+    std::array<ScreenRange, kMotionCount> screenX{};
+};
+
 struct AnimationInput {
     Motion motion = Motion::Idle;
     float time = 0.0f;  // 누적 시간 (s). 주기 동작의 위상
@@ -93,6 +99,10 @@ public:
     // maxTurnRadians는 걷기에만. motionBounds와 같은 자세를 쓰므로 무거움 (작업 스레드에서)
     [[nodiscard]] std::array<ScreenRange, kMotionCount> screenXRange(
         const core::Mat4& viewProjection, float maxTurnRadians = 0.0f) const;
+    // motionBounds + screenXRange를 한 번에 (자세마다 정점을 한 번만 스키닝). 앱이 모델 읽기·클립
+    // 변경 때 작업 스레드에서 부름
+    [[nodiscard]] PoseExtents poseExtents(const core::Mat4& viewProjection,
+                                          float maxTurnRadians = 0.0f) const;
 
     // 화면 크기 기준 자세의 경계 상자: 클립 없이 코드로 만든 대기 자세 (숨쉬기 없음, 팔 내림).
     // 클립과 무관해서 클립을 바꿔도 캐릭터 크기가 그대로 (displayBounds는 클립에 따라 바뀜).

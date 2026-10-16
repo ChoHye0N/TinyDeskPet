@@ -216,8 +216,8 @@ int prepareTextures(model::Model& model, core::TexturePadding padding) {
         texture.width = static_cast<int>(pixels->width);
         texture.height = static_cast<int>(pixels->height);
         texture.rgba = std::move(pixels->rgba);
-        texture.encoded.clear();
-        texture.encoded.shrink_to_fit();
+        // 압축 원본(encoded)은 남겨 둠: 여백 채우기 방식을 바꿀 때 파일을 다시 읽지 않고 텍스처만
+        // 다시 준비하려고 (PNG·JPEG라 디코딩한 픽셀보다 훨씬 작음)
         texture.prepared = true;
         ++prepared;
     }

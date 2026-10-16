@@ -684,44 +684,69 @@ void ProceduralAnimator::includePosedVertices(const std::vector<core::Mat4>& ski
 
 std::array<ScreenRange, kMotionCount> ProceduralAnimator::screenXRange(
     const core::Mat4& viewProjection, float maxTurnRadians) const {
+    return poseExtents(viewProjection, maxTurnRadians).screenX;
+}
+
+PoseExtents ProceduralAnimator::poseExtents(const core::Mat4& viewProjection,
+                                            float maxTurnRadians) const {
     // 걷기의 몸 돌림은 각도를 나눠 잼 (투영 뒤 최대는 해석적으로 구하기 어려움). 7개면 사이 각도의
-    // 최대를 놓쳐도 반지름의 1.4% 안
+    // 최대를 놓쳐도 반지름의 1.4% 안. 각도별 cos·sin은 정점마다 다시 계산하지 않게 미리
     constexpr int kTurnSteps = 7;
-    std::array<ScreenRange, kMotionCount> result{};
-    const auto include = [&](Motion motion, core::Vec3 p) {
-        ScreenRange& range = result[static_cast<std::size_t>(motion)];
-        const int steps = motion == Motion::Walk && maxTurnRadians != 0.0f ? kTurnSteps : 1;
-        for (int i = 0; i < steps; ++i) {
-            const float angle =
-                steps == 1
-                    ? 0.0f
-                    : maxTurnRadians *
-                          (2.0f * static_cast<float>(i) / static_cast<float>(steps - 1) - 1.0f);
-            const float c = std::cos(angle);
-            const float s = std::sin(angle);
-            // Mat4::rotationY와 같은 회전 (includeTurnedPoint 참고)
-            const core::Vec4 clip =
-                core::transform({p.x * c + p.z * s, p.y, p.z * c - p.x * s}, viewProjection);
-            if (clip.w > 0.0f) {
-                const float x = clip.x / clip.w;
-                range.min = std::min(range.min, x);
-                range.max = std::max(range.max, x);
+    std::array<std::array<float, 2>, kTurnSteps> turns{};
+    for (int i = 0; i < kTurnSteps; ++i) {
+        const float angle =
+            maxTurnRadians *
+            (2.0f * static_cast<float>(i) / static_cast<float>(kTurnSteps - 1) - 1.0f);
+        turns[static_cast<std::size_t>(i)] = {std::cos(angle), std::sin(angle)};
+    }
+    const bool walkTurns = maxTurnRadians != 0.0f;
+
+    PoseExtents result;
+    result.motions.fill(kEmptyBounds);
+    const auto& vp = viewProjection.m;
+    const auto includeScreen = [&](Motion motion, core::Vec3 p) {
+        ScreenRange& range = result.screenX[static_cast<std::size_t>(motion)];
+        const auto project = [&](float c, float s) {
+            // Mat4::rotationY와 같은 회전 (includeTurnedPoint 참고). 화면 x에는 클립 좌표의 x·w만
+            // 필요하므로 두 열만 곱함 (core::transform의 절반)
+            const float x = p.x * c + p.z * s;
+            const float z = p.z * c - p.x * s;
+            const float clipX = x * vp[0][0] + p.y * vp[1][0] + z * vp[2][0] + vp[3][0];
+            const float clipW = x * vp[0][3] + p.y * vp[1][3] + z * vp[2][3] + vp[3][3];
+            if (clipW > 0.0f) {
+                const float ndc = clipX / clipW;
+                range.min = std::min(range.min, ndc);
+                range.max = std::max(range.max, ndc);
             }
+        };
+        if (motion == Motion::Walk && walkTurns) {
+            for (const auto& [c, s] : turns) {
+                project(c, s);
+            }
+        } else {
+            project(1.0f, 0.0f);
         }
     };
+
     if (!isSkinned(model_)) {
+        result.motions = motionBounds(maxTurnRadians);  // 원래 경계 (정점을 움직이지 않음)
         for (std::size_t m = 0; m < kMotionCount; ++m) {
             for (const model::Vertex& v : model_.vertices) {
-                include(static_cast<Motion>(m), v.position);
+                includeScreen(static_cast<Motion>(m), v.position);
             }
         }
         return result;
     }
+    // 자세마다 정점을 한 번만 스키닝해서 경계 상자와 화면 범위를 함께 잼 (따로 재면 스키닝이 두 번)
     AnimationOutput out;
     for (const AnimationInput& input : boundsSamples()) {
         evaluate(input, out);
+        const float turn = input.motion == Motion::Walk ? maxTurnRadians : 0.0f;
+        model::Bounds& bounds = result.motions[static_cast<std::size_t>(input.motion)];
         for (const model::Vertex& v : model_.vertices) {
-            include(input.motion, posedPosition(v, out.skin));
+            const core::Vec3 p = posedPosition(v, out.skin);
+            includeTurnedPoint(p, turn, bounds);
+            includeScreen(input.motion, p);
         }
     }
     return result;

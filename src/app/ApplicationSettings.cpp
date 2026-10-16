@@ -92,6 +92,10 @@ void Application::setTexturePaddingHandler(TexturePaddingHandler handler) {
     texturePaddingHandler_ = std::move(handler);
 }
 
+void Application::setTextureProcessor(TextureProcessor processor) {
+    textureProcessor_ = std::move(processor);
+}
+
 void Application::openSettings() {
     // 캐릭터가 그려지는 영역을 가리지 않게 그 옆에 띄움 (오버레이 내부 px)
     const core::RectI box = characterRect();
@@ -345,8 +349,12 @@ void Application::setTexturePadding(int number) {
     if (texturePaddingHandler_) {
         texturePaddingHandler_(padding);
     }
-    if (!modelPath_.empty()) {
-        loadModelAsync(modelPath_);  // 바로 보이도록 지금 모델을 새 방식으로 다시 읽음
+    // 바로 보이도록 지금 모델에 새 방식을 적용. 텍스처만 다시 준비할 수 있으면 그것만 (파일 파싱·
+    // 클립·자세 경계 상자를 건너뜀), 아니면 파일을 다시 읽음
+    if (model_ && textureProcessor_) {
+        retextureAsync(padding);
+    } else if (!modelPath_.empty()) {
+        loadModelAsync(modelPath_);
     }
     writeSettings({{"renderer", "texture_padding", paddingText(padding)}});
 }
