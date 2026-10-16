@@ -8,6 +8,7 @@
 #include "deskpet/Version.h"
 #include "model/ModelLoader.h"
 #include "model/Motion.h"
+#include "model/OutlineHints.h"
 #include "platform/win32/Win32Strings.h"
 #include "platform/win32/Win32Window.h"
 #include "renderer/d3d11/D3D11Renderer.h"
@@ -183,6 +184,19 @@ std::shared_ptr<const model::Model> loadModel(const fs::path& path) {
         }
     }
     const model::Model& m = *result.model;
+    // "모든 재질" 외곽선에서 뺄 재질 (눈·입·헤일로 등): 틀렸을 때 바로 알 수 있게 로그로
+    std::string skipped;
+    for (const model::Primitive& primitive : m.primitives) {
+        if (primitive.outlineSkip != model::OutlineSkip::None && primitive.material >= 0 &&
+            static_cast<std::size_t>(primitive.material) < m.materials.size()) {
+            skipped += std::format("{}{}({})", skipped.empty() ? "" : ", ",
+                                   m.materials[static_cast<std::size_t>(primitive.material)].name,
+                                   model::toString(primitive.outlineSkip));
+        }
+    }
+    if (!skipped.empty()) {
+        logging::info("외곽선(모든 재질)에서 뺄 재질: {}", skipped);
+    }
     const char* format = "glTF";
     if (m.format == model::ModelFormat::Pmx) {
         format = "PMX";

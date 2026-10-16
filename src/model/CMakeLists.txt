@@ -35,6 +35,7 @@ add_library(deskpet_model STATIC
   FbxImporter.cpp
   GltfImporter.cpp
   Humanoid.cpp
+  OutlineHints.cpp
   ModelLoader.cpp
   MotionLoader.cpp
   PmxImporter.cpp

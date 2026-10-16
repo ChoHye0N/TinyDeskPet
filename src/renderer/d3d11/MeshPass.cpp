@@ -264,9 +264,10 @@ bool MeshPass::upload(const D3D11Context& ctx, const model::Model& model) {
             const bool blend =
                 material != nullptr && material->alphaMode == model::AlphaMode::Blend;
             if (blend == blendPass) {
-                drawOrder_.push_back(
-                    {p.firstIndex, p.indexCount, material != nullptr ? p.material : -1, blend,
-                     material != nullptr && material->doubleSided, outlineWidthFor(material)});
+                drawOrder_.push_back({p.firstIndex, p.indexCount,
+                                      material != nullptr ? p.material : -1, blend,
+                                      material != nullptr && material->doubleSided,
+                                      outlineWidthFor(material, p.outlineSkip), p.outlineSkip});
             }
         }
     }
@@ -416,7 +417,7 @@ bool MeshPass::execute(const D3D11Context& ctx, const RenderScene& scene) {
                 primitive.material >= 0
                     ? &model->materials[static_cast<std::size_t>(primitive.material)]
                     : nullptr;
-            primitive.outlineWidth = outlineWidthFor(material);
+            primitive.outlineWidth = outlineWidthFor(material, primitive.outlineSkip);
         }
         drawOrderOutline_ = outlineMode_;
     }
@@ -554,7 +555,7 @@ ID3D11ShaderResourceView* MeshPass::textureView(int index) const {
 }
 
 // 재질별 외곽선 굵기 (m). 반투명은 뒤가 비쳐야 하므로 외곽선 없음
-float MeshPass::outlineWidthFor(const model::Material* material) const {
+float MeshPass::outlineWidthFor(const model::Material* material, model::OutlineSkip skip) const {
     // outline = all일 때 모델에 정보가 없는 재질에 쓰는 굵기 (MToon 기본값과 비슷한 4mm)
     constexpr float kDefaultOutlineWidth = 0.004f;
     if (material == nullptr || material->alphaMode == model::AlphaMode::Blend) {
@@ -566,7 +567,12 @@ float MeshPass::outlineWidthFor(const model::Material* material) const {
         case core::OutlineMode::Auto:  // 앱이 Model·Silhouette 중 하나로 정해서 넘김
             return 0.0f;
         case core::OutlineMode::All:
-            return material->outlineWidth > 0.0f ? material->outlineWidth : kDefaultOutlineWidth;
+            if (material->outlineWidth > 0.0f) {
+                return material->outlineWidth;  // 모델이 정한 굵기는 그대로
+            }
+            // 정보가 없는 재질은 기본 굵기. 단 얼굴 위 판(눈·입)·평평한 장식(헤일로)은 껍데기가
+            // 얼굴을 덮거나 장식 전체를 칠하므로 뺌 (model::markOutlineSkips)
+            return skip == model::OutlineSkip::None ? kDefaultOutlineWidth : 0.0f;
         case core::OutlineMode::Model:
         default: return material->outlineWidth;
     }

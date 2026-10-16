@@ -207,6 +207,18 @@ MMD는 모든 재질을 알파 블렌딩으로 그리지만, 깊이 정렬 문�
 
 렌더러는 디코딩·축소 직후, **밉맵을 만들기 전에** 16텍셀(512 기준 밉 4단계까지)을 채웁니다. 측정: 펭귄 모델(텍스처 7장, 삼각형 5.3만 개) 로드 + 업로드 0.2초.
 
+### 4.8.1 외곽선 제외 힌트 (`markOutlineSkips`, ADR-0017)
+
+로더가 형식과 무관하게 마지막에 `Primitive::outlineSkip`을 채웁니다. 렌더러는 외곽선 "모든 재질"(`all`)에서 **외곽선 정보가 없는 재질**에만 씁니다 (모델이 굵기를 정한 재질은 그대로).
+
+| 순서 | 이유 | 기준 |
+|---|---|---|
+| 1 | `EyeBone` | 정점의 절반 넘게 가장 큰 가중치가 눈 본(LeftEye·RightEye)이나 그 자손 |
+| 2 | `Name` | 재질 이름(대소문자 무관)에 eye·iris·pupil·highlight·brow·lash·mouth·teeth·tooth·tongue·halo, 目·眉·口·歯·舌·瞳·睫·まつげ·白目·ハイライト |
+| 3 | `Flat` | 기본 자세에서 가장 얇은 축 < 가장 긴 축의 5% (헤일로, 얼굴에 붙인 판) |
+
+반전 헐은 메시마다 껍데기를 그려, 얼굴 위 얇은 판은 껍데기가 얼굴을 덮고 평평한 장식은 전체가 칠해지기 때문. 앱은 뺀 재질과 이유를 로그에 남김 (`외곽선(모든 재질)에서 뺄 재질: …`).
+
 ### 4.9 모션 (`MotionClip`, ADR-0013·ADR-0014·ADR-0015)
 
 **클립 고르기 (ADR-0015)**: `loadMotionFromMemory(bytes, extension, clipName)`의 `clipName`은 glTF `animations[].name`·FBX 애니메이션 스택 이름. 비어 있으면 첫 번째, 없는 이름이면 있는 이름을 나열한 오류, VMD에 주면 오류. `loadMotionFile`은 `"파일#이름"`을 나눔: 경로 전체가 파일이 아닐 때만 파일 이름의 마지막 `#` 뒤를 `clipName`으로.
@@ -298,6 +310,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
+| `OutlineHintsTests` | 얼굴 부품·헤일로 재질 이름은 뺌(몸은 남김), 눈 본(또는 자식)에 붙은 primitive는 뺌, 두께 5% 미만의 판은 뺌(상자는 남김) |
 | `TexturePaddingTests` | 섬 옆 여백이 섬 색으로 채워짐(지정 거리까지만), 섬 텍셀은 그대로, 삼각형 없으면 변화 없음, 반복 UV, 텍스처별 삼각형 수집, auto는 점·선 삼각형이 찍는 텍셀 보존(on은 덮음), 보통 삼각형만 있으면 auto = on, off는 변화 없음 |
 | `TextureSourceTests` | PNG는 인코딩 유지, TGA는 RGBA 디코딩, 알 수 없는 바이트, `\` 상대 경로 파일 읽기 |
 | `HumanoidTests` | VRM 1.0·0.x(엄지 한 칸 보정)·MMD·Mixamo 이름 매핑, 3ds Max Biped(`Bip01`·`Bip001` 접두사, `_` 구분, 루트·무기는 제외), 형식마다 손가락 이름, 팔다리·손가락 다음 본 |
