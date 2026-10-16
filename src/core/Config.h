@@ -51,6 +51,7 @@ struct RendererConfig {
     bool debugLayer = true;
 #endif
     TexturePadding texturePadding = TexturePadding::Auto;
+    int outlineScale = 100;  // 외곽선 두께 배율 (%, 0 ~ 300): 모델이 정한 굵기에 곱함
 };
 
 struct ModelConfig {

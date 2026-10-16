@@ -199,6 +199,7 @@ debug_layer = false
 msaa = 4            ; 1(끔), 2, 4, 8. 그 외 값은 경고 후 기본값
 outline = model     ; 외곽선: model(모델 지정 재질만) / all(모든 불투명 재질) / off
 texture_padding = auto ; 텍스처 여백 채우기: auto(점·선으로 찍는 색 칸 보존) / on(모두 채움) / off
+outline_scale = 100 ; 외곽선 두께 배율 %, 0 ~ 300 (0이면 외곽선 패스를 건너뜀)
 
 [model]
 path = models/model.vrm     ; 문자열 그대로 (검증은 로딩 시점에)

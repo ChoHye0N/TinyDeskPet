@@ -48,6 +48,7 @@ bool D3D11Renderer::initialize(void* nativeWindow, core::SizeI size,
     overlayPasses_.clear();
     auto meshPass = std::make_unique<MeshPass>(options_.outline);
     meshPass_ = meshPass.get();
+    meshPass_->setOutlineScale(options_.outlineScale);
     scenePasses_.push_back(std::move(meshPass));  // 3D를 먼저 그림 (ADR-0008)
     overlayPasses_.push_back(std::make_unique<PlaceholderPass>());
     overlayPasses_.push_back(std::make_unique<ImGuiPass>());  // 설정 창은 맨 위 (ADR-0016)
@@ -155,8 +156,10 @@ void D3D11Renderer::setOptions(const RendererOptions& options) {
     options_.vsync = options.vsync;  // Present 간격만 바뀜
     options_.msaaSamples = options.msaaSamples;
     options_.outline = options.outline;
+    options_.outlineScale = options.outlineScale;
     if (meshPass_ != nullptr) {
         meshPass_->setOutlineMode(options.outline);
+        meshPass_->setOutlineScale(options.outlineScale);
     }
     if (msaaChanged && initialized_ && device_) {
         sampleCount_ = chooseSupportedSampleCount();

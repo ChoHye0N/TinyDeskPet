@@ -10,6 +10,14 @@
 
 ### Added
 
+- 설정 창 그래픽 탭에 외곽선 두께 (0 ~ 300%, `[renderer] outline_scale`). 모델이 정한 굵기에 곱하고 바로 적용
+
+### Changed
+
+- 설정 창 그래픽 탭의 설명을 맨 아래 한 곳에서 각 설정 바로 아래로 나눔
+
+### Added
+
 - 설정 `[renderer] texture_padding` (auto / on / off)와 설정 창 그래픽 탭의 "텍스처 여백 채우기". 바꾸면 모델을 다시 읽음
 
 ### Fixed

@@ -129,6 +129,15 @@ std::optional<int> sliderRow(const char* label, const char* id, int value, int m
     return changed;
 }
 
+// 설정 바로 아래의 짧은 설명 (보조 글자색, 줄바꿈). 다음 설정과 띄움
+void hint(const char* text) {
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", text);
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    ImGui::Spacing();
+}
+
 // 이름 왼쪽, 스위치 오른쪽 끝. 눌리면 true
 bool toggleRow(const char* label, const char* id, bool on, const Palette& p, float scale) {
     const float rowRight = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
@@ -546,7 +555,7 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
     if (toggleRow("수직 동기화", "##vsync", state.vsync, p, s)) {
         actions.push_back({SettingsAction::Kind::SetVsync, 0, {}, 0, !state.vsync});
     }
-    ImGui::Spacing();
+    hint("화면 주사율에 맞춰 그립니다. 끄면 CPU 사용률이 크게 오릅니다.");
 
     ImGui::TextDisabled("안티에일리어싱");
     constexpr std::array<int, 4> kSamples = {1, 2, 4, 8};
@@ -556,7 +565,7 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
                                       msaaIndex, p, s)) {
         actions.push_back({SettingsAction::Kind::SetMsaa, 0, {}, kSamples[*picked], false});
     }
-    ImGui::Spacing();
+    hint("높을수록 테두리가 매끄럽지만 GPU 부담이 늘어납니다.");
 
     ImGui::TextDisabled("외곽선");
     if (const auto picked =
@@ -565,7 +574,17 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
         actions.push_back(
             {SettingsAction::Kind::SetOutline, 0, {}, static_cast<int>(*picked), false});
     }
-    ImGui::Spacing();
+    hint("모델 지정: 모델이 외곽선을 정한 재질만. 모든 재질: 정보가 없는 모델도 그립니다.");
+
+    // 외곽선을 끄면 두께는 의미가 없으므로 흐리게 하고 누를 수 없게 함
+    const bool outlineOff = state.outline == core::OutlineMode::Off;
+    ImGui::BeginDisabled(outlineOff);
+    if (const std::optional<int> scale =
+            sliderRow("외곽선 두께", "##outlineScale", state.outlineScale, 0, 300, 10, p, s, "%")) {
+        actions.push_back({SettingsAction::Kind::SetOutlineScale, 0, {}, *scale, false});
+    }
+    ImGui::EndDisabled();
+    hint("모델이 정한 굵기에 곱합니다. 0%면 외곽선을 그리지 않습니다.");
 
     ImGui::TextDisabled("텍스처 여백 채우기");
     if (const auto picked =
@@ -574,13 +593,7 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
         actions.push_back(
             {SettingsAction::Kind::SetTexturePadding, 0, {}, static_cast<int>(*picked), false});
     }
-    ImGui::Spacing();
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled(
-        "수직 동기화를 끄면 CPU 사용률이 크게 오릅니다. 안티에일리어싱은 높을수록 테두리가 "
-        "매끄럽지만 GPU 부담이 늘어납니다. 모델 색이 이상하면 텍스처 여백 채우기를 바꿔 보세요 "
-        "(바꾸면 모델을 다시 읽습니다).");
-    ImGui::PopTextWrapPos();
+    hint("모델 색이 이상하면 바꿔 보세요. 바꾸면 모델을 다시 읽습니다.");
 }
 
 void SettingsUi::drawAdvancedTab(const SettingsState& state,

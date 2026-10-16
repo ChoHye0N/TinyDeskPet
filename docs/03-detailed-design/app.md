@@ -274,6 +274,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
 | `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 로더가 쓰는 값, 작업 스레드에서 읽으므로 atomic) → 지금 모델을 `loadModelAsync`로 다시 읽음 (여백 채우기는 텍스처를 준비할 때). 같은 값이면 아무것도 안 함 | `[renderer] texture_padding` (auto·on·off) |
+| `SetOutlineScale` | `config_.renderer.outlineScale`(0~300으로 제한) → `renderer.setOptions` (`outlineScale` = %/100, MeshPass가 외곽선을 그릴 때 곱함) | `[renderer] outline_scale` |
 
 - **클립을 바꾼 뒤 (`refreshAnimationAsync`)**: 지금 모델 그대로 자세 경계 상자만 작업 스레드에서 다시 계산(`displayBoundsFor`, 큰 모델은 수백 ms). 결과는 모델 읽기와 같은 `pendingModel_` → `applyLoadedModel`이 새 클립으로 애니메이터를 교체. 읽던 모델이 있으면 먼저 반영(덮어쓰면 그 결과를 잃음). 모델이 없으면 클립만 바꿈
 - **main (`main_win32.cpp`)**: `ClipLoader` = 동작 하나 읽기(`loadMotionClip`, 로그 포함), `SettingsWriter` = `core::saveConfigValues(deskpet.ini)`, 글꼴 = `%WINDIR%\Fonts\malgun.ttf`, 어두운 테마 = 레지스트리 `HKCU\…\Themes\Personalize\AppsUseLightTheme == 0`
