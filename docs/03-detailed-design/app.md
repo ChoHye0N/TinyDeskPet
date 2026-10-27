@@ -106,7 +106,7 @@ if result == Fatal: exitCode = RendererFailed; break
 
 | 이벤트 | 처리 |
 |---|---|
-| `PointerDownEvent{Left}` | 설정 창이 마우스를 원하면(`wantsMouse`) 설정 창으로 누름 + `uiPointer_`. 아니면 `character.onPointerDown(screen)` |
+| `PointerDownEvent{Left}` | "항상 위"가 꺼져 있으면 먼저 `window.bringToFront()` (창은 클릭해도 활성화되지 않아 Windows가 앞으로 올려 주지 않음). 설정 창이 마우스를 원하면(`wantsMouse`) 설정 창으로 누름 + `uiPointer_`. 아니면 `character.onPointerDown(screen)` |
 | `PointerMoveEvent` | `uiPointer_`가 아니면 `character.onPointerMove(screen)` |
 | `PointerUpEvent{Left}` | `uiPointer_`면 설정 창으로 뗌. 아니면 `refreshGround()` 후 `character.onPointerUp(screen)` — 다른 모니터에 놓았을 때 그 모니터의 바닥 사용 |
 | `PointerUpEvent{Right}` | 설정 창 위가 아니면 `onContextMenu(screen)` |

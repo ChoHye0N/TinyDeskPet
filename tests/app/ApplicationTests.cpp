@@ -189,6 +189,25 @@ TEST_F(ApplicationTest, DragAndRelease_FallsBackToGround) {
                                [](const PointI& a, const PointI& b) { return a.y < b.y; }));
 }
 
+TEST_F(ApplicationTest, PressWithoutAlwaysOnTop_BringsWindowToFront) {
+    // 항상 위를 끄면 다른 창 뒤로 갈 수 있음 → 펫을 누르면 앞으로 (포커스는 빼앗지 않음).
+    // 항상 위면 이미 맨 위라 부르지 않음
+    for (const bool alwaysOnTop : {false, true}) {
+        config_.window.alwaysOnTop = alwaysOnTop;
+        window_.pollCount = 0;
+        window_.bringToFrontCount = 0;
+        window_.frames.clear();
+        window_.frames.push_back(
+            {core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+        window_.frames.push_back(
+            {core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+        window_.pollsBeforeQuit = 4;
+        auto app = makeApp();
+        (void)app->run();
+        EXPECT_EQ(window_.bringToFrontCount, alwaysOnTop ? 0 : 1) << alwaysOnTop;
+    }
+}
+
 TEST_F(ApplicationTest, DoubleClick_Jumps) {
     window_.frames.push_back({core::DoubleClickEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
     window_.pollsBeforeQuit = 5;

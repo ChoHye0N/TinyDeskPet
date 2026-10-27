@@ -60,6 +60,7 @@ public:
     virtual bool showTrayIcon(const std::string& tooltip) = 0;      // 클릭 → TrayMenuRequestedEvent
     virtual void setClickThrough(bool enabled) = 0;        // true면 클릭이 아래 창으로 (FR-04)
     virtual void setAlwaysOnTop(bool enabled) = 0;         // 설정 창. SetWindowPos(HWND_TOPMOST/NOTOPMOST)
+    virtual void bringToFront() = 0;                       // 활성화 없이 z순서만 맨 앞 (HWND_TOP + SWP_NOACTIVATE)
     virtual core::PointI cursorPosition() const = 0;       // 화면 좌표 (클릭 통과 중엔 마우스 메시지가 없음)
     virtual bool fullscreenAppActive(core::PointI screen) const = 0;  // 그 모니터에 전체 화면 앱
     virtual std::vector<core::RectI> windowSurfaces() const = 0;  // 다른 창들, 앞 → 뒤
