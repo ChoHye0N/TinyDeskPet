@@ -137,7 +137,18 @@ struct Bounds {
 
 // 애니메이션이 쓰는 표정 (ADR-0010). 형식마다 다른 이름을 여기로 모읍니다:
 //   VRM 1.0 blink/happy/surprised, VRM 0.x blink/joy, MMD まばたき/笑い/びっくり
-enum class Expression : std::uint8_t { Blink, Happy, Surprised, Count };
+// 시선(Look*)은 VRM만: 1.0 lookLeft/lookRight/lookUp/lookDown, 0.x
+// lookleft/lookright/lookup/lookdown. 왼쪽·오른쪽은 캐릭터 기준 (왼쪽 = 모델 +X)
+enum class Expression : std::uint8_t {
+    Blink,
+    Happy,
+    Surprised,
+    LookLeft,
+    LookRight,
+    LookUp,
+    LookDown,
+    Count
+};
 
 // 표정 하나 = 정점 위치 오프셋의 희소 목록 (가중치 1일 때의 변위, 모델 공간)
 struct Morph {
@@ -183,6 +194,9 @@ struct Model {
     std::vector<Texture> textures;
     std::vector<Bone> bones;
     std::array<Morph, static_cast<std::size_t>(Expression::Count)> expressions;
+    // VRM이 시선을 눈 본이 아니라 표정으로 움직이라고 지정 (1.0 lookAt.type "expression",
+    // 0.x firstPerson.lookAtTypeName "BlendShape"). 그러면 눈 본이 있어도 돌리지 않음
+    bool lookAtExpressions = false;
     std::vector<NamedMorph> morphs;  // 애니메이션이 가중치를 바꾸는 모프 (일반 glTF만)
     std::vector<SpringGroup> springGroups;  // 비어 있으면 흔들림 없음 (VRM만 읽음)
     std::vector<SpringCollider> springColliders;

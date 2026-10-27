@@ -487,6 +487,10 @@ void Application::handleEvent(const core::Event& event) {
     };
     std::visit(Overloaded{
                    [this, pressOnSettings](const core::PointerDownEvent& e) {
+                       if (e.button == MouseButton::Left && !config_.window.alwaysOnTop) {
+                           // 항상 위가 아니면 다른 창 뒤에 있을 수 있음 → 누르면 앞으로
+                           window_->bringToFront();
+                       }
                        if (!pressOnSettings(e.button) && e.button == MouseButton::Left) {
                            pointerDown_ = true;
                            character_.onPointerDown(e.screen);

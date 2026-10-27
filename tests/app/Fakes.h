@@ -50,6 +50,7 @@ struct FakeWindowState {
     std::vector<core::PointI> positionHistory;
     bool clickThrough = false;  // true면 클릭이 아래 창으로 통과
     std::optional<bool> alwaysOnTop;  // setAlwaysOnTop으로 마지막에 바꾼 값 (안 바꿨으면 없음)
+    int bringToFrontCount = 0;
     int clickThroughChanges = 0;
     int menuShownCount = 0;
     int openFileDialogCount = 0;
@@ -132,6 +133,7 @@ public:
         state_.clickThrough = enabled;
     }
     void setAlwaysOnTop(bool enabled) override { state_.alwaysOnTop = enabled; }
+    void bringToFront() override { ++state_.bringToFrontCount; }
     [[nodiscard]] core::PointI cursorPosition() const override { return state_.cursor; }
     [[nodiscard]] bool fullscreenAppActive(core::PointI /*screen*/) const override {
         return state_.fullscreenApp;

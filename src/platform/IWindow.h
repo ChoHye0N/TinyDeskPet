@@ -79,6 +79,8 @@ public:
 
     // 다른 창보다 항상 위에 둘지 (설정 창). 만들 때는 WindowDesc::alwaysOnTop
     virtual void setAlwaysOnTop(bool enabled) = 0;
+    // 다른 창들 위로 올림 (포커스는 빼앗지 않음). 항상 위가 꺼져 있을 때 펫을 누르면 앱이 부름
+    virtual void bringToFront() = 0;
 
     // 마우스 커서 위치 (화면 좌표). 클릭 통과 중에는 마우스 메시지가 오지 않으므로 직접 물어봄
     [[nodiscard]] virtual core::PointI cursorPosition() const = 0;

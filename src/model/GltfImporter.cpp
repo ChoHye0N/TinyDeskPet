@@ -1014,10 +1014,14 @@ private:
         if (const std::string_view json = extensionJson(data_, "VRMC_vrm"); !json.empty()) {
             const auto expressions = valueSpan(json, "expressions");
             const auto preset = expressions ? valueSpan(*expressions, "preset") : std::nullopt;
-            constexpr std::array<std::pair<std::string_view, Expression>, 3> kNames = {{
+            constexpr std::array<std::pair<std::string_view, Expression>, 7> kNames = {{
                 {"blink", Expression::Blink},
                 {"happy", Expression::Happy},
                 {"surprised", Expression::Surprised},
+                {"lookLeft", Expression::LookLeft},
+                {"lookRight", Expression::LookRight},
+                {"lookUp", Expression::LookUp},
+                {"lookDown", Expression::LookDown},
             }};
             for (const auto& [name, expression] : kNames) {
                 const auto object = preset ? valueSpan(*preset, name) : std::nullopt;
@@ -1029,8 +1033,15 @@ private:
                     });
                 }
             }
+            const auto lookAt = childSpan(json, "lookAt");
+            model_.lookAtExpressions =
+                lookAt && stringMember(*lookAt, "type").value_or("") == "expression";
         }
         if (const std::string_view json = extensionJson(data_, "VRM"); !json.empty()) {
+            const auto firstPerson = childSpan(json, "firstPerson");
+            model_.lookAtExpressions =
+                firstPerson &&
+                stringMember(*firstPerson, "lookAtTypeName").value_or("") == "BlendShape";
             if (const auto groups = valueSpan(json, "blendShapeGroups")) {
                 forEachObject(*groups, [&](std::string_view group) { readVrm0Group(group); });
             }
@@ -1044,6 +1055,14 @@ private:
             expression = Expression::Blink;
         } else if (preset == "joy") {
             expression = Expression::Happy;
+        } else if (preset == "lookleft") {
+            expression = Expression::LookLeft;
+        } else if (preset == "lookright") {
+            expression = Expression::LookRight;
+        } else if (preset == "lookup") {
+            expression = Expression::LookUp;
+        } else if (preset == "lookdown") {
+            expression = Expression::LookDown;
         } else if (stringMember(group, "name").value_or("") == "Surprised") {
             expression = Expression::Surprised;  // 0.x에는 놀람 프리셋이 없어 이름으로 찾음
         }

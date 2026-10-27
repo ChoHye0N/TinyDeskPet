@@ -419,6 +419,57 @@ TEST(ModelLoader, Vrm0BlendShape_ReadsMeshBindsWithPercentWeight) {
     EXPECT_FLOAT_EQ(happy.deltas[0].y, -1.0f);  // 가중치 100% = 1.0
 }
 
+TEST(ModelLoader, Vrm1LookExpressions_AreReadWithLookAtType) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        morphMeshJson(b, t) + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRMC_vrm"],"extensions":{"VRMC_vrm":{"lookAt":{"type":"expression"},)"
+        R"("expressions":{"preset":{)"
+        R"("lookLeft":{"morphTargetBinds":[{"node":0,"index":0,"weight":1}]},)"
+        R"("lookRight":{"morphTargetBinds":[{"node":0,"index":0,"weight":1}]},)"
+        R"("lookUp":{"morphTargetBinds":[{"node":0,"index":0,"weight":1}]},)"
+        R"("lookDown":{"morphTargetBinds":[{"node":0,"index":0,"weight":1}]}}}}})";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    using deskpet::model::Expression;
+    for (const Expression e :
+         {Expression::LookLeft, Expression::LookRight, Expression::LookUp, Expression::LookDown}) {
+        EXPECT_EQ(result.model->expression(e).vertices.size(), 2U);
+    }
+    EXPECT_TRUE(result.model->lookAtExpressions);
+}
+
+TEST(ModelLoader, Vrm0LookBlendShapes_AreReadWithLookAtType) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const std::string rest =
+        morphMeshJson(b, t) + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRM"],"extensions":{"VRM":{)"
+        R"("firstPerson":{"lookAtTypeName":"BlendShape"},"blendShapeMaster":{"blendShapeGroups":[)"
+        R"({"name":"LookLeft","presetName":"lookleft","binds":[{"mesh":0,"index":0,"weight":100}]},)"
+        R"({"name":"LookDown","presetName":"lookdown","binds":[{"mesh":0,"index":0,"weight":100}]}]}}})";
+    const LoadResult result = load(b.build(rest));
+
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    using deskpet::model::Expression;
+    EXPECT_EQ(result.model->expression(Expression::LookLeft).vertices.size(), 2U);
+    EXPECT_EQ(result.model->expression(Expression::LookDown).vertices.size(), 2U);
+    EXPECT_TRUE(result.model->expression(Expression::LookUp).vertices.empty());
+    EXPECT_TRUE(result.model->lookAtExpressions);
+}
+
+TEST(ModelLoader, VrmBoneLookAt_IsNotExpressionLookAt) {
+    GltfBuilder b;
+    const Triangle t = addTriangle(b);
+    const LoadResult result = load(b.build(
+        morphMeshJson(b, t) + "," + kSingleNodeScene +
+        R"(,"extensionsUsed":["VRMC_vrm"],"extensions":{"VRMC_vrm":{"lookAt":{"type":"bone"}}})"));
+    ASSERT_TRUE(result.model.has_value()) << result.error;
+    EXPECT_FALSE(result.model->lookAtExpressions);
+}
+
 // ---------------------------------------------------------------------------
 // 외곽선 (MToon): 재질별 굵기(m)와 색
 // ---------------------------------------------------------------------------

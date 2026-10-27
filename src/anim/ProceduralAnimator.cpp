@@ -36,11 +36,12 @@ constexpr float kCrouchArms = 12.0f;   // 팔 벌림
 constexpr float kLandingDown = 0.07f;  // 내려가는 시간
 constexpr float kLandingUp = 0.38f;    // 일어나는 시간
 
-// 바라보기: 목·머리가 나눠 돌고(합 = 목표 각도), 눈은 그 위에 조금 더 (머리보다 먼저 가는 느낌).
-// 목표로 다가가는 빠르기는 초당 비율 (지수 감쇠, 약 0.3초에 95%)
+// 바라보기: 목·머리가 나눠 돌고(합 = 목표 각도), 눈은 그 위에 더 (머리보다 먼저 가는 느낌).
+// 눈 최대 각도에서 시선 표정 가중치 1. 목표로 다가가는 빠르기는 초당 비율 (지수 감쇠, 약 0.3초에
+// 95%)
 constexpr float kLookNeckShare = 0.4f;
-constexpr float kLookEyeShare = 0.3f;
-constexpr float kLookEyeMaxDegrees = 12.0f;
+constexpr float kLookEyeShare = 0.5f;
+constexpr float kLookEyeMaxDegrees = 20.0f;
 constexpr float kLookRate = 10.0f;
 constexpr float kLookSettleRadians = 1e-4f;  // 이보다 가까우면 목표에 맞춤 (Present 생략 유지)
 
@@ -316,10 +317,11 @@ ProceduralAnimator::LookAngles ProceduralAnimator::lookAnglesFor(
 }
 
 // 목·머리에 모델 축 기준으로 나눠 덧붙임 (목이 없으면 머리가 전부). 숙임(X) 먼저, 돌림(Y) 나중:
-// 고개를 숙인 채 옆을 보는 자연스러운 순서. 눈 본이 있으면 같은 방향으로 조금 더
-void ProceduralAnimator::applyLook(LookAngles look) const {
+// 고개를 숙인 채 옆을 보는 자연스러운 순서. 눈 본이 있으면 같은 방향으로 더 (VRM이 시선을 표정으로
+// 지정했으면 본은 그대로 두고 writeOutput이 표정으로)
+ProceduralAnimator::LookAngles ProceduralAnimator::applyLook(LookAngles look) const {
     if (look.yaw == 0.0f && look.pitch == 0.0f) {
-        return;
+        return {};
     }
     const auto turn = [&](int bone, float share) {
         if (bone >= 0) {
@@ -336,12 +338,13 @@ void ProceduralAnimator::applyLook(LookAngles look) const {
                           std::clamp(look.pitch * kLookEyeShare, -eyeLimit, eyeLimit)};
     for (const HumanBone eye : {HumanBone::LeftEye, HumanBone::RightEye}) {
         const int bone = skeleton_.find(eye);
-        if (bone >= 0) {
+        if (bone >= 0 && !model_.lookAtExpressions) {
             const core::Quat delta = core::Quat::axisAngle(kAxisY, eyes.yaw) *
                                      core::Quat::axisAngle(kAxisX, -eyes.pitch);
             setRotation(bone, delta * rotations_[static_cast<std::size_t>(bone)]);
         }
     }
+    return eyes;
 }
 
 // 클립의 엉덩이 이동으로 몸을 옮긴 뒤, 서 있거나 걷는 동안 낮은 쪽 발이 바닥(바인드 포즈 발
@@ -371,7 +374,8 @@ core::Vec3 ProceduralAnimator::rootOffset(Motion motion) const {
 }
 
 void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressions& base,
-                                     AnimationOutput& out, core::Vec3 offset) const {
+                                     AnimationOutput& out, core::Vec3 offset,
+                                     LookAngles eyes) const {
     // 재생 중인 클립이 숨기는 본 (게임의 소품 숨기기, ADR-0015). 전환 중에도 새 동작 기준
     const auto& clip = clips_[static_cast<std::size_t>(input.motion)];
     skeleton_.computeSkinMatrices(rotations_, out.skin, offset,
@@ -390,14 +394,29 @@ void ProceduralAnimator::writeOutput(const AnimationInput& input, const Expressi
     const float surprised = base[static_cast<std::size_t>(Expression::Surprised)];
     out.expressions[static_cast<std::size_t>(Expression::Blink)] =
         input.blink ? 1.0f - surprised : 0.0f;
+
+    // 눈 본으로 돌지 않는 모델은 시선 표정으로 (눈 최대 각도 = 가중치 1)
+    const bool eyeBones =
+        skeleton_.find(HumanBone::LeftEye) >= 0 || skeleton_.find(HumanBone::RightEye) >= 0;
+    if (eyeBones && !model_.lookAtExpressions) {
+        return;
+    }
+    const float limit = radians(kLookEyeMaxDegrees);
+    const auto set = [&](Expression e, float angle) {
+        out.expressions[static_cast<std::size_t>(e)] = std::clamp(angle / limit, 0.0f, 1.0f);
+    };
+    set(Expression::LookLeft, eyes.yaw);
+    set(Expression::LookRight, -eyes.yaw);
+    set(Expression::LookUp, eyes.pitch);
+    set(Expression::LookDown, -eyes.pitch);
 }
 
 void ProceduralAnimator::evaluate(const AnimationInput& input, AnimationOutput& out) const {
     computeRotations(input);
     // 상태가 없으므로 squash 값을 그대로 웅크림 정도로 씀
     applyCrouch(std::clamp(input.squash / kFullSquash, 0.0f, 1.0f));
-    applyLook(lookAnglesFor(input));
-    writeOutput(input, expressionsFor(input.motion), out, rootOffset(input.motion));
+    const LookAngles eyes = applyLook(lookAnglesFor(input));
+    writeOutput(input, expressionsFor(input.motion), out, rootOffset(input.motion), eyes);
 }
 
 void ProceduralAnimator::animate(const AnimationInput& input, float dt, AnimationOutput& out) {
@@ -466,12 +485,12 @@ void ProceduralAnimator::animate(const AnimationInput& input, float dt, Animatio
         return std::abs(goal - next) < kLookSettleRadians ? goal : next;
     };
     look_ = {approach(look_.yaw, target.yaw), approach(look_.pitch, target.pitch)};
-    applyLook(look_);
+    const LookAngles eyes = applyLook(look_);
 
     const core::Vec3 offset = rootOffset(input.motion);
     // 흔들림은 몸 자세가 정해진 뒤 그 위에서 계산 (보간 대상이 아님: 스스로 연속적임)
     springs_.update(skeleton_, rotations_, input.movement, dt, offset);
-    writeOutput(input, expressions, out, offset);
+    writeOutput(input, expressions, out, offset, eyes);
 }
 
 namespace {

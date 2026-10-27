@@ -75,6 +75,20 @@ git config core.hooksPath .githooks     # 커밋 전 포맷 자동 검사
 
 릴리스 워크플로가 실패하면(태그와 `VERSION` 불일치, CHANGELOG 섹션 없음, 빌드 실패) 고친 뒤 태그를 다시 만듭니다: `git tag -d vX.Y.Z` → `git push --delete origin vX.Y.Z` → 위 4~5단계. 이미 배포된 태그는 바꾸지 않고 다음 PATCH로 냅니다.
 
+### 외부 라이브러리 업데이트
+
+빌드할 때 CMake `FetchContent`로 받는 라이브러리는 Dependabot이 추적하지 못합니다(Dependabot은 GitHub Actions만 업데이트). 보안 수정 알림이 자동으로 오지 않으므로 릴리스 전에 아래 저장소의 릴리스·보안 권고를 확인합니다.
+
+| 라이브러리 | 고정 버전 | 위치 | 확인할 곳 |
+|---|---|---|---|
+| Dear ImGui | `v1.92.9b` | `src/ui/CMakeLists.txt` | https://github.com/ocornut/imgui/releases |
+| cgltf | `v1.14` | `src/model/CMakeLists.txt` | https://github.com/jkuhlmann/cgltf/releases |
+| ufbx | `v0.23.1` | `src/model/CMakeLists.txt` | https://github.com/ufbx/ufbx/releases |
+| stb | `2c980bb` (커밋) | `src/model/CMakeLists.txt` | https://github.com/nothings/stb (stb_image 변경 이력) |
+| GoogleTest (테스트만) | `v1.17.0` | `tests/CMakeLists.txt` | https://github.com/google/googletest/releases |
+
+버전을 올리면 `THIRD_PARTY_NOTICES.txt`의 표와 저작권 연도를 맞추고, 파서(cgltf·ufbx·stb)는 깨진 파일 테스트(`model/*Tests`)가 통과하는지 확인합니다.
+
 ## 5. 문제 해결
 
 | 증상 | 원인 | 해결 |

@@ -189,6 +189,25 @@ TEST_F(ApplicationTest, DragAndRelease_FallsBackToGround) {
                                [](const PointI& a, const PointI& b) { return a.y < b.y; }));
 }
 
+TEST_F(ApplicationTest, PressWithoutAlwaysOnTop_BringsWindowToFront) {
+    // 항상 위를 끄면 다른 창 뒤로 갈 수 있음 → 펫을 누르면 앞으로 (포커스는 빼앗지 않음).
+    // 항상 위면 이미 맨 위라 부르지 않음
+    for (const bool alwaysOnTop : {false, true}) {
+        config_.window.alwaysOnTop = alwaysOnTop;
+        window_.pollCount = 0;
+        window_.bringToFrontCount = 0;
+        window_.frames.clear();
+        window_.frames.push_back(
+            {core::PointerDownEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+        window_.frames.push_back(
+            {core::PointerUpEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
+        window_.pollsBeforeQuit = 4;
+        auto app = makeApp();
+        (void)app->run();
+        EXPECT_EQ(window_.bringToFrontCount, alwaysOnTop ? 0 : 1) << alwaysOnTop;
+    }
+}
+
 TEST_F(ApplicationTest, DoubleClick_Jumps) {
     window_.frames.push_back({core::DoubleClickEvent{{1780.0f, 1000.0f}, core::MouseButton::Left}});
     window_.pollsBeforeQuit = 5;
@@ -1386,6 +1405,18 @@ TEST_F(ApplicationTest, GraphicsSettings_AreAppliedToRendererAndSaved) {
     EXPECT_TRUE(h.has("renderer", "outline_scale", "150"));
     app->applySettingsAction({Kind::SetOutlineScale, 0, {}, 900, false});
     EXPECT_FLOAT_EQ(renderer_.options.outlineScale, 3.0f);
+}
+
+TEST_F(ApplicationTest, AccentSetting_IsSavedByNameAndRejectsUnknown) {
+    using Kind = deskpet::ui::SettingsAction::Kind;
+    auto app = makeApp();
+    SettingsHarness h;
+    h.attach(*app);
+    app->applySettingsAction(
+        {Kind::SetAccent, 0, {}, static_cast<int>(deskpet::core::AccentColor::Green), false});
+    EXPECT_TRUE(h.has("ui", "accent", "green"));
+    app->applySettingsAction({Kind::SetAccent, 0, {}, 99, false});  // 없는 색은 무시
+    EXPECT_EQ(h.written.size(), 1U);
 }
 
 TEST_F(ApplicationTest, TexturePaddingSetting_ReloadsModelAndSaves) {

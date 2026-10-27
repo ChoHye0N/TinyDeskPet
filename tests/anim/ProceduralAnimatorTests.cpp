@@ -771,3 +771,59 @@ TEST(ProceduralAnimatorLookAt, Animate_TurnsGraduallyThenSettles) {
     animator.animate(input, 1.0f / 60.0f, out);
     EXPECT_EQ(out.skin, settled.skin);  // 멈추면 정확히 같은 자세 (Present 생략)
 }
+
+namespace {
+
+// 머리 아래에 눈 본 두 개를 단 모델
+deskpet::model::Model withEyeBones(deskpet::model::Model model) {
+    using deskpet::model::HumanBone;
+    model.bones.push_back({"eye_L", 12, {0.03f, 1.6f, 0.08f}, HumanBone::LeftEye});
+    model.bones.push_back({"eye_R", 12, {-0.03f, 1.6f, 0.08f}, HumanBone::RightEye});
+    return model;
+}
+
+Vec3 boneForward(const AnimationOutput& out, std::size_t bone) {
+    return deskpet::core::normalize(
+        deskpet::core::transformDirection({0.0f, 0.0f, 1.0f}, out.skin[bone]));
+}
+
+}  // namespace
+
+TEST(ProceduralAnimatorLookAt, WithoutEyeBones_DrivesLookExpressions) {
+    const auto model = deskpet::test::makeSkeletonModel();
+    const AnimationOutput leftUp = evaluate(model, lookingAt({0.5f, 0.2f, 1.0f}));
+    EXPECT_GT(expression(leftUp, Expression::LookLeft), 0.5f);
+    EXPECT_GT(expression(leftUp, Expression::LookUp), 0.1f);
+    EXPECT_FLOAT_EQ(expression(leftUp, Expression::LookRight), 0.0f);
+    EXPECT_FLOAT_EQ(expression(leftUp, Expression::LookDown), 0.0f);
+
+    const AnimationOutput rightDown = evaluate(model, lookingAt({-0.5f, -0.2f, 1.0f}));
+    EXPECT_GT(expression(rightDown, Expression::LookRight), 0.5f);
+    EXPECT_GT(expression(rightDown, Expression::LookDown), 0.1f);
+    EXPECT_FLOAT_EQ(expression(rightDown, Expression::LookLeft), 0.0f);
+
+    // 가장 많이 돌면 가중치 1, 목표가 없으면 0
+    const AnimationOutput side = evaluate(model, lookingAt({1.0f, 0.0f, -0.2f}));
+    EXPECT_FLOAT_EQ(expression(side, Expression::LookLeft), 1.0f);
+    AnimationInput none;
+    none.idleMotion = false;
+    EXPECT_FLOAT_EQ(expression(evaluate(model, none), Expression::LookLeft), 0.0f);
+}
+
+TEST(ProceduralAnimatorLookAt, WithEyeBones_RotatesEyesFurtherThanHead) {
+    const auto model = withEyeBones(deskpet::test::makeSkeletonModel());
+    const AnimationOutput out = evaluate(model, lookingAt({0.5f, 0.0f, 1.0f}));
+    const Vec3 head = headForward(out);
+    const Vec3 eye = boneForward(out, 13);
+    EXPECT_GT(std::atan2(eye.x, eye.z), std::atan2(head.x, head.z) + 0.1f);  // 눈동자가 더 감
+    EXPECT_FLOAT_EQ(expression(out, Expression::LookLeft), 0.0f);  // 본으로 돌면 표정은 쓰지 않음
+}
+
+TEST(ProceduralAnimatorLookAt, ExpressionLookAtModel_UsesExpressionsNotEyeBones) {
+    // VRM이 시선을 표정으로 지정하면 눈 본이 있어도 돌리지 않음 (두 번 움직이지 않게)
+    auto model = withEyeBones(deskpet::test::makeSkeletonModel());
+    model.lookAtExpressions = true;
+    const AnimationOutput out = evaluate(model, lookingAt({0.5f, 0.0f, 1.0f}));
+    EXPECT_LT(degreesBetween(boneForward(out, 13), headForward(out)), 0.1f);
+    EXPECT_GT(expression(out, Expression::LookLeft), 0.5f);
+}

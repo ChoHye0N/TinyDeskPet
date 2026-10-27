@@ -129,12 +129,13 @@ private:
         float pitch = 0.0f;  // + = 위
     };
     [[nodiscard]] LookAngles lookAnglesFor(const AnimationInput& input) const;
-    void applyLook(LookAngles look) const;  // 목·머리·눈에 나눠 돌림
+    // 목·머리·눈에 나눠 돌림. 눈이 볼 각도를 돌려줌 (눈 본이 없으면 시선 표정으로)
+    LookAngles applyLook(LookAngles look) const;
     void drapeNamedBones() const;  // 클립이 없는 동작의 이름 본 = 클립 첫 프레임
     // 몸 전체를 옮길 거리: 클립의 엉덩이 이동 + (서 있거나 걸을 때) 발을 바닥에 맞추는 내림
     [[nodiscard]] core::Vec3 rootOffset(Motion motion) const;
     void writeOutput(const AnimationInput& input, const Expressions& base, AnimationOutput& out,
-                     core::Vec3 offset) const;
+                     core::Vec3 offset, LookAngles eyes) const;
     void includePosedVertices(const std::vector<core::Mat4>& skin, float maxTurnRadians,
                               model::Bounds& bounds) const;
     [[nodiscard]] std::vector<AnimationInput> boundsSamples() const;

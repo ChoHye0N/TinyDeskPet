@@ -218,6 +218,16 @@ void Win32Window::setAlwaysOnTop(bool enabled) {
     core::logging::info("항상 위 = {}", enabled);
 }
 
+void Win32Window::bringToFront() {
+    if (hwnd_ == nullptr) {
+        return;
+    }
+    // 창은 클릭해도 활성화되지 않게 만들어서(WM_MOUSEACTIVATE → MA_NOACTIVATE) Windows가 앞으로
+    // 올려 주지 않음. z 순서만 맨 위(항상 위가 아닌 창들 중)로 바꾸고 활성화는 하지 않음 → 쓰던
+    // 창의 키보드 포커스는 그대로. 우클릭 메뉴는 SetForegroundWindow 때문에 이미 앞으로 옴
+    SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
 bool Win32Window::fullscreenAppActive(core::PointI screen) const {
     // 1) 전용 전체 화면 D3D 게임, 프레젠테이션 모드 (모니터 구분 없이 Windows가 알려 줌)
     QUERY_USER_NOTIFICATION_STATE state{};

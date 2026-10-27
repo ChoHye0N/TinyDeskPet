@@ -106,7 +106,7 @@ if result == Fatal: exitCode = RendererFailed; break
 
 | 이벤트 | 처리 |
 |---|---|
-| `PointerDownEvent{Left}` | 설정 창이 마우스를 원하면(`wantsMouse`) 설정 창으로 누름 + `uiPointer_`. 아니면 `character.onPointerDown(screen)` |
+| `PointerDownEvent{Left}` | "항상 위"가 꺼져 있으면 먼저 `window.bringToFront()` (창은 클릭해도 활성화되지 않아 Windows가 앞으로 올려 주지 않음). 설정 창이 마우스를 원하면(`wantsMouse`) 설정 창으로 누름 + `uiPointer_`. 아니면 `character.onPointerDown(screen)` |
 | `PointerMoveEvent` | `uiPointer_`가 아니면 `character.onPointerMove(screen)` |
 | `PointerUpEvent{Left}` | `uiPointer_`면 설정 창으로 뗌. 아니면 `refreshGround()` 후 `character.onPointerUp(screen)` — 다른 모니터에 놓았을 때 그 모니터의 바닥 사용 |
 | `PointerUpEvent{Right}` | 설정 창 위가 아니면 `onContextMenu(screen)` |
@@ -272,6 +272,7 @@ DPI 인식은 코드(`SetProcessDpiAwarenessContext`)가 아니라 **매니페�
 | `SetLoopStart` | `config_`의 그 동작 반복 시작 = 값, 지금 클립을 복사해 `loopStart`만 바꿔 애니메이터에 (클립은 공유 const라 복사. 경계 상자는 그대로) | `[animation] idle_loop_start` 등 (소수 둘째 자리까지) |
 | `SetWalk` / `SetGravity` / `SetWalkSpeed` / `SetDragThreshold` / `ResetMovement` | `config_.character` 값 → `character_.setParams(Params::fromConfig)` (걷기를 끄면 `walkSpeed = 0`, 걷던 중이면 바로 대기). `ResetMovement`는 네 값을 기본값으로 | `[character] walk`, `gravity`, `walk_speed`, `drag_threshold` |
 | `SetAlwaysOnTop` | `window.setAlwaysOnTop` | `[window] always_on_top` |
+| `SetAccent` | (설정 창이 다음 프레임 `SettingsState::accent`로 색을 바꿈) 범위 밖 값은 무시 | `[ui] accent` |
 | `SetVsync` / `SetMsaa` / `SetOutline` | `config_.renderer` 값 → `renderer.setOptions(rendererOptions())`. MSAA는 1·2·4·8만 | `[renderer] vsync` / `msaa` / `outline` (model·all·off) |
 | (외곽선 자동) | `effectiveOutline()`: `auto`면 모델 재질 중 `outlineWidth > 0`이 있으면 `model`, 없으면 `silhouette`. `rendererOptions().outline` = 메시 방식(실루엣이면 `off`), 실루엣이면 `buildScene`이 `silhouetteWidth = 상자 높이 × 0.45% × 외곽선 두께`. 모델이 바뀌면(`setModel`·`applyLoadedModel`) `renderer.setOptions` 다시 (ADR-0017) | — |
 | `SetTexturePadding` | `config_.renderer.texturePadding` → `TexturePaddingHandler`(main: 다음에 읽는 모델이 쓸 값, atomic). 같은 값이면 아무것도 안 함. `TextureProcessor`가 있으면 **`retextureAsync`**: 지금 모델을 복사해 텍스처만 작업 스레드에서 다시 준비하고 자세 경계 상자는 그대로 씀 (파일 파싱·클립·경계 상자 계산 생략). 처리기가 실패하면(압축 원본이 없는 텍스처) 파일을 다시 읽음. 측정(변경 → 새 텍스처가 GPU에): Michiru Debug 2.07 → 0.17초, Release 0.19 → 0.05초 / Seia Debug 0.79 → 0.17초, Release 0.12 → 0.05초 | `[renderer] texture_padding` (auto·on·off) |

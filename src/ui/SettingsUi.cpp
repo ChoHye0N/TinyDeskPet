@@ -184,6 +184,43 @@ std::optional<std::size_t> segmented(const char* id, const std::array<const char
     return picked;
 }
 
+// 강조색 고르기: 이름 열 오른쪽을 색 수만큼 나눠 칸마다 동그라미. 지금 색은 바깥 고리.
+// 다른 색을 누르면 그 색
+std::optional<core::AccentColor> accentRow(core::AccentColor current, bool dark, float scale) {
+    constexpr std::array kAccents = {core::AccentColor::Pink, core::AccentColor::Purple,
+                                     core::AccentColor::Blue, core::AccentColor::Green,
+                                     core::AccentColor::Orange};
+    rowLabel("강조색", scale);
+    const float width = ImGui::GetContentRegionAvail().x / static_cast<float>(kAccents.size());
+    const float height = ImGui::GetFrameHeight();
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    ImDrawList& list = *ImGui::GetWindowDrawList();
+    const Palette base = palette(dark, current);
+    std::optional<core::AccentColor> picked;
+    ImGui::PushID("##accent");
+    for (std::size_t i = 0; i < kAccents.size(); ++i) {
+        const ImVec2 pos = offset(start, width * static_cast<float>(i), 0.0f);
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::InvisibleButton("##swatch", {width, height}) && kAccents[i] != current) {
+            picked = kAccents[i];
+        }
+        ImGui::PopID();
+        const ImVec2 center = offset(pos, width * 0.5f, height * 0.5f);
+        const float radius = 8.0f * scale;
+        if (kAccents[i] == current) {
+            list.AddCircle(center, radius + 3.5f * scale, base.text, 0, 1.5f * scale);
+        } else if (ImGui::IsItemHovered()) {
+            list.AddCircleFilled(center, radius + 4.0f * scale, base.frameHover);
+        }
+        list.AddCircleFilled(center, radius, palette(dark, kAccents[i]).accent);
+    }
+    ImGui::PopID();
+    ImGui::SetCursorScreenPos(offset(start, 0.0f, height));
+    ImGui::Dummy({0.0f, 0.0f});
+    return picked;
+}
+
 // 왼쪽에 아이콘이 있는 버튼
 bool iconButton(const char* label, Icon icon, const Palette& p, float scale) {
     const ImVec2 padding = ImGui::GetStyle().FramePadding;
@@ -269,7 +306,7 @@ void SettingsUi::addMouseWheel(float notches) {
 
 void SettingsUi::applyStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
-    applyTheme(style, dark_);
+    applyTheme(style, dark_, accent_);
     style.ScaleAllSizes(scale_);
     style.FontScaleDpi = scale_;
     styleDirty_ = false;
@@ -285,6 +322,10 @@ ImDrawData* SettingsUi::frame(float dt, core::SizeI display, const SettingsState
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = {static_cast<float>(display.width), static_cast<float>(display.height)};
     io.DeltaTime = dt > 0.0f ? dt : 1.0f / 60.0f;
+    if (state.accent != accent_) {
+        accent_ = state.accent;
+        styleDirty_ = true;
+    }
     if (styleDirty_) {
         applyStyle();
     }
@@ -330,8 +371,8 @@ ImDrawData* SettingsUi::frame(float dt, core::SizeI display, const SettingsState
         const ImVec2 origin = ImGui::GetWindowPos();
         ImGui::GetWindowDrawList()->AddLine(
             offset(origin, kTabWidth * scale_, kTitleHeight * scale_),
-            offset(origin, kTabWidth * scale_, ImGui::GetWindowHeight()), palette(dark_).border,
-            scale_);
+            offset(origin, kTabWidth * scale_, ImGui::GetWindowHeight()),
+            palette(dark_, accent_).border, scale_);
 
         ImGui::SameLine(0.0f, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {18.0f * scale_, 16.0f * scale_});
@@ -366,7 +407,7 @@ ImDrawData* SettingsUi::frame(float dt, core::SizeI display, const SettingsState
 
 // 제목 줄: 발바닥 아이콘, 제목, 닫기. 제목 줄을 끌면 창이 움직임 (창은 NoMove라 직접 옮김)
 void SettingsUi::drawTitle(bool& keepOpen) const {
-    const Palette& p = palette(dark_);
+    const Palette p = palette(dark_, accent_);
     const float s = scale_;
     const float height = kTitleHeight * s;
     const ImVec2 origin = ImGui::GetWindowPos();
@@ -399,7 +440,7 @@ void SettingsUi::drawTitle(bool& keepOpen) const {
 
 // 왼쪽 세로 탭: 아이콘 + 글자, 선택된 탭은 강조색 바탕
 void SettingsUi::drawTabs() {
-    const Palette& p = palette(dark_);
+    const Palette p = palette(dark_, accent_);
     const float s = scale_;
     ImDrawList& list = *ImGui::GetWindowDrawList();
     const float width = ImGui::GetContentRegionAvail().x;
@@ -441,7 +482,7 @@ void SettingsUi::drawModelTab(const SettingsState& state,
     infoRow("라이선스", state.modelLicense, s);
     infoRow("파일", state.modelFile, s);
     ImGui::Spacing();
-    if (iconButton("모델 열기…", Icon::Folder, palette(dark_), s)) {
+    if (iconButton("모델 열기…", Icon::Folder, palette(dark_, accent_), s)) {
         actions.push_back({SettingsAction::Kind::OpenModel, 0, {}, 0, false});
     }
     ImGui::PushTextWrapPos(0.0f);
@@ -471,7 +512,7 @@ void SettingsUi::drawMotionTab(const SettingsState& state,
         const ImVec2 itemMin = ImGui::GetItemRectMin();
         drawIcon(*ImGui::GetWindowDrawList(), Icon::ChevronDown,
                  {itemMax.x - 16.0f * s, (itemMin.y + itemMax.y) * 0.5f}, 14.0f * s,
-                 palette(dark_).textSecondary);
+                 palette(dark_, accent_).textSecondary);
         if (opened) {
             for (std::size_t c = 0; c < motion.choices.size(); ++c) {
                 const ClipChoice& choice = motion.choices[c];
@@ -492,8 +533,9 @@ void SettingsUi::drawMotionTab(const SettingsState& state,
             rowLabel("  반복 시작", s);
             const float sliderWidth = ImGui::GetContentRegionAvail().x - kValueWidth * s;
             const float shown = std::min(motion.loopStart, motion.duration);
-            const std::optional<float> picked = sliderValue("##loop", shown, 0.0f, motion.duration,
-                                                            0.1f, sliderWidth, palette(dark_), s);
+            const std::optional<float> picked =
+                sliderValue("##loop", shown, 0.0f, motion.duration, 0.1f, sliderWidth,
+                            palette(dark_, accent_), s);
             if (picked) {
                 SettingsAction action{SettingsAction::Kind::SetLoopStart, m, {}, 0, false};
                 action.value = *picked;
@@ -517,12 +559,16 @@ void SettingsUi::drawMotionTab(const SettingsState& state,
 
 void SettingsUi::drawDisplayTab(const SettingsState& state,
                                 std::vector<SettingsAction>& actions) const {
-    const Palette& p = palette(dark_);
+    const Palette p = palette(dark_, accent_);
     const float s = scale_;
     if (const std::optional<int> scale =
             sliderRow("크기", "##scale", state.scalePercent, state.minScalePercent,
                       state.maxScalePercent, state.scaleStepPercent, p, s, "%")) {
         actions.push_back({SettingsAction::Kind::SetScale, 0, {}, *scale, false});
+    }
+    if (const std::optional<core::AccentColor> accent = accentRow(state.accent, dark_, s)) {
+        actions.push_back(
+            {SettingsAction::Kind::SetAccent, 0, {}, static_cast<int>(*accent), false});
     }
     ImGui::Spacing();
 
@@ -550,7 +596,7 @@ void SettingsUi::drawDisplayTab(const SettingsState& state,
 
 void SettingsUi::drawGraphicsTab(const SettingsState& state,
                                  std::vector<SettingsAction>& actions) const {
-    const Palette& p = palette(dark_);
+    const Palette p = palette(dark_, accent_);
     const float s = scale_;
     if (toggleRow("수직 동기화", "##vsync", state.vsync, p, s)) {
         actions.push_back({SettingsAction::Kind::SetVsync, 0, {}, 0, !state.vsync});
@@ -607,7 +653,7 @@ void SettingsUi::drawGraphicsTab(const SettingsState& state,
 
 void SettingsUi::drawAdvancedTab(const SettingsState& state,
                                  std::vector<SettingsAction>& actions) const {
-    const Palette& p = palette(dark_);
+    const Palette p = palette(dark_, accent_);
     const float s = scale_;
     const MovementSetting& m = state.movement;
     struct SliderInfo {

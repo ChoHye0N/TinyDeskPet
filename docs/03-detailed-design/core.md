@@ -216,6 +216,9 @@ scale = 100                  ; 캐릭터 크기 % (10 ~ 200, FR-06)
 [log]
 level = info           ; trace/debug/info/warn/error/off
 to_file = true
+
+[ui]
+accent = pink          ; 설정 창 강조색: pink/purple/blue/green/orange (설정 창 화면 탭)
 ```
 
 파싱 규칙
