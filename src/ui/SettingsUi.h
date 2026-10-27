@@ -66,6 +66,7 @@ struct SettingsState {
     bool lookAt = true;
     bool idleMotion = true;
     bool alwaysOnTop = true;
+    core::AccentColor accent = core::AccentColor::Pink;  // 설정 창 강조색 (바뀌면 창 색도 바꿈)
     // 그래픽
     bool vsync = true;
     int msaa = 4;  // 1 = 끔, 2, 4, 8
@@ -87,6 +88,7 @@ struct SettingsAction {
         SetLoopStart,       // motion 동작의 반복 시작 시각 = value (s)
         SetWalk,            // flag
         SetAlwaysOnTop,     // flag
+        SetAccent,          // number = core::AccentColor
         SetVsync,           // flag
         SetMsaa,            // 샘플 수 = number (1 = 끔)
         SetOutline,         // number = core::OutlineMode
@@ -168,6 +170,7 @@ private:
     bool placeWindow_ = false;  // 다음 프레임에 창 위치를 정함 (열 때마다)
     core::RectI avoid_;
     bool dark_ = false;
+    core::AccentColor accent_ = core::AccentColor::Pink;  // 마지막 frame의 SettingsState::accent
     float scale_ = 1.0f;
     bool styleDirty_ = true;
     bool wantsMouse_ = false;

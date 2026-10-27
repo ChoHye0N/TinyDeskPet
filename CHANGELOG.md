@@ -10,6 +10,7 @@
 
 ### Added
 
+- 설정 창 화면 탭에 강조색 고르기 (분홍·보라·파랑·초록·주황, `[ui] accent`)
 - 배포 zip에 서드파티 라이선스 고지(`THIRD_PARTY_NOTICES.txt`: Dear ImGui, cgltf, ufbx, stb)
 
 ### Changed

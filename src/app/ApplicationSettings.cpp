@@ -66,6 +66,17 @@ const char* outlineText(core::OutlineMode mode) {
     }
 }
 
+const char* accentText(core::AccentColor accent) {
+    switch (accent) {
+        case core::AccentColor::Purple: return "purple";
+        case core::AccentColor::Blue: return "blue";
+        case core::AccentColor::Green: return "green";
+        case core::AccentColor::Orange: return "orange";
+        case core::AccentColor::Pink:
+        default: return "pink";
+    }
+}
+
 // 설정 파일에 쓰는 실수: 소수 둘째 자리까지, 끝의 0은 뺌 ("1.50" → "1.5", "2.00" → "2")
 std::string decimalText(float value) {
     std::string text = std::to_string(std::round(value * 100.0f) / 100.0f);
@@ -199,6 +210,7 @@ ui::SettingsState Application::settingsState() const {
     state.lookAt = config_.animation.lookAt;
     state.idleMotion = config_.animation.idleMotion;
     state.alwaysOnTop = config_.window.alwaysOnTop;
+    state.accent = config_.ui.accent;
 
     state.vsync = config_.renderer.vsync;
     state.msaa = config_.renderer.msaa;
@@ -292,6 +304,13 @@ void Application::applySettingsAction(const ui::SettingsAction& action) {
             config_.window.alwaysOnTop = action.flag;
             window_->setAlwaysOnTop(action.flag);
             writeSettings({{"window", "always_on_top", boolText(action.flag)}});
+            break;
+        case Kind::SetAccent:
+            if (action.number < 0 || action.number > static_cast<int>(core::AccentColor::Orange)) {
+                break;
+            }
+            config_.ui.accent = static_cast<core::AccentColor>(action.number);
+            writeSettings({{"ui", "accent", accentText(config_.ui.accent)}});
             break;
         case Kind::SetVsync:
             config_.renderer.vsync = action.flag;

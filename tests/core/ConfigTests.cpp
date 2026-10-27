@@ -201,6 +201,15 @@ TEST(Config, MotionLoopStart_DefaultsToZeroAndRejectsNegative) {
     EXPECT_TRUE(containsWarning(result.warnings, "walk_loop_start"));
 }
 
+TEST(Config, UiAccent_DefaultsToPinkAndIsReadByName) {
+    EXPECT_EQ(parseConfig("").config.ui.accent, deskpet::core::AccentColor::Pink);
+    EXPECT_EQ(parseConfig("[ui]\naccent = Blue\n").config.ui.accent,
+              deskpet::core::AccentColor::Blue);
+    const auto bad = parseConfig("[ui]\naccent = rainbow\n");
+    EXPECT_EQ(bad.config.ui.accent, deskpet::core::AccentColor::Pink);
+    EXPECT_TRUE(containsWarning(bad.warnings, "accent"));
+}
+
 TEST(Config, LastPosition_IsOptionalAndReadWhenPresent) {
     EXPECT_FALSE(parseConfig("").config.state.lastPosition().has_value());
 
