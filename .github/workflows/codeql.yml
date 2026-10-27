@@ -4,6 +4,9 @@
 # 공개 저장소라 무료로 실행됩니다.
 # PR에서는 돌리지 않습니다: 필수 검사가 아니라 병합을 막지 못하고, PR마다 Windows 빌드를 한 번 더
 # 하는 중복이라 main에 들어온 뒤 + 매주 실행으로 충분합니다.
+# 분석 대상은 우리 코드만: C++는 빌드를 관찰해 분석하므로 빌드 때 내려받는 외부 라이브러리
+# (build/**/_deps: ImGui, cgltf, ufbx, stb)까지 분석되고, 컴파일 언어에는 paths-ignore가 듣지 않음.
+# 결과(SARIF)를 올리기 전에 그 경로를 걸러냄 (학습 노트 #43)
 # =============================================================================
 name: CodeQL
 
@@ -38,7 +41,9 @@ jobs:
         with:
           languages: c-cpp
           build-mode: manual                 # 아래 빌드를 CodeQL이 관찰해 분석
-          queries: security-and-quality
+          # 보안 규칙만 (품질 규칙은 FIXME 주석·주석 처리된 코드 같은 스타일 지적이 대부분이고,
+          # 코드 품질은 clang-tidy·컴파일러 경고(/W4 /WX)가 CI에서 이미 막음)
+          queries: security-extended
 
       - uses: actions/setup-python@v7
         with:
@@ -53,11 +58,29 @@ jobs:
           arch: x64
 
       - name: Build
+        # 테스트(googletest)는 빼고 프로그램만: 분석할 코드만 빌드해 시간도 줄임
         run: |
-          cmake --preset ci-windows
+          cmake --preset ci-windows -DDESKPET_BUILD_TESTS=OFF
           cmake --build --preset ci-windows-release
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
         with:
+          category: "/language:c-cpp"
+          upload: never          # 외부 라이브러리 결과를 걸러낸 뒤 아래에서 올림
+          output: sarif-results
+
+      - name: Filter out third-party code
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            -build/**
+            -**/_deps/**
+          input: sarif-results/cpp.sarif
+          output: sarif-results/cpp.sarif
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: sarif-results/cpp.sarif
           category: "/language:c-cpp"
