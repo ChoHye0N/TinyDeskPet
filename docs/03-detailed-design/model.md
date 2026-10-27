@@ -43,7 +43,8 @@ struct Vertex { core::Vec3 position; core::Vec3 normal; float u, v;
                 std::array<std::uint16_t, 4> joints; std::array<float, 4> weights; };  // 56바이트
 // joints = Model::bones 인덱스, 가중치 큰 순서·합 1 (모두 0이면 움직이지 않음)
 void setSkinWeights(Vertex&, std::span<const std::pair<int, float>> influences);  // 합치기·상위 4개·정규화
-enum class Expression : std::uint8_t { Blink, Happy, Surprised, Count };
+enum class Expression : std::uint8_t { Blink, Happy, Surprised, LookLeft, LookRight, LookUp, LookDown, Count };
+// Model::lookAtExpressions: VRM이 시선을 표정으로 지정 (그러면 눈 본을 돌리지 않음)
 struct Morph { std::vector<std::uint32_t> vertices; std::vector<core::Vec3> deltas; };  // 희소 정점 오프셋
 enum class AlphaMode : std::uint8_t { Opaque, Mask, Blend };
 struct SpringCollider { int bone; core::Vec3 offset; float radius;
@@ -140,7 +141,7 @@ PMX의 z 반전 한 번이 "왼손 → 오른손"과 "정면 −Z → +Z"를 동
 
 8. 스킨 가중치: `JOINTS_0`의 관절 번호 → `skin.joints[번호]`의 노드 번호 = 본 번호. 스킨이 없는 메시(액세서리 등)는 **자기 노드에 가중치 1로 고정**해 그 노드와 함께 움직임
 9. 모프 타깃: `POSITION` 델타를 정점과 같은 변환(바인드 포즈 행렬의 3×3, VRM 0.x 회전)으로 모델 공간에 옮겨 노드별로 희소 저장
-10. 표정: VRM 1.0 `expressions.preset.{blink, happy, surprised}.morphTargetBinds[{node, index, weight 0~1}]`, VRM 0.x `blendShapeMaster.blendShapeGroups[{presetName: blink/joy, binds[{mesh, index, weight 0~100}]}]` (0.x에는 놀람 프리셋이 없어 이름 `Surprised`로 찾음, `mesh` 번호는 그 메시를 단 모든 노드로 확장)
+10. 표정: VRM 1.0 `expressions.preset.{blink, happy, surprised, lookLeft, lookRight, lookUp, lookDown}.morphTargetBinds[{node, index, weight 0~1}]`, VRM 0.x `blendShapeMaster.blendShapeGroups[{presetName: blink/joy/lookleft/lookright/lookup/lookdown, binds[{mesh, index, weight 0~100}]}]`. 시선 방식은 1.0 `lookAt.type == "expression"`, 0.x `firstPerson.lookAtTypeName == "BlendShape"`이면 `lookAtExpressions` (0.x에는 놀람 프리셋이 없어 이름 `Surprised`로 찾음, `mesh` 번호는 그 메시를 단 모든 노드로 확장)
 
 GLB의 BIN 청크는 복사되지 않고 입력 바이트를 가리키므로, 변환이 끝날 때까지 입력을 유지합니다.
 
@@ -306,7 +307,7 @@ VRM 0.x `extensions.VRM.secondaryAnimation`과 VRM 1.0 `extensions.VRMC_springBo
 | 테스트 파일 | 검증 |
 |---|---|
 | `ModelFormatTests` | 매직 바이트 판별, 매직이 확장자보다 우선, ASCII FBX(확장자·주석), 미지원 형식 오류 메시지 |
-| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 일반 glTF 본 이름 매핑(중복은 처음 것만)·VRM은 이름 무시, 몸 밖 뼈에만 붙은 소품 메시(스킨·고정) 제외, 일반 glTF 모프 타깃을 노드 이름으로 보관(VRM은 없음)·기본 가중치는 첫 애니메이션 첫 키(없으면 0), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
+| `ModelLoaderTests` | glTF: 기하·경계, 노드 변환, 프리미티브 이어 붙이기, VRM 0/1 방향, 머티리얼, 스키닝 바인드 포즈, VRM 1.0/0.x 휴머노이드 매핑(0.x 엄지 한 칸 보정), 일반 glTF 본 이름 매핑(중복은 처음 것만)·VRM은 이름 무시, 몸 밖 뼈에만 붙은 소품 메시(스킨·고정) 제외, 일반 glTF 모프 타깃을 노드 이름으로 보관(VRM은 없음)·기본 가중치는 첫 애니메이션 첫 키(없으면 0), 스킨 가중치(관절 → 본 번호), 스킨 없는 메시는 자기 노드에 고정, VRM 1.0/0.x 표정·시선 표정과 시선 방식, MToon(0.x 변환·sRGB → 선형, 1.0 값·텍스처 번호, MToon이 아닌 재질의 발광·unlit, 발광 세기 0이면 끔·1보다 크면 곱함), SpringBone(0.x 그룹·구·x·z 반전, 1.0 관절 값이 바뀌는 곳에서 그룹 나누기·기본값·회전한 노드의 오프셋·캡슐) |
 | `PmxImporterTests` | 미터·오른손·정면 변환, 감기 순서 교환, 머티리얼(색·양면·텍스처·Mask), 본 4개(가변 필드 건너뛰기)와 휴머노이드, UTF-8·인덱스 크기 1/4·추가 UV, 외부 TGA 텍스처, 잘린 파일, 범위 밖 인덱스, BDEF/SDEF 가중치, 정점 모프 → 표정(본 모프 건너뛰기) |
 | `FbxImporterTests` | cm → m, UV 원점 뒤집기, 확산색 머티리얼, Mixamo 본 매핑·부모·위치, 손상 파일, 스킨 클러스터 → 정점 가중치 |
 | `ModelFormatTests` (SkinWeights) | 같은 본 합치기, 상위 4개, 음수 본 제거, 정규화, 모두 0이면 움직이지 않음 |
