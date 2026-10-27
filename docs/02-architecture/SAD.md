@@ -469,7 +469,8 @@ TinyDeskPet-0.1.0-win64.zip
     │   └── deskpet.ini        ← 기본 설정 (주석 포함)
     ├── README.md
     ├── CHANGELOG.md
-    └── LICENSE
+    ├── LICENSE
+    └── THIRD_PARTY_NOTICES.txt  ← ImGui·cgltf·ufbx·stb 저작권 고지
 ```
 
 빌드부터 배포까지의 자동화는 [CI/CD 구현 문서](../05-devops/ci-cd-implementation.md)를 참고하세요.

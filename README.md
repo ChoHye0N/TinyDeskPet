@@ -127,4 +127,6 @@ deskpet/
 
 ## 라이선스
 
-[MIT](LICENSE)
+[MIT](LICENSE). 실행 파일에 든 외부 라이브러리(Dear ImGui, cgltf, ufbx, stb)의 저작권 고지는 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)에 있고, 배포 zip에도 들어 있습니다.
+
+사용자가 넣는 3D 모델·모션 파일은 이 라이선스와 무관하며, 각 제작자가 정한 이용 조건(VRM 라이선스 메타데이터, 배포 페이지의 약관 등)을 따릅니다. 이 저장소에는 모델 파일을 넣지 않습니다.
