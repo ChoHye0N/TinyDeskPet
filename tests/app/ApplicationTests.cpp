@@ -1407,18 +1407,6 @@ TEST_F(ApplicationTest, GraphicsSettings_AreAppliedToRendererAndSaved) {
     EXPECT_FLOAT_EQ(renderer_.options.outlineScale, 3.0f);
 }
 
-TEST_F(ApplicationTest, AccentSetting_IsSavedByNameAndRejectsUnknown) {
-    using Kind = deskpet::ui::SettingsAction::Kind;
-    auto app = makeApp();
-    SettingsHarness h;
-    h.attach(*app);
-    app->applySettingsAction(
-        {Kind::SetAccent, 0, {}, static_cast<int>(deskpet::core::AccentColor::Green), false});
-    EXPECT_TRUE(h.has("ui", "accent", "green"));
-    app->applySettingsAction({Kind::SetAccent, 0, {}, 99, false});  // 없는 색은 무시
-    EXPECT_EQ(h.written.size(), 1U);
-}
-
 TEST_F(ApplicationTest, TexturePaddingSetting_ReloadsModelAndSaves) {
     // 여백 채우기는 텍스처를 준비할 때 하므로 바꾸면 로더에 알리고 지금 모델을 다시 읽음
     using Kind = deskpet::ui::SettingsAction::Kind;

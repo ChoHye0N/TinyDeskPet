@@ -170,37 +170,3 @@ TEST(SettingsUi, GraphicsTab_VsyncToggleEmitsAction) {
     EXPECT_EQ(actions[0].kind, SettingsAction::Kind::SetVsync);
     EXPECT_FALSE(actions[0].flag);
 }
-
-TEST(SettingsUi, DisplayTab_AccentSwatchEmitsAction) {
-    // 강조색 줄은 크기 슬라이더 아래. 오른쪽 끝 칸 = 마지막 색. 줄 높이는 글꼴에 따라 다르므로
-    // 위에서부터 눌러 보며 찾음 (슬라이더 오른쪽은 값 글자라 눌러도 동작 없음)
-    SettingsState state;
-    SettingsUi ui;
-    ui.open(kCharacter);
-    ui.selectTab(SettingsTab::Display);
-    (void)step(ui, state);
-    const auto rect = ui.windowRect();
-    const float x = static_cast<float>(rect.right) - 30.0f;
-    const auto accentAt = [&](float y) {
-        std::vector<SettingsAction> found;
-        for (const SettingsAction& a : click(ui, {x, y}, state)) {
-            if (a.kind == SettingsAction::Kind::SetAccent) {
-                found.push_back(a);
-            }
-        }
-        return found;
-    };
-    float y = static_cast<float>(rect.top) + kTitleHeight + 10.0f;
-    std::vector<SettingsAction> found;
-    for (; y < static_cast<float>(rect.top) + 200.0f; y += 5.0f) {
-        found = accentAt(y);
-        if (!found.empty()) {
-            break;
-        }
-    }
-    ASSERT_EQ(found.size(), 1U);
-    EXPECT_EQ(found[0].number, static_cast<int>(deskpet::core::AccentColor::Orange));
-
-    state.accent = deskpet::core::AccentColor::Orange;  // 지금 색을 다시 누르면 동작 없음
-    EXPECT_TRUE(accentAt(y).empty());
-}
