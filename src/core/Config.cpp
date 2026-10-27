@@ -131,24 +131,6 @@ ApplyResult assignPadding(std::string_view value, TexturePadding& out) {
     return std::nullopt;
 }
 
-ApplyResult assignAccent(std::string_view value, AccentColor& out) {
-    const std::string lower = toLower(value);
-    if (lower == "pink") {
-        out = AccentColor::Pink;
-    } else if (lower == "purple") {
-        out = AccentColor::Purple;
-    } else if (lower == "blue") {
-        out = AccentColor::Blue;
-    } else if (lower == "green") {
-        out = AccentColor::Green;
-    } else if (lower == "orange") {
-        out = AccentColor::Orange;
-    } else {
-        return std::string("pink/purple/blue/green/orange 중 하나가 아닙니다");
-    }
-    return std::nullopt;
-}
-
 ApplyResult assignLevel(std::string_view value, logging::Level& out) {
     if (const auto parsed = logging::parseLevel(value)) {
         out = *parsed;
@@ -270,8 +252,6 @@ const std::vector<std::pair<std::string_view, Applier>>& appliers() {
          }},
         {"state.scale", [](std::string_view v,
                            AppConfig& c) { return assignOptionalInt(v, 10, 200, c.state.scale); }},
-        {"ui.accent",
-         [](std::string_view v, AppConfig& c) { return assignAccent(v, c.ui.accent); }},
         {"log.level", [](std::string_view v, AppConfig& c) { return assignLevel(v, c.log.level); }},
         {"log.to_file",
          [](std::string_view v, AppConfig& c) { return assignBool(v, c.log.toFile); }},

@@ -25,13 +25,6 @@ enum class OutlineMode : std::uint8_t { Model, All, Off, Silhouette, Auto };
 // On: 섬 밖을 모두 채움 (예전 방식). Off: 채우지 않음
 enum class TexturePadding : std::uint8_t { Auto, On, Off };
 
-// 설정 창 강조색 (ui.md §테마). 선택된 값·켜진 토글·슬라이더 채움에 씀
-enum class AccentColor : std::uint8_t { Pink, Purple, Blue, Green, Orange };
-
-struct UiConfig {
-    AccentColor accent = AccentColor::Pink;
-};
-
 struct WindowConfig {
     int width = 200;
     int height = 200;
@@ -115,7 +108,6 @@ struct AppConfig {
     ModelConfig model;
     AnimationConfig animation;
     LogConfig log;
-    UiConfig ui;
     StateConfig state;
 };
 

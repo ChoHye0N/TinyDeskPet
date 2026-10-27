@@ -42,7 +42,7 @@ struct SettingsState {  // 앱이 매 프레임 채움
 struct SettingsAction {
     enum class Kind : std::uint8_t {
         OpenModel, SetClip, SetScale, SetLookAt, SetWalkOnWindows, SetIdleMotion,
-        SetLoopStart, SetWalk, SetAlwaysOnTop, SetAccent, SetVsync, SetMsaa, SetOutline, SetTexturePadding, SetOutlineScale,
+        SetLoopStart, SetWalk, SetAlwaysOnTop, SetVsync, SetMsaa, SetOutline, SetTexturePadding, SetOutlineScale,
         SetGravity, SetWalkSpeed, SetDragThreshold, ResetMovement };
     Kind kind; std::size_t motion; std::string text; int number; bool flag; float value;
 };
@@ -94,9 +94,6 @@ public:
 | 글자 | 15px (이름 18px), 시스템 맑은 고딕 |
 | 밝은 색 | 바탕 #FFFFFF, 글자 #2C2C2A, 보조 #6B6A65, 테두리 #E3E1DA, 올림 #ECEAE4, 강조 #D4537E, 선택 바탕 #FBEAF0 / 글자 #72243E |
 | 어두운 색 | 바탕 #232321, 글자 #EDECE8, 보조 #A8A69E, 테두리 #3A3936, 올림 #363532, 강조 #E07A9E, 선택 바탕 #4B1528 / 글자 #F4C0D1 |
-| 강조색 (`[ui] accent`) | 강조·선택 바탕·선택 글자 세 칸만 바꿈 (밝은 / 어두운). 분홍 #D4537E·#FBEAF0·#72243E / #E07A9E·#4B1528·#F4C0D1, 보라 #7F77DD·#EEEDFE·#3C3489 / #9C95E8·#26215C·#CECBF6, 파랑 #378ADD·#E6F1FB·#0C447C / #5FA2E6·#042C53·#B5D4F4, 초록 #1D9E75·#E1F5EE·#085041 / #3FB68E·#04342C·#9FE1CB, 주황 #D85A30·#FAECE7·#712B13 / #E57A55·#4A1B0C·#F5C4B3 |
-
-`palette(dark, accent)`가 밝기 바탕에 강조 세 칸을 덮어 돌려줌. 설정 창은 매 프레임 `SettingsState::accent`가 바뀌었으면 스타일을 다시 적용 (앱이 따로 알려 줄 필요 없음)
 
 ### 4.4 탭 내용
 
@@ -104,7 +101,7 @@ public:
 |---|---|---|
 | 모델 | 이름(없으면 "모델 없음", 읽는 중이면 "불러오는 중…"), 작가, 라이선스, 파일 | "모델 열기…" → `OpenModel` |
 | 동작 | 대기·걷기·끌려 다닐 때·공중·상호작용 콤보 (상호작용의 기본 동작은 "점프 (기본 동작)", 반복 시작 슬라이더 없음) (선택지 = 앱이 준 `choices`). 클립이 있는 동작은 아래에 반복 시작 슬라이더 (0 ~ 클립 길이, 0.1초 단위). 넘치면 휠로 스크롤 | 다른 항목 선택 → `SetClip(motion, value)`, 슬라이더 → `SetLoopStart(motion, value)` |
-| 화면 | 크기 슬라이더(최소~최대, 단계), 강조색(색 동그라미 5개, 지금 색은 고리), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 다른 창보다 항상 위에) | `SetScale`, `SetAccent`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
+| 화면 | 크기 슬라이더(최소~최대, 단계), 토글 5개(걷기, 다른 창 위를 걷기, 커서 바라보기, 대기 중 숨쉬기, 다른 창보다 항상 위에) | `SetScale`, `SetWalk`, `SetWalkOnWindows`, `SetLookAt`, `SetIdleMotion`, `SetAlwaysOnTop` |
 | 그래픽 | 수직 동기화 토글, 안티에일리어싱(끔·2x·4x·8x)·외곽선(자동·모델 지정·모든 재질·외곽만·끔, 버튼 순서는 열거형 순서와 달라 표로 맞춤)·텍스처 여백 채우기(자동·모두 채움·끔)는 붙은 선택 버튼, 외곽선 두께 슬라이더(0~300%, 10% 단위, 외곽선을 끄면 비활성). 설명은 각 설정 바로 아래 한 줄씩(`hint`) | `SetVsync`, `SetMsaa(샘플 수)`, `SetOutline(core::OutlineMode)`, `SetOutlineScale(%)`, `SetTexturePadding(core::TexturePadding)` |
 | 고급 | 중력(500~6000, 100), 걷기 속도(20~200, 5), 끌기 시작 거리(0~20, 1) 슬라이더, "기본값으로" | `SetGravity` 등 (`number`), `ResetMovement` |
 | 정보 | 버전, 소개, 저장소, 설정 저장 위치 | — |
@@ -125,7 +122,6 @@ public:
 | `ClickingGraphicsAndAdvancedTabs_SelectsThem` | 네 번째·다섯 번째 탭 클릭 → 그래픽·고급 |
 | `EveryTab_DrawsWithClipLoopSliders` | 모든 탭이 그려지고(ImGui 단언 없음), 클릭 없이는 동작 없음 |
 | `GraphicsTab_VsyncToggleEmitsAction` | 수직 동기화 스위치 클릭 → `SetVsync(false)` |
-| `DisplayTab_AccentSwatchEmitsAction` | 강조색 줄 오른쪽 끝 칸 클릭 → `SetAccent(주황)`, 지금 색을 다시 누르면 동작 없음 |
 
 앱 쪽 처리(적용·저장·입력 가로채기)는 `ApplicationTests`(app.md §5)
 
